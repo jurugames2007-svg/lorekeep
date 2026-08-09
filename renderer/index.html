@@ -87,19 +87,25 @@
         <div class="top-actions">
           <input type="text" id="globalSearch" placeholder="Buscar historias, personajes..." title="Buscar en todas tus historias y personajes" />
           <div id="searchResults" class="search-results"></div>
-          <button class="icon-btn" id="notifBtn" title="Notificaciones">🔔</button>
-          <button class="icon-btn" id="helpTopBtn" title="Guía rápida de uso">❓</button>
-          <div class="profile-avatar-wrap" id="profileAvatarBtn" title="Configurar perfil e insignias">
+          <button class="icon-btn" id="notifBtn" title="Notificaciones">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+          </button>
+          <button class="icon-btn" id="helpTopBtn" title="Guía rápida de uso">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          </button>
+          <div class="profile-avatar-wrap" id="profileAvatarBtn" title="Personalizar tema, tipografía y perfil">
             <div class="avatar-border rank-gold">
-              <div class="avatar" id="topbarAvatarIcon">✍️</div>
+              <div class="avatar" id="topbarAvatarIcon">AU</div>
             </div>
-            <span class="profile-badge">👑</span>
+            <span class="profile-badge">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="#35d07f" stroke="#101218" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="9 12 11 14 15 10" stroke="#fff"></polyline></svg>
+            </span>
           </div>
         </div>
       </header>
 
       <!-- HOME VIEW -->
-      <section class="view dashboard-container active" id="view-home">
+      <section class="view dashboard-container" id="view-home">
         <h1 class="page-title">Bienvenido de vuelta</h1>
         <p class="page-sub">Continúa donde lo dejaste o inicia una nueva historia.</p>
         <div class="home-grid">
@@ -133,7 +139,7 @@
       </section>
 
       <!-- MY STORIES VIEW -->
-      <section class="view" id="view-stories">
+      <section class="view dashboard-container" id="view-stories">
         <div class="section-head">
           <h1 class="page-title">Mis Historias</h1>
           <button class="btn-primary" id="newStoryBtn">+ Nueva historia</button>
@@ -141,32 +147,84 @@
         <div class="story-grid" id="storyGrid"></div>
       </section>
 
-      <!-- GLOBAL SOURCES VIEW -->
-      <section class="view" id="view-sources">
-        <div class="section-head">
-          <h1 class="page-title">Gestor Global de Fuentes y PDFs</h1>
-          <button class="btn-primary" id="addGlobalSourceBtn">+ Adjuntar PDF o Artículo</button>
-          <input type="file" id="globalDocFileInput" accept=".pdf,.txt,.md,.json" style="display:none;" />
+      <!-- NOTEBOOKLM-STYLE SOURCES STUDIO VIEW (#view-sources) -->
+      <section class="view dashboard-container" id="view-sources">
+        <div class="section-head" style="margin-bottom:12px; flex-wrap:wrap; gap:12px;">
+          <div>
+            <h1 class="page-title">Studio de Lore y Fuentes (Tipo NotebookLM)</h1>
+            <p class="page-sub" style="margin-bottom:0;">Gestiona tus fuentes seccionadas por libro, evitando archivos duplicados y definiendo tu jerarquía de Canon.</p>
+          </div>
+          <div class="row-gap" style="gap:10px;">
+            <div class="safety-verified-tag">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+              <span>Deduplicación Activa: Sin fuentes repetidas</span>
+            </div>
+          </div>
         </div>
-        <p class="page-sub">Sube tus fuentes de referencia aquí, ordénalas por prioridad (Canon) y asígnalas a tus obras de forma global.</p>
-        <div id="globalSourcesList" class="story-grid"></div>
+
+        <div class="nblm-studio-container">
+          <!-- PANEL IZQUIERDO: LIBROS SECCIONADOS -->
+          <aside class="nblm-books-sidebar" id="nblmBooksSidebar">
+            <div class="nblm-sidebar-header">
+              <span>Libros Seccionados</span>
+              <span class="muted small" id="nblmBooksCountText">0 libros</span>
+            </div>
+            <div class="nblm-books-list" id="nblmBooksList">
+              <!-- Dynamically populated books list + Repositorio Universal -->
+            </div>
+          </aside>
+
+          <!-- PANEL DERECHO: FUENTES DEL LIBRO SELECCIONADO -->
+          <main class="nblm-studio-main" id="nblmStudioMain">
+            <div class="nblm-active-book-header" id="nblmActiveBookHeader">
+              <!-- Book thumbnail, title, badge, action buttons -->
+            </div>
+
+            <!-- Authority Banner -->
+            <div class="side-panel-info-box" style="margin-bottom:14px;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span class="info-label">Jerarquía del Lore en este Libro</span>
+                <span class="muted small">Evita conflictos con 1 Canon Absoluto</span>
+              </div>
+              <p class="muted small" style="margin:4px 0 0 0;">Las fuentes en <b>1. Canon Absoluto</b> tienen supremacía narrativa en este libro. Cualquier documento con nombre o contenido repetido es bloqueado automáticamente por el motor de deduplicación.</p>
+            </div>
+
+            <!-- Action buttons for active book -->
+            <div class="nblm-action-bar" style="margin-bottom:16px;">
+              <button class="btn-primary" id="addBookSourceBtn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align:-2px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>Adjuntar PDF/Artículo a este Libro
+              </button>
+              <button class="btn-secondary" id="linkUniversalSourceBtn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align:-2px;"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>Vincular del Repositorio Universal
+              </button>
+              <input type="file" id="bookDocFileInput" accept=".pdf,.txt,.md,.json" style="display:none;" />
+            </div>
+
+            <!-- Attached sources list for selected book -->
+            <div id="nblmSourcesList" class="sources-list-container">
+              <!-- Dynamically rendered source cards -->
+            </div>
+          </main>
+        </div>
       </section>
 
       <!-- CHARACTERS VIEW -->
-      <section class="view" id="view-characters">
+      <section class="view dashboard-container" id="view-characters">
         <div class="section-head">
           <h1 class="page-title">Personajes y Personalidades</h1>
           <div class="row-gap">
             <select id="charStoryFilter"></select>
-            <button class="btn-secondary" id="autoDetectCharsBtn" title="Detectar automáticamente personajes y personalidades de los capítulos">⚡ Auto-detectar de historias</button>
-            <button class="btn-primary" id="newCharBtn">+ Nuevo personaje</button>
+            <button class="btn-secondary" id="autoDetectCharsBtn" title="Detectar automáticamente personajes y personalidades de los capítulos">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align:-2px;"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>Auto-detectar de historias
+            </button>
+            <button class="btn-primary" id="newCharBtn">Nuevo personaje</button>
           </div>
         </div>
         <div class="char-grid" id="charGrid"></div>
       </section>
 
       <!-- COLLAB VIEW -->
-      <section class="view" id="view-collab">
+      <section class="view dashboard-container" id="view-collab">
         <h1 class="page-title">Colaboración</h1>
         <p class="page-sub">LoreAra funciona 100% local. Exporta o importa archivos de respaldo y comparte tus notas con colaboradores.</p>
         <div class="collab-columns">
@@ -194,7 +252,7 @@
       </section>
 
       <!-- STATS VIEW -->
-      <section class="view" id="view-stats">
+      <section class="view dashboard-container" id="view-stats">
         <h1 class="page-title">Estadísticas</h1>
         <div class="home-grid">
           <div class="card home-card">
@@ -225,29 +283,112 @@
       </section>
 
       <!-- SETTINGS VIEW -->
-      <section class="view" id="view-settings">
+      <section class="view dashboard-container" id="view-settings">
         <h1 class="page-title">Ajustes</h1>
         <div class="card settings-card">
-          <h3>Perfil</h3>
-          <label>Nombre de autor/a</label>
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <h3 style="margin:0;">Perfil Literario de Autor/a</h3>
+            <button class="btn-secondary small" id="settingsOpenProfileModalBtn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align:-2px;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>Abrir Perfil, Foto, Portada e Insignias
+            </button>
+          </div>
+          <label style="margin-top:10px; display:block;">Nombre de autor/a</label>
           <input type="text" id="authorNameInput" />
         </div>
         <div class="card settings-card">
-          <h3>Muse AI (asistente de escritura)</h3>
-          <p class="muted">Ingresa tu dirección URL base (Endpoint API) y tu Clave (API Key). LoreAra detectará automáticamente los modelos disponibles en tu proveedor.</p>
-          <label>URL Base de la API</label>
-          <input type="text" id="aiBaseUrl" placeholder="https://api.openai.com/v1 o https://openrouter.ai/api/v1" />
-          <label>API Key</label>
-          <input type="password" id="aiApiKey" placeholder="sk-..." />
-          <div class="row-gap" style="margin-top:10px;">
-            <button class="btn-primary" id="fetchModelsBtn">⚡ Detectar Modelos Disponibles</button>
-            <button class="btn-secondary" id="saveAiBtn">Guardar Ajustes</button>
+          <h3>Personalización del Editor de Escritura</h3>
+          <p class="muted small" style="margin-bottom:12px;">Configura la experiencia visual, la tipografía y las proporciones del lienzo de redacción en tus capítulos.</p>
+          <div class="row-gap" style="gap: 16px; margin-bottom: 12px;">
+            <div style="flex: 1; min-width: 200px;">
+              <label>Tipografía de Narración</label>
+              <select id="settingsEditorFontSelect">
+                <option value="font-sans">Sans-Serif Moderno (Inter / Segoe UI)</option>
+                <option value="font-serif">Serif Editorial (Georgia / Novela Literaria)</option>
+                <option value="font-mono">Monospace Técnico (Guion / Fira Code)</option>
+              </select>
+            </div>
+            <div style="flex: 1; min-width: 180px;">
+              <label>Ancho del Lienzo</label>
+              <select id="settingsEditorWidthSelect">
+                <option value="780px">Estándar Literario (780px)</option>
+                <option value="960px">Amplio y Panorámico (960px)</option>
+                <option value="100%">Completo Sin Márgenes (100%)</option>
+              </select>
+            </div>
+            <div style="flex: 1; min-width: 150px;">
+              <label>Tamaño de Texto</label>
+              <select id="settingsEditorSizeSelect">
+                <option value="size-standard">Estándar (17px)</option>
+                <option value="size-compact">Compacto (15px)</option>
+                <option value="size-large">Grande (19px)</option>
+              </select>
+            </div>
           </div>
-          <label style="margin-top:14px;">Modelo Seleccionado (Optimizado automáticamente para contexto)</label>
-          <select id="aiModelSelect">
-            <option value="gpt-4o-mini">gpt-4o-mini (Default)</option>
-          </select>
-          <div id="aiTestResult" class="muted" style="margin-top:8px;"></div>
+        </div>
+        <div class="card settings-card">
+          <h3>Muse AI (Asistente de Escritura & Conexión OpenRouter)</h3>
+          <p class="muted small" style="margin-bottom:14px;">LoreAra es offline-first y no incluye servidores de IA de fábrica. Elige cómo deseas conectar tu motor creativo:</p>
+
+          <!-- OPCIÓN A: INICIAR SESIÓN CON GOOGLE (OPENROUTER OAUTH PKCE) -->
+          <div class="openrouter-oauth-box" style="background:var(--bg-alt); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
+              <div>
+                <b style="font-size:14px; color:var(--text); display:block; margin-bottom:3px;">Opción 1: Conexión Rápida y Segura vía OpenRouter</b>
+                <span class="muted small">Conecta con tu cuenta de Google mediante OAuth PKCE. OpenRouter genera una clave temporal que la app usa para tus peticiones de IA.</span>
+              </div>
+              <button class="btn-google-auth" id="googleAuthBtn" title="Conectar Muse AI con tu cuenta de Google vía OpenRouter">
+                <svg width="18" height="18" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"></path>
+                  <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.73-2.46 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.15C3.32 21.44 7.37 24 12 24Z"></path>
+                  <path fill="#FBBC05" d="M5.28 14.24A7.19 7.19 0 0 1 4.9 12c0-.78.13-1.54.38-2.24V6.61H1.29A11.96 11.96 0 0 0 0 12c0 2.93 1.1 5.6 2.92 7.64l3.88-3.15-.52-2.25Z"></path>
+                  <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.37 0 3.32 2.56 1.29 6.61l3.99 3.15c.95-2.85 3.6-4.96 6.72-4.96Z"></path>
+                </svg>
+                <span>Iniciar sesión con Google</span>
+              </button>
+            </div>
+
+            <!-- Privacidad y Almacenamiento -->
+            <div style="background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:12px; font-size:12px;">
+              <div style="font-weight:700; color:var(--accent); margin-bottom:4px;">Garantía de Privacidad (Cero Servidores Intermedios):</div>
+              <ul style="margin:0 0 8px 18px; padding:0; color:var(--muted); line-height:1.5;">
+                <li>La clave <b>NUNCA se guarda en servidores de LoreAra</b> ni se comparte con terceros. Viaja directo desde tu equipo a OpenRouter.</li>
+                <li><b>Modo por defecto "Solo sesión":</b> la clave vive en memoria temporal y se elimina automáticamente al cerrar la app.</li>
+              </ul>
+              <div style="display:flex; align-items:center; gap:8px; margin-top:6px;">
+                <input type="checkbox" id="openrouterRememberCheck" style="width:auto; margin:0;" />
+                <label for="openrouterRememberCheck" style="color:var(--text); font-weight:600; cursor:pointer;">Recordar conexión (guardar clave cifrada en mi dispositivo local)</label>
+              </div>
+            </div>
+
+            <!-- Estado de la Conexión y Botones de Revocación -->
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+              <span id="openrouterStatusBadge" class="canon-badge canon-reference">Estado: No conectado vía Google</span>
+              <div class="row-gap" style="margin:0; gap:8px;">
+                <button class="btn-secondary small" id="openrouterMyKeysBtn" style="display:none;">Mis claves en OpenRouter ↗</button>
+                <button class="btn-danger small" id="openrouterLogoutBtn" style="display:none;">Cerrar sesión / Desactivar IA</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- OPCIÓN B: API KEY PROPIA O SERVIDOR LOCAL (OPENAI, GROQ, OLLAMA...) -->
+          <div style="border-top:1px solid var(--border); padding-top:14px;">
+            <b style="font-size:13.5px; color:var(--text); display:block; margin-bottom:6px;">Opción 2: API Key Manual o Servidor Local (OpenAI, Groq, Ollama / LM Studio)</b>
+            <label>URL Base de la API</label>
+            <input type="text" id="aiBaseUrl" placeholder="https://api.openai.com/v1 o http://localhost:11434/v1" />
+            <label>API Key (Se almacena únicamente de forma local)</label>
+            <input type="password" id="aiApiKey" placeholder="sk-..." />
+            <div class="row-gap" style="margin-top:10px;">
+              <button class="btn-primary" id="fetchModelsBtn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align:-2px;"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>Detectar Modelos Disponibles
+              </button>
+              <button class="btn-secondary" id="saveAiBtn">Guardar Ajustes Manuales</button>
+            </div>
+            <label style="margin-top:14px;">Modelo Seleccionado (Optimizado automáticamente para contexto y lore)</label>
+            <select id="aiModelSelect">
+              <option value="gpt-4o-mini">gpt-4o-mini (Default)</option>
+            </select>
+            <div id="aiTestResult" class="muted" style="margin-top:8px;"></div>
+          </div>
         </div>
         <div class="card settings-card">
           <h3>Datos</h3>
@@ -260,52 +401,66 @@
       </section>
 
       <!-- STORY EDITOR VIEW -->
-      <section class="view" id="view-editor">
+      <section class="view dashboard-container" id="view-editor">
         <div class="editor-layout">
           <div class="chapter-panel">
             <div class="panel-head">
               <h3 id="editorStoryTitle">Capítulos</h3>
-              <button class="icon-btn" id="addChapterBtn" title="Agregar nuevo capítulo">＋</button>
+              <button class="icon-btn" id="addChapterBtn" title="Agregar nuevo capítulo">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              </button>
             </div>
             <div id="chapterList" class="chapter-list"></div>
-            <button class="btn-secondary small" id="openAutoBookModalBtn" style="margin-top:10px; width:100%;">⚡ Crear libro automático</button>
+            <button class="btn-secondary small" id="openAutoBookModalBtn" style="margin-top:10px; width:100%; display:inline-flex; align-items:center; justify-content:center; gap:6px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>Crear libro automático
+            </button>
             <button class="link-btn back-link" data-view="stories">← Volver a Mis Historias</button>
           </div>
 
           <div class="editor-main">
-            <label class="field-label">Título de la historia</label>
-            <input type="text" id="storyTitleInput" class="story-title-input" placeholder="Escribe el título de tu historia..." />
+            <div class="chapter-editor-wrapper">
+              <label class="field-label">Título de la historia</label>
+              <input type="text" id="storyTitleInput" class="story-title-input" placeholder="Escribe el título de tu historia..." />
 
-            <div class="editor-toolbar">
-              <button data-cmd="bold" title="Negrita (Ctrl+B)"><b>B</b></button>
-              <button data-cmd="italic" title="Cursiva (Ctrl+I)"><i>I</i></button>
-              <button data-cmd="underline" title="Subrayado (Ctrl+U)"><u>U</u></button>
-              <button data-cmd="strikeThrough" title="Tachado"><s>S</s></button>
-              <button data-cmd="foreColor" data-arg="#ff3b5c" title="Color de texto (rojo)">A</button>
-              <button data-cmd="insertUnorderedList" title="Lista con viñetas">• ≡</button>
-              <button data-cmd="insertOrderedList" title="Lista numerada">1. ≡</button>
-              <button data-cmd="formatBlock" data-arg="blockquote" title="Insertar cita">❝</button>
-              <button id="insertLinkBtn" title="Insertar enlace">🔗</button>
-              <span class="toolbar-spacer"></span>
-              <button id="realtimeAssistantToggle" class="btn-secondary small" title="Activar/Desactivar sugerencias en tiempo real al escribir">✨ Sugerencia al escribir: <span id="assistantStatusText">OFF</span></button>
-              <button id="toggleLeftPanelBtn" title="Colapsar/Expandir panel izquierdo">◀ Panel</button>
-              <button id="readerModeBtn" title="Entrar en Modo Lectura Inmersivo">📖 Modo Lectura</button>
-              <button id="audiobookBtn" title="Reproductor de Audiolibro">🎧 Audiolibro</button>
-              <button id="toggleRightPanelBtn" title="Colapsar/Expandir panel derecho">Panel ▶</button>
+              <div class="editor-toolbar">
+                <button data-cmd="bold" title="Negrita (Ctrl+B)"><b>B</b></button>
+                <button data-cmd="italic" title="Cursiva (Ctrl+I)"><i>I</i></button>
+                <button data-cmd="underline" title="Subrayado (Ctrl+U)"><u>U</u></button>
+                <button data-cmd="strikeThrough" title="Tachado"><s>S</s></button>
+                <button data-cmd="foreColor" data-arg="#ff3b5c" title="Color de texto (rojo)">A</button>
+                <button data-cmd="insertUnorderedList" title="Lista con viñetas">• ≡</button>
+                <button data-cmd="insertOrderedList" title="Lista numerada">1. ≡</button>
+                <button data-cmd="formatBlock" data-arg="blockquote" title="Insertar cita">❝</button>
+                <button id="insertLinkBtn" title="Insertar enlace">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                </button>
+                <span class="toolbar-spacer"></span>
+                <button id="realtimeAssistantToggle" class="btn-secondary small" title="Activar/Desactivar sugerencias de estilo en tiempo real al escribir" style="display:inline-flex; align-items:center; gap:6px;">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>Asistente de estilo: <span id="assistantStatusText">OFF</span>
+                </button>
+                <button id="toggleLeftPanelBtn" title="Colapsar/Expandir panel izquierdo">◀ Panel</button>
+                <button id="readerModeBtn" title="Entrar en Modo Lectura Inmersivo" style="display:inline-flex; align-items:center; gap:6px;">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>Modo Lectura
+                </button>
+                <button id="audiobookBtn" title="Reproductor de Audiolibro" style="display:inline-flex; align-items:center; gap:6px;">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"></path><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path></svg>Audiolibro
+                </button>
+                <button id="toggleRightPanelBtn" title="Colapsar/Expandir panel derecho">Panel ▶</button>
               <span id="wordCount" class="muted small"></span>
-            </div>
+              </div>
 
-            <input type="text" id="chapterTitleInput" class="chapter-title-input" placeholder="Título del capítulo" />
-            <div style="position:relative; flex:1; display:flex; flex-direction:column;">
-              <div id="chapterEditor" class="chapter-editor" contenteditable="true" spellcheck="true" placeholder="Comienza a escribir..."></div>
-              <div id="realtimeSuggestionBox" class="realtime-suggestion-box" style="display:none;">
-                <div class="rsb-head">
-                  <span>✨ Sugerencia al escribir (IA en tiempo real)</span>
-                  <button class="icon-btn small" id="closeRsbBtn">✕</button>
-                </div>
-                <div class="rsb-body" id="rsbContent">Analizando coherencia y estilo...</div>
-                <div class="rsb-actions">
-                  <button class="btn-primary small" id="applyRsbBtn">Aplicar sugerencia</button>
+              <input type="text" id="chapterTitleInput" class="chapter-title-input" placeholder="Título del capítulo" />
+              <div style="position:relative; flex:1; display:flex; flex-direction:column;">
+                <div id="chapterEditor" class="chapter-editor size-standard font-sans" contenteditable="true" spellcheck="true" placeholder="Comienza a escribir tu obra..."></div>
+                <div id="realtimeSuggestionBox" class="realtime-suggestion-box" style="display:none;">
+                  <div class="rsb-head">
+                    <span style="display:inline-flex; align-items:center; gap:5px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>Sugerencia de redacción en tiempo real</span>
+                    <button class="icon-btn small" id="closeRsbBtn">✕</button>
+                  </div>
+                  <div class="rsb-body" id="rsbContent">Analizando coherencia y estilo...</div>
+                  <div class="rsb-actions">
+                    <button class="btn-primary small" id="applyRsbBtn">Aplicar sugerencia</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -326,15 +481,23 @@
               <textarea id="rulesText" placeholder="Establece las reglas base, leyes del universo, restricciones y fuentes de prioridad del libro..."></textarea>
             </div>
             <div class="tab-content" data-tab-content="docs">
-              <p class="muted small" style="margin-bottom:8px;">Adjunta PDFs o artículos. Elige cuál será la <b>Prioridad (Canon)</b> y cuáles derivarán de esa misma.</p>
-              <input type="file" id="attachDocFile" accept=".pdf,.txt,.md,.json" style="margin-bottom:8px;" />
-              <div id="storyDocsList" class="notes-list"></div>
+              <div class="side-panel-info-box">
+                <span class="info-label">Jerarquía del Lore (Canon vs. Derivado)</span>
+                <p class="muted small" style="margin:4px 0 0 0;">Asigna de forma explícita el nivel de autoridad para cada documento ('Canon Absoluto', 'Derivado' o 'Referencia') para que el asistente respete estrictamente tu canon.</p>
+              </div>
+              <div class="upload-action-bar">
+                <button class="btn-primary small w-100" id="triggerAttachDocBtn">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align:-2px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>Adjuntar PDF o Artículo
+                </button>
+                <input type="file" id="attachDocFile" accept=".pdf,.txt,.md,.json" style="display:none;" />
+              </div>
+              <div id="storyDocsList" class="sources-list-container"></div>
             </div>
             <div class="tab-content" data-tab-content="notes">
               <div id="storyNotesList" class="notes-list"></div>
               <div class="row-gap">
                 <input type="text" id="storyNoteInput" placeholder="Nueva nota..." />
-                <button class="btn-primary small" id="addStoryNote">＋</button>
+                <button class="btn-primary small" id="addStoryNote">Agregar</button>
               </div>
             </div>
             <div class="tab-content" data-tab-content="chars">
@@ -344,15 +507,26 @@
         </div>
 
         <!-- Muse AI floating widget -->
-        <div class="muse-widget" id="museWidget">
-          <div class="muse-head" id="museToggle">
-            <span class="muse-icon">🪄</span>
+        <div class="muse-widget collapsed" id="museWidget">
+          <div class="muse-head" id="museToggle" title="Haz clic para colapsar o expandir Muse AI">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1-1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>
             <span>Muse AI</span>
             <span class="muse-collapse">▾</span>
           </div>
           <div class="muse-body" id="museBody">
             <div class="muse-status muted" id="museStatus">Listo. Pídeme que sugiera una acción, describa una escena o continúe el capítulo.</div>
             <div id="museMessages" class="muse-messages"></div>
+            <div id="museGoogleAuthWidgetRow" style="margin-bottom:4px;">
+              <button class="btn-google-auth" id="museWidgetGoogleAuthBtn" style="width:100%; justify-content:center; font-size:12px; padding:6px 10px;">
+                <svg width="15" height="15" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"></path>
+                  <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.73-2.46 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.15C3.32 21.44 7.37 24 12 24Z"></path>
+                  <path fill="#FBBC05" d="M5.28 14.24A7.19 7.19 0 0 1 4.9 12c0-.78.13-1.54.38-2.24V6.61H1.29A11.96 11.96 0 0 0 0 12c0 2.93 1.1 5.6 2.92 7.64l3.88-3.15-.52-2.25Z"></path>
+                  <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.37 0 3.32 2.56 1.29 6.61l3.99 3.15c.95-2.85 3.6-4.96 6.72-4.96Z"></path>
+                </svg>
+                <span>Conectar Google (OpenRouter)</span>
+              </button>
+            </div>
             <div class="muse-quick">
               <button data-prompt="Sugiere la próxima acción de un personaje en esta escena.">Sugerir acción de personaje</button>
               <button data-prompt="Genera un outline breve para el siguiente capítulo.">Esquema del próximo capítulo</button>
@@ -366,6 +540,16 @@
           </div>
         </div>
       </section>
+
+      <!-- STATUS BAR INFERIOR -->
+      <footer id="status-bar" class="status-bar">
+        <div id="saveIndicator" class="save-indicator" title="Estado de guardado automático">
+          <span class="dot"></span> <span id="saveIndicatorText">Todo guardado</span>
+        </div>
+        <div class="status-right">
+          <span class="muted small">LoreAra V6.5</span>
+        </div>
+      </footer>
 
       <!-- AUTOMATIC BOOK GENERATOR MODAL -->
       <div class="modal-backdrop" id="autoBookModalBackdrop">
@@ -477,70 +661,194 @@
         </div>
       </div>
 
-      <!-- PROFILE & THEME MODAL -->
+      <!-- AUTHOR PROFILE & BADGES SHOWCASE MODAL -->
       <div class="modal-backdrop" id="profileModalBackdrop">
-        <div class="modal" style="width: 460px;">
-          <div class="modal-head">
-            <h3>Perfil, Insignias y Temas de Fondo</h3>
+        <div class="modal author-profile-modal">
+          <div class="modal-head" style="border-bottom: 1px solid var(--border); padding-bottom: 14px; margin-bottom: 18px;">
+            <div>
+              <h3 style="font-size: 19px; margin-bottom: 4px;">Perfil Literario, Insignias Ganadas y Obra Destacada</h3>
+              <div class="safety-verified-tag">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                <span>Filtro Editorial Seguro: No se permiten fotos de perfil ni portadas de libros con contenido NSFW o sensible.</span>
+              </div>
+            </div>
             <button class="icon-btn" id="closeProfileModal" title="Cerrar">✕</button>
           </div>
-          <label>Avatar / Icono de Perfil</label>
-          <div class="row-gap">
-            <select id="profileAvatarSelect">
-              <option value="✍️">✍️ Escritor/a</option>
-              <option value="👑">👑 Emperador/a</option>
-              <option value="🧙‍♂️">🧙‍♂️ Mago del Lore</option>
-              <option value="🐉">🐉 Dragón Supremo</option>
-              <option value="⚡">⚡ Relámpago Shonen</option>
-              <option value="🪐">🪐 Creador de Mundos</option>
-            </select>
-            <select id="profileBadgeSelect">
-              <option value="👑">👑 Corona Suprema</option>
-              <option value="⭐">⭐ Estrella del Canon</option>
-              <option value="🔥">🔥 Fuego Creativo</option>
-              <option value="💎">💎 Diamante Literario</option>
-            </select>
+
+          <div class="profile-modal-grid">
+            <!-- COLUMNA IZQUIERDA: PERFIL Y PORTADA DEL LIBRO -->
+            <div class="profile-col-left">
+              <div class="author-identity-card">
+                <div class="author-photo-container" id="profilePhotoWrapper" title="Haz clic o pulsa 'Subir foto' para cambiar tu foto de perfil (Sin NSFW)">
+                  <div class="author-photo-circle" id="profileModalAvatarPreview">AU</div>
+                  <div class="photo-overlay-hint">Cambiar foto</div>
+                </div>
+                <div class="author-info-fields">
+                  <label class="field-label" style="margin-bottom:2px;">Nombre de Autor/a</label>
+                  <input type="text" id="profileAuthorNameInput" class="author-name-input" placeholder="Tu nombre artístico..." />
+                  <div class="equipped-badge-display" id="profileModalEquippedBadge">
+                    <span class="canon-badge canon-primary">Autor Verificado</span>
+                  </div>
+                </div>
+              </div>
+              <div class="row-gap" style="margin-bottom: 18px;">
+                <button class="btn-secondary small" id="uploadProfilePhotoBtn">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align:-2px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>Subir foto de perfil
+                </button>
+                <button class="btn-icon-subtle small" id="removeProfilePhotoBtn" title="Quitar foto y usar monograma de iniciales" style="display:none; font-size:11.5px; padding:6px 8px;">Quitar foto</button>
+                <input type="file" id="profilePhotoInput" accept="image/*" style="display:none;" />
+              </div>
+
+              <!-- PORTADA DE TU LIBRO ESCRITO (OBRA DESTACADA) -->
+              <div class="featured-book-section">
+                <div class="section-subhead">
+                  <span>Portada de tu Libro Escrito (Obra Destacada)</span>
+                  <span class="safety-verified-tag small" style="margin:0;">Sin NSFW</span>
+                </div>
+                <div class="featured-book-card" id="featuredBookCard">
+                  <div class="featured-book-cover" id="featuredBookCoverPreview">
+                    <div class="cover-placeholder-text">Sin obra destacada aún</div>
+                  </div>
+                  <div class="featured-book-info">
+                    <div class="fb-title" id="fbTitleDisplay">Selecciona o sube una obra</div>
+                    <div class="fb-genre" id="fbGenreDisplay">Género literario</div>
+                    <div class="fb-stats" id="fbStatsDisplay">0 palabras · 0 cap.</div>
+                    <div class="fb-badge-row">
+                      <span class="canon-badge canon-primary">Libro Destacado</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="row-gap" style="margin-top: 12px; gap:8px;">
+                  <select id="profileStorySelect" style="flex:1; margin:0; font-size:12px;">
+                    <option value="">-- Elegir de mis historias --</option>
+                  </select>
+                  <button class="btn-secondary small" id="uploadCustomBookCoverBtn" title="Subir imagen de portada personalizada (Sin NSFW)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px; vertical-align:-2px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>Subir portada
+                  </button>
+                  <input type="file" id="profileCoverInput" accept="image/*" style="display:none;" />
+                </div>
+              </div>
+            </div>
+
+            <!-- COLUMNA DERECHA: INSIGNIAS GANADAS & APARIENCIA -->
+            <div class="profile-col-right">
+              <div class="section-subhead" style="margin-bottom:8px;">
+                <span>Insignias que has Ganado (<span id="earnedCountText">1</span>/<span id="totalCountText">9</span>)</span>
+                <span class="muted small">Haz clic en una insignia ganada para lucirla</span>
+              </div>
+              <div class="earned-badges-grid" id="earnedBadgesGrid">
+                <!-- Badges rendered dynamically -->
+              </div>
+
+              <!-- MARCO Y PALETA DE FONDO -->
+              <div class="profile-appearance-box" style="margin-top: 16px; border-top: 1px solid var(--border); padding-top: 14px;">
+                <div class="row-gap" style="justify-content:space-between; margin-bottom:4px; gap:12px;">
+                  <div style="flex:1;">
+                    <label style="margin:0; font-weight:600;">Marco del Avatar</label>
+                    <select id="profileBorderSelect" style="margin:4px 0 0 0;">
+                      <option value="rank-gold">Oro Editorial (Clásico)</option>
+                      <option value="rank-slate">Grafito Minimalista (Neutro)</option>
+                      <option value="rank-neon">Cian Moderno (Neón)</option>
+                      <option value="rank-purple">Índigo Místico (Púrpura)</option>
+                    </select>
+                  </div>
+                  <div style="flex:1;">
+                    <label style="margin:0; font-weight:600;">Paleta de Fondo</label>
+                    <select id="appThemeBackgroundSelect" style="margin:4px 0 0 0;">
+                      <option value="bg-obsidian">Obsidian Oscuro (Default)</option>
+                      <option value="bg-midnight">Medianoche Editorial</option>
+                      <option value="bg-graphite">Grafito Minimalista</option>
+                      <option value="bg-crimson">Terciopelo Carmesí</option>
+                      <option value="bg-forest">Bosque Esmeralda</option>
+                      <option value="bg-sepia">Sepia Editorial</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-          <label>Borde del Avatar</label>
-          <select id="profileBorderSelect">
-            <option value="rank-gold">👑 Oro Legendario</option>
-            <option value="rank-neon">⚡ Neón Cian/Rojo</option>
-            <option value="rank-purple">🔮 Amatista Mística</option>
-          </select>
 
-          <label style="margin-top:14px;">Estilo de Fondo de la Aplicación</label>
-          <select id="appThemeBackgroundSelect">
-            <option value="bg-obsidian">Obsidian Oscuro (Default)</option>
-            <option value="bg-cyberpunk">Cyberpunk Neón</option>
-            <option value="bg-midnight">Medianoche Profunda</option>
-            <option value="bg-crimson">Rojo Terciopelo</option>
-            <option value="bg-forest">Bosque Místico</option>
-          </select>
+          <div class="modal-foot" style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border); padding-top:14px; margin-top:18px;">
+            <span class="muted small">Tu perfil, foto y portadas se guardan localmente en tu dispositivo bajo norma de seguridad.</span>
+            <div class="row-gap" style="margin:0;">
+              <button class="btn-primary" id="saveProfileBtn">Guardar Perfil Literario</button>
+            </div>
+          </div>
+        </div>
+      </div>
 
-          <div class="row-gap" style="justify-content:flex-end; margin-top:20px;">
-            <button class="btn-primary" id="saveProfileBtn">Guardar Perfil y Tema</button>
+      <!-- NOTEBOOKLM UNIVERSAL REPOSITORY LINK MODAL -->
+      <div class="modal-backdrop" id="linkUniversalModalBackdrop">
+        <div class="modal" style="width: 560px;">
+          <div class="modal-head">
+            <h3>Vincular Fuente del Repositorio Universal</h3>
+            <button class="icon-btn" id="closeLinkUniversalModal" title="Cerrar">✕</button>
+          </div>
+          <p class="muted small">Selecciona fuentes globales compartidas para vincularlas a este libro. El sistema de deduplicación evita archivos repetidos.</p>
+          <div id="universalLinkOptionsList" class="sources-list-container" style="max-height:300px; overflow-y:auto; margin:14px 0;"></div>
+          <div class="row-gap" style="justify-content:flex-end">
+            <button class="btn-secondary" id="cancelLinkUniversalModal">Cancelar</button>
+            <button class="btn-primary" id="confirmLinkUniversalBtn">Vincular Seleccionadas</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- NOTEBOOKLM READER & AI SUMMARY MODAL -->
+      <div class="modal-backdrop" id="nblmReaderModalBackdrop">
+        <div class="modal" style="width: 720px; max-width: 95vw;">
+          <div class="modal-head" style="border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 14px;">
+            <div>
+              <h3 id="nblmReaderTitle" style="margin-bottom: 4px;">Lectura de Fuente</h3>
+              <div id="nblmReaderMetaRow" class="source-meta-row"></div>
+            </div>
+            <button class="icon-btn" id="closeNblmReaderModal" title="Cerrar">✕</button>
+          </div>
+
+          <div class="side-panel-info-box" style="margin-bottom:16px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span class="info-label">Resumen Ejecutivo del Lore (Muse AI)</span>
+              <button class="btn-secondary small" id="triggerNblmAiSummaryBtn" style="font-size:11px;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px; vertical-align:-2px;"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1-1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>Generar Resumen IA
+              </button>
+            </div>
+            <p id="nblmAiSummaryText" class="muted small" style="margin:8px 0 0 0; line-height:1.5;">Haz clic en 'Generar Resumen IA' para que Muse AI analice y sintetice los puntos clave de este documento.</p>
+          </div>
+
+          <label style="font-weight:600; font-size:12px; color:var(--text); margin-bottom:6px; display:block;">Contenido del Documento</label>
+          <div id="nblmFullContentText" style="background:var(--panel-2); border:1px solid var(--border); border-radius:8px; padding:14px; max-height:360px; overflow-y:auto; font-size:13.5px; line-height:1.65; white-space:pre-wrap;"></div>
+
+          <div class="row-gap" style="justify-content:flex-end; margin-top:16px;">
+            <button class="btn-primary" id="closeNblmReaderBtn">Cerrar</button>
           </div>
         </div>
       </div>
       <div class="modal-backdrop" id="welcomeModalBackdrop">
         <div class="modal onboarding-modal">
           <div class="onboarding-slide" data-slide="0">
-            <div class="onboarding-emoji">🚩</div>
+            <div class="onboarding-icon-box">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+            </div>
             <h2>¡Bienvenido/a a LoreAra!</h2>
             <p class="muted">Tu suite profesional de escritura con IA local, auto-detección de personajes, portadas, reglas de lore y generación de libros automáticos. Todo se guarda en tu equipo.</p>
           </div>
           <div class="onboarding-slide" data-slide="1" style="display:none">
-            <div class="onboarding-emoji">📖</div>
+            <div class="onboarding-icon-box">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+            </div>
             <h2>1. Crea historias y portadas</h2>
             <p class="muted">Sube una imagen de portada o color, define reglas de lore base y crea capítulos organizados con contador visible.</p>
           </div>
           <div class="onboarding-slide" data-slide="2" style="display:none">
-            <div class="onboarding-emoji">⚡</div>
+            <div class="onboarding-icon-box">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
+            </div>
             <h2>2. Crear Libro Automático</h2>
             <p class="muted">Usa el botón de generación automática en el editor para crear capítulos conectados por IA respetando fuentes y cronología.</p>
           </div>
           <div class="onboarding-slide" data-slide="3" style="display:none">
-            <div class="onboarding-emoji">🧑‍🎤</div>
+            <div class="onboarding-icon-box">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg>
+            </div>
             <h2>3. Auto-detección de Personalidades</h2>
             <p class="muted">Los personajes y sus personalidades se detectan y extraen automáticamente de tus capítulos, manteniendo total coherencia.</p>
           </div>
@@ -561,28 +869,20 @@
       <div class="modal-backdrop" id="helpModalBackdrop">
         <div class="modal help-modal">
           <div class="modal-head">
-            <h3>❓ Guía experta de LoreAra</h3>
+            <h3>Guía experta de LoreAra</h3>
             <button class="icon-btn" id="closeHelpModal" title="Cerrar">✕</button>
           </div>
           <div class="help-content">
-            <div class="help-item"><b>⚡ Crear Libro Automático</b> — disponible en el panel izquierdo del editor. Genera capítulos en cadena usando fuentes de referencia y cronología.</div>
-            <div class="help-item"><b>🧑‍🎤 Auto-detectar Personajes</b> — en la sección Personajes, analiza tus textos para extraer perfiles y personalidades sin registro manual.</div>
-            <div class="help-item"><b>🖼️ Portadas y Reglas Base</b> — personaliza cada obra con imagen de portada y establece leyes de lore inmutables.</div>
-            <div class="help-item"><b>📊 Contador de Capítulos visible</b> — visualiza claramente cuántos capítulos están escritos y su estado en todo momento.</div>
+            <div class="help-item"><b>Crear Libro Automático</b> — disponible en el panel izquierdo del editor. Genera capítulos en cadena usando fuentes de referencia y cronología.</div>
+            <div class="help-item"><b>Auto-detectar Personajes</b> — en la sección Personajes, analiza tus textos para extraer perfiles y personalidades sin registro manual.</div>
+            <div class="help-item"><b>Portadas y Reglas Base</b> — personaliza cada obra con imagen de portada y establece leyes de lore inmutables.</div>
+            <div class="help-item"><b>Contador de Capítulos visible</b> — visualiza claramente cuántos capítulos están escritos y su estado en todo momento.</div>
           </div>
           <div class="row-gap" style="justify-content:flex-end">
             <button class="btn-primary" id="replayOnboardingBtn">Ver tutorial de nuevo</button>
           </div>
         </div>
       </div>
-
-      <!-- Status Bar / Barra inferior de estado -->
-      <footer id="status-bar" class="status-bar">
-        <div id="saveIndicator" class="save-indicator" title="Estado de guardado automático">
-          <span class="dot"></span> <span id="saveIndicatorText">Todo guardado</span>
-        </div>
-        <div class="status-info muted small">LoreAra V6.5 · Motor local de escritura creativa</div>
-      </footer>
     </main>
   </div>
 
@@ -596,10 +896,10 @@
       </div>
       <div class="reader-controls-row">
         <div class="filter-selector">
-          <button class="filter-btn active" data-theme="dark" title="Modo Oscuro">🌙 Oscuro</button>
-          <button class="filter-btn" data-theme="sepia" title="Filtro Sepia (papel antiguo)">📜 Sepia</button>
-          <button class="filter-btn" data-theme="mono" title="Filtro Blanco y Negro / Alto Contraste">⬜ B&N</button>
-          <button class="filter-btn" data-theme="soft" title="Lectura Cómoda (suave)">👓 Cómodo</button>
+          <button class="filter-btn active" data-theme="dark" title="Modo Oscuro">Oscuro</button>
+          <button class="filter-btn" data-theme="sepia" title="Filtro Sepia (papel antiguo)">Sepia</button>
+          <button class="filter-btn" data-theme="mono" title="Filtro Blanco y Negro / Alto Contraste">B&N</button>
+          <button class="filter-btn" data-theme="soft" title="Lectura Cómoda (suave)">Cómodo</button>
         </div>
         <div class="audiobook-controls">
           <button class="icon-btn" id="abPlay" title="Reproducir audiolibro">▶</button>
@@ -613,7 +913,9 @@
             <option value="2">2.0x</option>
           </select>
         </div>
-        <button class="btn-secondary small" id="readerFullscreenBtn" title="Pantalla completa">🖵 Pantalla Completa</button>
+        <button class="btn-secondary small" id="readerFullscreenBtn" title="Pantalla completa" style="display:inline-flex; align-items:center; gap:5px;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>Pantalla Completa
+        </button>
         <button class="icon-btn" id="closeReaderBtn" title="Cerrar modo lectura">✕</button>
       </div>
     </div>
