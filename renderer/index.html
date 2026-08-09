@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'; connect-src *; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:;">
+<title>LoreAra</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- STEAM / WATT-PAD STYLE STARTUP LOADING SCREEN -->
+  <div class="startup-loader" id="startupLoader">
+    <div class="sl-content">
+      <div class="sl-logo-ring">
+        <svg width="70" height="70" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M50 10C27.9 10 10 27.9 10 50s17.9 40 40 40 40-17.9 40-40S72.1 10 50 10z" stroke="url(#sl_grad)" stroke-width="6" fill="#14161d"></path>
+          <path d="M30 65L50 30l20 35H30z" stroke="#00f2fe" stroke-width="4" stroke-linejoin="round" fill="none"></path>
+          <path d="M22 62c8 4 18 6 28 6s20-2 28-6" stroke="#ff3b5c" stroke-width="4" stroke-linecap="round"></path>
+          <defs>
+            <linearGradient id="sl_grad" x1="10" y1="10" x2="90" y2="90" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#ff3b5c"></stop>
+              <stop offset="1" stop-color="#00f2fe"></stop>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <h1 class="sl-title">LoreAra</h1>
+      <p class="sl-sub">Cargando motor de escritura creativa e investigación local...</p>
+      <div class="sl-progress-bar"><div></div></div>
+    </div>
+  </div>
+  <div class="app-shell">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-flag">
+          <svg width="30" height="30" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M50 10C27.9 10 10 27.9 10 50s17.9 40 40 40 40-17.9 40-40S72.1 10 50 10z" stroke="url(#logo_grad)" stroke-width="6" fill="#14161d"></path>
+            <path d="M30 65L50 30l20 35H30z" stroke="#00f2fe" stroke-width="4" stroke-linejoin="round" fill="none"></path>
+            <path d="M22 62c8 4 18 6 28 6s20-2 28-6" stroke="#ff3b5c" stroke-width="4" stroke-linecap="round"></path>
+            <path d="M50 68v14" stroke="#ff3b5c" stroke-width="4" stroke-linecap="round"></path>
+            <path d="M42 82h16" stroke="#ff3b5c" stroke-width="4" stroke-linecap="round"></path>
+            <defs>
+              <linearGradient id="logo_grad" x1="10" y1="10" x2="90" y2="90" gradientUnits="userSpaceOnUse">
+                <stop stop-color="#ff3b5c"></stop>
+                <stop offset="1" stop-color="#00f2fe"></stop>
+              </linearGradient>
+            </defs>
+          </svg>
+        </span>
+        <span class="brand-name">LoreAra</span>
+      </div>
+      <nav class="nav">
+        <button class="nav-item" data-view="home" title="Ir a Inicio">
+          <span class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg></span>Inicio
+        </button>
+        <button class="nav-item" data-view="stories" title="Ver y crear tus historias">
+          <span class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></span>Mis Historias
+        </button>
+      <!-- SOURCES / LIBRARY VIEW -->
+      <button class="nav-item" data-view="sources" title="Gestionar fuentes globales, PDFs y Canon">
+        <span class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path><line x1="12" y1="6" x2="12" y2="12"></line><line x1="9" y1="9" x2="15" y2="9"></line></svg></span>Fuentes & PDFs
+      </button>
+        <button class="nav-item" data-view="characters" title="Gestionar personajes y personalidades">
+          <span class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></span>Personajes
+        </button>
+        <button class="nav-item" data-view="collab" title="Compartir o importar historias">
+          <span class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 2.1l4 4-4 4"></path><path d="M3 12h18"></path><path d="M7 21.9l-4-4 4-4"></path></svg></span>Colaborar
+        </button>
+        <button class="nav-item" data-view="stats" title="Ver tus estadísticas de escritura">
+          <span class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg></span>Estadísticas
+        </button>
+      </nav>
+      <div class="sidebar-bottom">
+        <button class="nav-item" id="helpBtn" title="Ver guía rápida de uso">
+          <span class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></span>Ayuda
+        </button>
+        <button class="nav-item" data-view="settings" title="Ajustes y configuración de Muse AI">
+          <span class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span>Ajustes
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main" id="content-area">
+      <header class="topbar">
+        <div class="crumb" id="crumb">Inicio</div>
+        <div class="top-actions">
+          <input type="text" id="globalSearch" placeholder="Buscar historias, personajes..." title="Buscar en todas tus historias y personajes" />
+          <div id="searchResults" class="search-results"></div>
+          <button class="icon-btn" id="notifBtn" title="Notificaciones">🔔</button>
+          <button class="icon-btn" id="helpTopBtn" title="Guía rápida de uso">❓</button>
+          <div class="profile-avatar-wrap" id="profileAvatarBtn" title="Configurar perfil e insignias">
+            <div class="avatar-border rank-gold">
+              <div class="avatar" id="topbarAvatarIcon">✍️</div>
+            </div>
+            <span class="profile-badge">👑</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- HOME VIEW -->
+      <section class="view dashboard-container active" id="view-home">
+        <h1 class="page-title">Bienvenido de vuelta</h1>
+        <p class="page-sub">Continúa donde lo dejaste o inicia una nueva historia.</p>
+        <div class="home-grid">
+          <div class="card home-card">
+            <h3>Historias activas</h3>
+            <div class="big-stat" id="homeActiveStories">0</div>
+          </div>
+          <div class="card home-card">
+            <h3>Palabras totales</h3>
+            <div class="big-stat" id="homeTotalWords">0</div>
+          </div>
+          <div class="card home-card">
+            <h3>Capítulos completados</h3>
+            <div class="big-stat" id="homeCompletedChapters">0</div>
+          </div>
+          <div class="card home-card">
+            <h3>Racha de escritura</h3>
+            <div class="big-stat" id="homeStreak">0 días</div>
+          </div>
+        </div>
+
+        <div class="home-recent">
+          <div class="section-head">
+            <h2>Continuar escribiendo</h2>
+            <button class="link-btn" data-view="stories">Ver todas →</button>
+          </div>
+          <div class="recent-list" id="homeRecentList"></div>
+        </div>
+
+        <button class="fab" id="newStoryFab">+ Nueva historia</button>
+      </section>
+
+      <!-- MY STORIES VIEW -->
+      <section class="view" id="view-stories">
+        <div class="section-head">
+          <h1 class="page-title">Mis Historias</h1>
+          <button class="btn-primary" id="newStoryBtn">+ Nueva historia</button>
+        </div>
+        <div class="story-grid" id="storyGrid"></div>
+      </section>
+
+      <!-- GLOBAL SOURCES VIEW -->
+      <section class="view" id="view-sources">
+        <div class="section-head">
+          <h1 class="page-title">Gestor Global de Fuentes y PDFs</h1>
+          <button class="btn-primary" id="addGlobalSourceBtn">+ Adjuntar PDF o Artículo</button>
+          <input type="file" id="globalDocFileInput" accept=".pdf,.txt,.md,.json" style="display:none;" />
+        </div>
+        <p class="page-sub">Sube tus fuentes de referencia aquí, ordénalas por prioridad (Canon) y asígnalas a tus obras de forma global.</p>
+        <div id="globalSourcesList" class="story-grid"></div>
+      </section>
+
+      <!-- CHARACTERS VIEW -->
+      <section class="view" id="view-characters">
+        <div class="section-head">
+          <h1 class="page-title">Personajes y Personalidades</h1>
+          <div class="row-gap">
+            <select id="charStoryFilter"></select>
+            <button class="btn-secondary" id="autoDetectCharsBtn" title="Detectar automáticamente personajes y personalidades de los capítulos">⚡ Auto-detectar de historias</button>
+            <button class="btn-primary" id="newCharBtn">+ Nuevo personaje</button>
+          </div>
+        </div>
+        <div class="char-grid" id="charGrid"></div>
+      </section>
+
+      <!-- COLLAB VIEW -->
+      <section class="view" id="view-collab">
+        <h1 class="page-title">Colaboración</h1>
+        <p class="page-sub">LoreAra funciona 100% local. Exporta o importa archivos de respaldo y comparte tus notas con colaboradores.</p>
+        <div class="collab-columns">
+            <div class="card">
+            <h3>Compartir historia</h3>
+            <select id="collabStorySelect"></select>
+            <button class="btn-secondary" id="exportStoryBtn">Exportar historia (.json)</button>
+            <button class="btn-secondary" id="exportTxtBtn">Exportar como texto (.txt)</button>
+            <button class="btn-primary" id="exportPdfBtn" style="margin-top:6px;">Exportar libro como PDF (.html/print)</button>
+          </div>
+          <div class="card">
+            <h3>Importar historia compartida</h3>
+            <p class="muted">Importa un archivo .json exportado por otro colaborador o por ti mismo (respaldo).</p>
+            <button class="btn-secondary" id="importBtn">Importar archivo...</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Notas para colaboradores</h3>
+          <div id="collabNotesList" class="notes-list"></div>
+          <div class="row-gap">
+            <input type="text" id="collabNoteInput" placeholder="Escribe una nota para tu equipo..." />
+            <button class="btn-primary" id="addCollabNote">Agregar</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- STATS VIEW -->
+      <section class="view" id="view-stats">
+        <h1 class="page-title">Estadísticas</h1>
+        <div class="home-grid">
+          <div class="card home-card">
+            <h3>Palabras totales</h3>
+            <div class="big-stat" id="statTotalWords">0</div>
+          </div>
+          <div class="card home-card">
+            <h3>Capítulos totales</h3>
+            <div class="big-stat" id="statTotalChapters">0</div>
+          </div>
+          <div class="card home-card">
+            <h3>Personajes</h3>
+            <div class="big-stat" id="statTotalChars">0</div>
+          </div>
+          <div class="card home-card">
+            <h3>Racha actual</h3>
+            <div class="big-stat" id="statStreak">0 días</div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Progreso y capítulos por historia</h3>
+          <div id="statsBars"></div>
+        </div>
+        <div class="card">
+          <h3>Actividad reciente (últimos 14 días)</h3>
+          <div id="statsActivity" class="activity-bars"></div>
+        </div>
+      </section>
+
+      <!-- SETTINGS VIEW -->
+      <section class="view" id="view-settings">
+        <h1 class="page-title">Ajustes</h1>
+        <div class="card settings-card">
+          <h3>Perfil</h3>
+          <label>Nombre de autor/a</label>
+          <input type="text" id="authorNameInput" />
+        </div>
+        <div class="card settings-card">
+          <h3>Muse AI (asistente de escritura)</h3>
+          <p class="muted">Ingresa tu dirección URL base (Endpoint API) y tu Clave (API Key). LoreAra detectará automáticamente los modelos disponibles en tu proveedor.</p>
+          <label>URL Base de la API</label>
+          <input type="text" id="aiBaseUrl" placeholder="https://api.openai.com/v1 o https://openrouter.ai/api/v1" />
+          <label>API Key</label>
+          <input type="password" id="aiApiKey" placeholder="sk-..." />
+          <div class="row-gap" style="margin-top:10px;">
+            <button class="btn-primary" id="fetchModelsBtn">⚡ Detectar Modelos Disponibles</button>
+            <button class="btn-secondary" id="saveAiBtn">Guardar Ajustes</button>
+          </div>
+          <label style="margin-top:14px;">Modelo Seleccionado (Optimizado automáticamente para contexto)</label>
+          <select id="aiModelSelect">
+            <option value="gpt-4o-mini">gpt-4o-mini (Default)</option>
+          </select>
+          <div id="aiTestResult" class="muted" style="margin-top:8px;"></div>
+        </div>
+        <div class="card settings-card">
+          <h3>Datos</h3>
+          <div class="row-gap">
+            <button class="btn-secondary" id="settingsExportBtn">Exportar todo (.json)</button>
+            <button class="btn-secondary" id="settingsImportBtn">Importar (.json)</button>
+            <button class="btn-danger" id="settingsResetBtn">Borrar todos los datos</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- STORY EDITOR VIEW -->
+      <section class="view" id="view-editor">
+        <div class="editor-layout">
+          <div class="chapter-panel">
+            <div class="panel-head">
+              <h3 id="editorStoryTitle">Capítulos</h3>
+              <button class="icon-btn" id="addChapterBtn" title="Agregar nuevo capítulo">＋</button>
+            </div>
+            <div id="chapterList" class="chapter-list"></div>
+            <button class="btn-secondary small" id="openAutoBookModalBtn" style="margin-top:10px; width:100%;">⚡ Crear libro automático</button>
+            <button class="link-btn back-link" data-view="stories">← Volver a Mis Historias</button>
+          </div>
+
+          <div class="editor-main">
+            <label class="field-label">Título de la historia</label>
+            <input type="text" id="storyTitleInput" class="story-title-input" placeholder="Escribe el título de tu historia..." />
+
+            <div class="editor-toolbar">
+              <button data-cmd="bold" title="Negrita (Ctrl+B)"><b>B</b></button>
+              <button data-cmd="italic" title="Cursiva (Ctrl+I)"><i>I</i></button>
+              <button data-cmd="underline" title="Subrayado (Ctrl+U)"><u>U</u></button>
+              <button data-cmd="strikeThrough" title="Tachado"><s>S</s></button>
+              <button data-cmd="foreColor" data-arg="#ff3b5c" title="Color de texto (rojo)">A</button>
+              <button data-cmd="insertUnorderedList" title="Lista con viñetas">• ≡</button>
+              <button data-cmd="insertOrderedList" title="Lista numerada">1. ≡</button>
+              <button data-cmd="formatBlock" data-arg="blockquote" title="Insertar cita">❝</button>
+              <button id="insertLinkBtn" title="Insertar enlace">🔗</button>
+              <span class="toolbar-spacer"></span>
+              <button id="realtimeAssistantToggle" class="btn-secondary small" title="Activar/Desactivar sugerencias en tiempo real al escribir">✨ Sugerencia al escribir: <span id="assistantStatusText">OFF</span></button>
+              <button id="toggleLeftPanelBtn" title="Colapsar/Expandir panel izquierdo">◀ Panel</button>
+              <button id="readerModeBtn" title="Entrar en Modo Lectura Inmersivo">📖 Modo Lectura</button>
+              <button id="audiobookBtn" title="Reproductor de Audiolibro">🎧 Audiolibro</button>
+              <button id="toggleRightPanelBtn" title="Colapsar/Expandir panel derecho">Panel ▶</button>
+              <span id="wordCount" class="muted small"></span>
+            </div>
+
+            <input type="text" id="chapterTitleInput" class="chapter-title-input" placeholder="Título del capítulo" />
+            <div style="position:relative; flex:1; display:flex; flex-direction:column;">
+              <div id="chapterEditor" class="chapter-editor" contenteditable="true" spellcheck="true" placeholder="Comienza a escribir..."></div>
+              <div id="realtimeSuggestionBox" class="realtime-suggestion-box" style="display:none;">
+                <div class="rsb-head">
+                  <span>✨ Sugerencia al escribir (IA en tiempo real)</span>
+                  <button class="icon-btn small" id="closeRsbBtn">✕</button>
+                </div>
+                <div class="rsb-body" id="rsbContent">Analizando coherencia y estilo...</div>
+                <div class="rsb-actions">
+                  <button class="btn-primary small" id="applyRsbBtn">Aplicar sugerencia</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="side-panel">
+            <div class="panel-tabs">
+              <button class="tab-btn active" data-tab="outline" title="Esquema general">Esquema</button>
+              <button class="tab-btn" data-tab="rules" title="Reglas y Lore base del libro">Reglas</button>
+              <button class="tab-btn" data-tab="docs" title="Adjuntar PDFs y artículos de referencia">Fuentes</button>
+              <button class="tab-btn" data-tab="notes" title="Notas rápidas">Notas</button>
+              <button class="tab-btn" data-tab="chars" title="Elenco y personalidades">Elenco</button>
+            </div>
+            <div class="tab-content active" data-tab-content="outline">
+              <textarea id="outlineText" placeholder="Escribe el esquema / outline de esta historia..."></textarea>
+            </div>
+            <div class="tab-content" data-tab-content="rules">
+              <textarea id="rulesText" placeholder="Establece las reglas base, leyes del universo, restricciones y fuentes de prioridad del libro..."></textarea>
+            </div>
+            <div class="tab-content" data-tab-content="docs">
+              <p class="muted small" style="margin-bottom:8px;">Adjunta PDFs o artículos. Elige cuál será la <b>Prioridad (Canon)</b> y cuáles derivarán de esa misma.</p>
+              <input type="file" id="attachDocFile" accept=".pdf,.txt,.md,.json" style="margin-bottom:8px;" />
+              <div id="storyDocsList" class="notes-list"></div>
+            </div>
+            <div class="tab-content" data-tab-content="notes">
+              <div id="storyNotesList" class="notes-list"></div>
+              <div class="row-gap">
+                <input type="text" id="storyNoteInput" placeholder="Nueva nota..." />
+                <button class="btn-primary small" id="addStoryNote">＋</button>
+              </div>
+            </div>
+            <div class="tab-content" data-tab-content="chars">
+              <div id="storyCastList" class="cast-list"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Muse AI floating widget -->
+        <div class="muse-widget" id="museWidget">
+          <div class="muse-head" id="museToggle">
+            <span class="muse-icon">🪄</span>
+            <span>Muse AI</span>
+            <span class="muse-collapse">▾</span>
+          </div>
+          <div class="muse-body" id="museBody">
+            <div class="muse-status muted" id="museStatus">Listo. Pídeme que sugiera una acción, describa una escena o continúe el capítulo.</div>
+            <div id="museMessages" class="muse-messages"></div>
+            <div class="muse-quick">
+              <button data-prompt="Sugiere la próxima acción de un personaje en esta escena.">Sugerir acción de personaje</button>
+              <button data-prompt="Genera un outline breve para el siguiente capítulo.">Esquema del próximo capítulo</button>
+              <button data-prompt="Describe el entorno actual con más detalle sensorial.">Describir entorno</button>
+              <button data-prompt="Continúa el capítulo actual con 2 párrafos, manteniendo el tono.">Continuar capítulo</button>
+            </div>
+            <div class="muse-input-row">
+              <input type="text" id="museInput" placeholder="Pídele algo a Muse AI..." />
+              <button id="museSend" class="btn-primary small">Enviar</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- AUTOMATIC BOOK GENERATOR MODAL -->
+      <div class="modal-backdrop" id="autoBookModalBackdrop">
+        <div class="modal" style="width: 580px;">
+          <div class="modal-head">
+            <h3>⚡ Crear Libro Automático (Multi-Fuente, PDFs y Canon)</h3>
+            <button class="icon-btn" id="closeAutoBookModal" title="Cerrar">✕</button>
+          </div>
+          <p class="muted small">Genera automáticamente capítulos coherentes respetando la fuente prioritaria (Canon) y los documentos derivados adjuntos.</p>
+          
+          <label>Seleccionar fuente principal (Prioridad / Canon)</label>
+          <select id="autoBookPrioritySourceSelect">
+            <option value="">Usar reglas base y sinopsis general</option>
+          </select>
+
+          <label>Material de referencia adicional (Derivados)</label>
+          <textarea id="autoBookSources" rows="3" placeholder="Pega aquí resúmenes, fragmentos de fuentes o lore complementario..."></textarea>
+          
+          <label>Reglas cronológicas y de continuidad</label>
+          <textarea id="autoBookChronology" rows="2" placeholder="Ej: Mantener orden cronológico estricto, respetar nivel de poder, no contradecir fuentes..."></textarea>
+          
+          <div style="display:flex; gap:10px;">
+            <div style="flex:1;">
+              <label>Capítulos a generar</label>
+              <input type="number" id="autoBookCount" value="3" min="1" max="10" />
+            </div>
+            <div style="flex:1;">
+              <label>Enfoque narrativo</label>
+              <select id="autoBookTone">
+                <option value="accion">Acción y Aventura (Shonen)</option>
+                <option value="drama">Drama e Introspección</option>
+                <option value="misterio">Misterio y Tensión</option>
+                <option value="epico">Fantasía Épica</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="autoBookLogs" class="notes-list" style="margin-top:12px; max-height:140px; background:var(--bg); padding:8px; border-radius:8px; font-family:monospace; font-size:11px;">
+            <div class="muted">Esperando inicio de generación automática...</div>
+          </div>
+
+          <div class="row-gap" style="justify-content:flex-end; margin-top:14px;">
+            <button class="btn-secondary" id="cancelAutoBookBtn">Cerrar</button>
+            <button class="btn-primary" id="startAutoBookBtn">⚡ Iniciar Generación Automática</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CHARACTER DETAIL MODAL -->
+      <div class="modal-backdrop" id="charModalBackdrop">
+        <div class="modal">
+          <div class="modal-head">
+            <h3>Personaje y Personalidad</h3>
+            <button class="icon-btn" id="closeCharModal" title="Cerrar">✕</button>
+          </div>
+          <label>Historia</label>
+          <select id="charStorySelect"></select>
+          <label>Nombre</label>
+          <input type="text" id="charName" />
+          <label>Rol</label>
+          <input type="text" id="charRole" placeholder="Protagonista, antagonista, secundario..." />
+          <label>Descripción y Personalidad (Auto-detectada o manual)</label>
+          <textarea id="charDesc" rows="4" placeholder="Personalidad, motivaciones, comportamiento..."></textarea>
+          <label>Rasgos (separados por coma)</label>
+          <input type="text" id="charTraits" placeholder="valiente, sarcástico, leal" />
+          <div class="row-gap">
+            <button class="btn-primary" id="saveCharBtn">Guardar</button>
+            <button class="btn-danger" id="deleteCharBtn">Eliminar</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- NEW STORY MODAL -->
+      <div class="modal-backdrop" id="storyModalBackdrop">
+        <div class="modal">
+          <div class="modal-head">
+            <h3>Nueva historia</h3>
+            <button class="icon-btn" id="closeStoryModal" title="Cerrar">✕</button>
+          </div>
+          <label>Título</label>
+          <input type="text" id="newStoryTitle" placeholder="El título de tu obra" />
+          <label>Género</label>
+          <input type="text" id="newStoryGenre" placeholder="Fantasía, Ciencia ficción, Romance, Shonen..." />
+          <label>Sinopsis</label>
+          <textarea id="newStorySynopsis" rows="3" placeholder="De qué trata tu historia..."></textarea>
+          <label>Reglas y Lore Base</label>
+          <textarea id="newStoryRules" rows="2" placeholder="Leyes del universo, restricciones del fanfic..."></textarea>
+          <label>Imagen de portada (Archivo de imagen)</label>
+          <input type="file" id="newStoryCoverFile" accept="image/*" />
+          <label>Color de respaldo (si no hay imagen)</label>
+          <input type="color" id="newStoryColor" value="#c81e3a" />
+          <div class="row-gap" style="margin-top:14px;">
+            <button class="btn-primary" id="createStoryBtn">Crear historia</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CONFIRM MODAL -->
+      <div class="modal-backdrop" id="confirmModalBackdrop">
+        <div class="modal small-modal">
+          <div class="modal-head">
+            <h3 id="confirmModalTitle">¿Confirmar?</h3>
+          </div>
+          <p id="confirmModalText" class="muted"></p>
+          <div class="row-gap" style="justify-content:flex-end">
+            <button class="btn-secondary" id="confirmModalCancel">Cancelar</button>
+            <button class="btn-danger" id="confirmModalOk">Confirmar</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- PROFILE & THEME MODAL -->
+      <div class="modal-backdrop" id="profileModalBackdrop">
+        <div class="modal" style="width: 460px;">
+          <div class="modal-head">
+            <h3>Perfil, Insignias y Temas de Fondo</h3>
+            <button class="icon-btn" id="closeProfileModal" title="Cerrar">✕</button>
+          </div>
+          <label>Avatar / Icono de Perfil</label>
+          <div class="row-gap">
+            <select id="profileAvatarSelect">
+              <option value="✍️">✍️ Escritor/a</option>
+              <option value="👑">👑 Emperador/a</option>
+              <option value="🧙‍♂️">🧙‍♂️ Mago del Lore</option>
+              <option value="🐉">🐉 Dragón Supremo</option>
+              <option value="⚡">⚡ Relámpago Shonen</option>
+              <option value="🪐">🪐 Creador de Mundos</option>
+            </select>
+            <select id="profileBadgeSelect">
+              <option value="👑">👑 Corona Suprema</option>
+              <option value="⭐">⭐ Estrella del Canon</option>
+              <option value="🔥">🔥 Fuego Creativo</option>
+              <option value="💎">💎 Diamante Literario</option>
+            </select>
+          </div>
+          <label>Borde del Avatar</label>
+          <select id="profileBorderSelect">
+            <option value="rank-gold">👑 Oro Legendario</option>
+            <option value="rank-neon">⚡ Neón Cian/Rojo</option>
+            <option value="rank-purple">🔮 Amatista Mística</option>
+          </select>
+
+          <label style="margin-top:14px;">Estilo de Fondo de la Aplicación</label>
+          <select id="appThemeBackgroundSelect">
+            <option value="bg-obsidian">Obsidian Oscuro (Default)</option>
+            <option value="bg-cyberpunk">Cyberpunk Neón</option>
+            <option value="bg-midnight">Medianoche Profunda</option>
+            <option value="bg-crimson">Rojo Terciopelo</option>
+            <option value="bg-forest">Bosque Místico</option>
+          </select>
+
+          <div class="row-gap" style="justify-content:flex-end; margin-top:20px;">
+            <button class="btn-primary" id="saveProfileBtn">Guardar Perfil y Tema</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-backdrop" id="welcomeModalBackdrop">
+        <div class="modal onboarding-modal">
+          <div class="onboarding-slide" data-slide="0">
+            <div class="onboarding-emoji">🚩</div>
+            <h2>¡Bienvenido/a a LoreAra!</h2>
+            <p class="muted">Tu suite profesional de escritura con IA local, auto-detección de personajes, portadas, reglas de lore y generación de libros automáticos. Todo se guarda en tu equipo.</p>
+          </div>
+          <div class="onboarding-slide" data-slide="1" style="display:none">
+            <div class="onboarding-emoji">📖</div>
+            <h2>1. Crea historias y portadas</h2>
+            <p class="muted">Sube una imagen de portada o color, define reglas de lore base y crea capítulos organizados con contador visible.</p>
+          </div>
+          <div class="onboarding-slide" data-slide="2" style="display:none">
+            <div class="onboarding-emoji">⚡</div>
+            <h2>2. Crear Libro Automático</h2>
+            <p class="muted">Usa el botón de generación automática en el editor para crear capítulos conectados por IA respetando fuentes y cronología.</p>
+          </div>
+          <div class="onboarding-slide" data-slide="3" style="display:none">
+            <div class="onboarding-emoji">🧑‍🎤</div>
+            <h2>3. Auto-detección de Personalidades</h2>
+            <p class="muted">Los personajes y sus personalidades se detectan y extraen automáticamente de tus capítulos, manteniendo total coherencia.</p>
+          </div>
+          <div class="onboarding-nav">
+            <button class="link-btn" id="onboardingSkip">Saltar</button>
+            <div class="onboarding-dots">
+              <span class="odot active" data-i="0"></span>
+              <span class="odot" data-i="1"></span>
+              <span class="odot" data-i="2"></span>
+              <span class="odot" data-i="3"></span>
+            </div>
+            <button class="btn-primary small" id="onboardingNext">Siguiente</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- HELP MODAL -->
+      <div class="modal-backdrop" id="helpModalBackdrop">
+        <div class="modal help-modal">
+          <div class="modal-head">
+            <h3>❓ Guía experta de LoreAra</h3>
+            <button class="icon-btn" id="closeHelpModal" title="Cerrar">✕</button>
+          </div>
+          <div class="help-content">
+            <div class="help-item"><b>⚡ Crear Libro Automático</b> — disponible en el panel izquierdo del editor. Genera capítulos en cadena usando fuentes de referencia y cronología.</div>
+            <div class="help-item"><b>🧑‍🎤 Auto-detectar Personajes</b> — en la sección Personajes, analiza tus textos para extraer perfiles y personalidades sin registro manual.</div>
+            <div class="help-item"><b>🖼️ Portadas y Reglas Base</b> — personaliza cada obra con imagen de portada y establece leyes de lore inmutables.</div>
+            <div class="help-item"><b>📊 Contador de Capítulos visible</b> — visualiza claramente cuántos capítulos están escritos y su estado en todo momento.</div>
+          </div>
+          <div class="row-gap" style="justify-content:flex-end">
+            <button class="btn-primary" id="replayOnboardingBtn">Ver tutorial de nuevo</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Status Bar / Barra inferior de estado -->
+      <footer id="status-bar" class="status-bar">
+        <div id="saveIndicator" class="save-indicator" title="Estado de guardado automático">
+          <span class="dot"></span> <span id="saveIndicatorText">Todo guardado</span>
+        </div>
+        <div class="status-info muted small">LoreAra V6.5 · Motor local de escritura creativa</div>
+      </footer>
+    </main>
+  </div>
+
+  <!-- READER MODE / AUDIOBOOK OVERLAY -->
+  <div class="reader-overlay" id="readerOverlay">
+    <div class="reader-topbar">
+      <div class="reader-title-group">
+        <span id="readerStoryTitleDisplay" class="reader-story-title">Historia</span>
+        <span class="muted">/</span>
+        <span id="readerChapterTitleDisplay" class="reader-chapter-title">Capítulo</span>
+      </div>
+      <div class="reader-controls-row">
+        <div class="filter-selector">
+          <button class="filter-btn active" data-theme="dark" title="Modo Oscuro">🌙 Oscuro</button>
+          <button class="filter-btn" data-theme="sepia" title="Filtro Sepia (papel antiguo)">📜 Sepia</button>
+          <button class="filter-btn" data-theme="mono" title="Filtro Blanco y Negro / Alto Contraste">⬜ B&N</button>
+          <button class="filter-btn" data-theme="soft" title="Lectura Cómoda (suave)">👓 Cómodo</button>
+        </div>
+        <div class="audiobook-controls">
+          <button class="icon-btn" id="abPlay" title="Reproducir audiolibro">▶</button>
+          <button class="icon-btn" id="abPause" title="Pausar audiolibro">⏸</button>
+          <button class="icon-btn" id="abStop" title="Detener audiolibro">⏹</button>
+          <select id="abSpeed" title="Velocidad de lectura" style="width:70px; margin:0; padding:4px;">
+            <option value="0.75">0.75x</option>
+            <option value="1" selected>1.0x</option>
+            <option value="1.25">1.25x</option>
+            <option value="1.5">1.5x</option>
+            <option value="2">2.0x</option>
+          </select>
+        </div>
+        <button class="btn-secondary small" id="readerFullscreenBtn" title="Pantalla completa">🖵 Pantalla Completa</button>
+        <button class="icon-btn" id="closeReaderBtn" title="Cerrar modo lectura">✕</button>
+      </div>
+    </div>
+    <div class="reader-content-wrap" id="readerContentWrap">
+      <div class="reader-book-container" id="readerBookContainer">
+        <h1 id="readerHeading" class="reader-heading"></h1>
+        <div id="readerBody" class="reader-body"></div>
+      </div>
+    </div>
+    <div class="reader-footer">
+      <button class="btn-secondary" id="readerPrevBtn">← Capítulo Anterior</button>
+      <span id="readerProgressIndicator" class="muted small">Capítulo 1 de 1</span>
+      <button class="btn-secondary" id="readerNextBtn">Capítulo Siguiente →</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

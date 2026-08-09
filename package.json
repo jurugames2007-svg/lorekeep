@@ -1,0 +1,36 @@
+{
+  "name": "loreara-desktop",
+  "version": "1.0.0",
+  "description": "LoreAra - Escritorio de escritura creativa con asistente de IA (Muse AI)",
+  "main": "main.js",
+  "author": "LoreAra",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.loreara.app",
+    "productName": "LoreAra",
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "assets/**/*"
+    ],
+    "linux": {
+      "target": ["AppImage"],
+      "category": "Office"
+    },
+    "win": {
+      "target": ["nsis"]
+    },
+    "mac": {
+      "target": ["dmg"]
+    }
+  }
+}
