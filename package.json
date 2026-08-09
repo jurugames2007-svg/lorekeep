@@ -7,6 +7,7 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
+    "preview": "python3 -m http.server 3000 --directory renderer",
     "dist": "electron-builder"
   },
   "devDependencies": {
