@@ -12,6 +12,9 @@ if (!window.loreara) {
         settings: {
           theme: 'dark',
           authorName: 'Escritor/a',
+          uiScale: 'compact',
+          density: 'comfortable',
+          editorAppearance: { font: 'font-sans', width: '680px', size: 'size-standard' },
           ai: { provider: 'openai', baseUrl: 'https://api.openai.com/v1', apiKey: '', model: 'gpt-4o-mini' }
         },
         stories: [],
@@ -831,6 +834,13 @@ function renderNotebookLMStudio() {
   if (!booksListEl) return;
 
   if (!DATA.globalDocs) DATA.globalDocs = [];
+  if (!DATA.settings.uiScale) DATA.settings.uiScale = 'compact';
+  if (!DATA.settings.density) DATA.settings.density = 'comfortable';
+  if (!DATA.settings.editorAppearance) DATA.settings.editorAppearance = { font: 'font-sans', width: '680px', size: 'size-standard' };
+  // migrar ancho por defecto si era 780 viejo → ahora 680 editorial
+  if (DATA.settings.editorAppearance.width === '780px' && DATA.settings.uiScale === 'compact') {
+    // mantener respeto a preferencia previa, no forzar
+  }
   if (!DATA.stories) DATA.stories = [];
 
   if (activeStudioBookId !== 'universal' && !getStory(activeStudioBookId)) {
@@ -1348,6 +1358,13 @@ function renderSettings() {
   sel.innerHTML = `<option value="${currentModel}">${currentModel}</option>`;
   sel.value = currentModel;
   $('#aiTestResult').textContent = '';
+  // escala y densidad
+  const uiScaleSel = $('#settingsUiScaleSelect');
+  if (uiScaleSel) uiScaleSel.value = DATA.settings.uiScale || 'compact';
+  const densSel = $('#settingsDensitySelect');
+  if (densSel) densSel.value = DATA.settings.density || 'comfortable';
+  applyUiScale();
+  applyDensity();
   updateOpenRouterUI();
 }
 
@@ -2611,9 +2628,34 @@ if ($('#appThemeBackgroundSelect')) {
   });
 }
 
+function applyUiScale() {
+  const scale = (DATA && DATA.settings && DATA.settings.uiScale) || 'compact';
+  const html = document.documentElement;
+  html.classList.remove('ui-compact','ui-balanced','ui-spacious');
+  html.classList.add('ui-' + scale);
+  // mapear a font-size raíz: compact 14px (base reducida), balanced 15px, spacious 16px
+  if (scale === 'compact') html.style.fontSize = '14px';
+  else if (scale === 'balanced') html.style.fontSize = '15px';
+  else if (scale === 'spacious') html.style.fontSize = '16px';
+  // sincronizar selects si existen
+  const sel = document.getElementById('settingsUiScaleSelect');
+  if (sel && sel.value !== scale) sel.value = scale;
+}
+
+function applyDensity() {
+  const dens = (DATA && DATA.settings && DATA.settings.density) || 'comfortable';
+  document.body.classList.remove('density-compact','density-comfortable');
+  document.body.classList.add('density-' + dens);
+  const sel = document.getElementById('settingsDensitySelect');
+  if (sel && sel.value !== dens) sel.value = dens;
+}
+
 function applyProfileAndTheme() {
   if (!DATA || !DATA.settings) return;
   const settings = DATA.settings;
+  // preservar clases de densidad y tema al resetear body
+  const keepDensity = settings.density || 'comfortable';
+  const keepUi = settings.uiScale || 'compact';
   const avatarEl = $('#topbarAvatarIcon');
   if (avatarEl) {
     if (settings.profilePhoto) {
@@ -2633,10 +2675,14 @@ function applyProfileAndTheme() {
   if (borderEl) borderEl.className = 'avatar-border ' + border;
 
   const theme = settings.appTheme || 'bg-obsidian';
+  // reconstruir clases de body sin perder densidad
   document.body.className = '';
   if (theme !== 'bg-obsidian') {
     document.body.classList.add('theme-' + theme.replace('bg-', ''));
   }
+  document.body.classList.add('density-' + keepDensity);
+  applyUiScale();
+  applyDensity();
   applyEditorAppearance();
 }
 
@@ -2644,13 +2690,13 @@ function applyProfileAndTheme() {
 
 function applyEditorAppearance() {
   if (!DATA || !DATA.settings) return;
-  const appearance = DATA.settings.editorAppearance || { font: 'font-sans', width: '780px', size: 'size-standard' };
+  const appearance = DATA.settings.editorAppearance || { font: 'font-sans', width: '680px', size: 'size-standard' };
   const editor = $('#chapterEditor');
   if (editor) {
     editor.classList.remove('font-serif', 'font-sans', 'font-mono', 'size-compact', 'size-standard', 'size-large');
     editor.classList.add(appearance.font || 'font-sans', appearance.size || 'size-standard');
   }
-  document.documentElement.style.setProperty('--editor-width', appearance.width || '780px');
+  document.documentElement.style.setProperty('--editor-width', appearance.width || '680px');
 
   const fontSel = $('#settingsEditorFontSelect');
   const widthSel = $('#settingsEditorWidthSelect');
@@ -2676,6 +2722,18 @@ const onAppearanceChange = () => {
 if ($('#settingsEditorFontSelect')) $('#settingsEditorFontSelect').addEventListener('change', onAppearanceChange);
 if ($('#settingsEditorWidthSelect')) $('#settingsEditorWidthSelect').addEventListener('change', onAppearanceChange);
 if ($('#settingsEditorSizeSelect')) $('#settingsEditorSizeSelect').addEventListener('change', onAppearanceChange);
+if ($('#settingsUiScaleSelect')) $('#settingsUiScaleSelect').addEventListener('change', (e) => {
+  DATA.settings.uiScale = e.target.value;
+  scheduleSave();
+  applyUiScale();
+  showToast(e.target.value === 'compact' ? 'Escala compacta activada: interfaz más calmada y menos invasiva.' : e.target.value === 'balanced' ? 'Escala equilibrada activada.' : 'Escala amplia activada: mayor legibilidad.');
+});
+if ($('#settingsDensitySelect')) $('#settingsDensitySelect').addEventListener('change', (e) => {
+  DATA.settings.density = e.target.value;
+  scheduleSave();
+  applyDensity();
+  showToast(e.target.value === 'compact' ? 'Densidad compacta: más contenido visible sin saturar.' : 'Densidad cómoda: respiración editorial.');
+});
 
 async function initApp() {
   if (!DATA) DATA = await window.loreara.loadData();
@@ -2683,6 +2741,13 @@ async function initApp() {
   if (!DATA.collabNotes) DATA.collabNotes = [];
   if (!DATA.activityLog) DATA.activityLog = [];
   if (!DATA.globalDocs) DATA.globalDocs = [];
+  if (!DATA.settings.uiScale) DATA.settings.uiScale = 'compact';
+  if (!DATA.settings.density) DATA.settings.density = 'comfortable';
+  if (!DATA.settings.editorAppearance) DATA.settings.editorAppearance = { font: 'font-sans', width: '680px', size: 'size-standard' };
+  // migrar ancho por defecto si era 780 viejo → ahora 680 editorial
+  if (DATA.settings.editorAppearance.width === '780px' && DATA.settings.uiScale === 'compact') {
+    // mantener respeto a preferencia previa, no forzar
+  }
 
   // Hide startup loader after 1.5s (Steam-like cinematic boot)
   setTimeout(() => {

@@ -296,8 +296,30 @@
           <input type="text" id="authorNameInput" />
         </div>
         <div class="card settings-card">
+          <h3>Escala y Densidad Visual — modo escritura prolongada</h3>
+          <p class="muted small" style="margin-bottom:12px;">Interfaz recalibrada a escala compacta editorial (menos invasiva). Ajusta la densidad global sin perder legibilidad. Recomendado para escritores que pasan horas en el editor.</p>
+          <div class="row-gap" style="gap: 12px; margin-bottom: 12px; align-items:flex-end;">
+            <div style="flex: 1; min-width: 180px;">
+              <label>Escala global de la interfaz</label>
+              <select id="settingsUiScaleSelect">
+                <option value="compact">Compacta — 90% (Recomendada • menos invasiva)</option>
+                <option value="balanced">Equilibrada — 100% (Clásica)</option>
+                <option value="spacious">Amplia — 108% (Accesible)</option>
+              </select>
+            </div>
+            <div style="flex: 1; min-width: 160px;">
+              <label>Densidad de tarjetas y listas</label>
+              <select id="settingsDensitySelect">
+                <option value="comfortable">Cómoda (equilibrio)</option>
+                <option value="compact">Compacta (más contenido visible)</option>
+              </select>
+            </div>
+            <span class="muted small" style="max-width:220px; line-height:1.4;">La escala compacta reduce ~10% tipografía, paddings y alturas para más respiración y menos fatiga. Se aplica al instante.</span>
+          </div>
+        </div>
+        <div class="card settings-card">
           <h3>Personalización del Editor de Escritura</h3>
-          <p class="muted small" style="margin-bottom:12px;">Configura la experiencia visual, la tipografía y las proporciones del lienzo de redacción en tus capítulos.</p>
+          <p class="muted small" style="margin-bottom:12px;">Configura la experiencia del lienzo. El ancho editorial óptimo es 680px (~66 caracteres por línea) para lectura y flujo.</p>
           <div class="row-gap" style="gap: 16px; margin-bottom: 12px;">
             <div style="flex: 1; min-width: 200px;">
               <label>Tipografía de Narración</label>
@@ -310,6 +332,7 @@
             <div style="flex: 1; min-width: 180px;">
               <label>Ancho del Lienzo</label>
               <select id="settingsEditorWidthSelect">
+                <option value="680px">Editorial Óptimo (680px • 66 caracteres)</option>
                 <option value="780px">Estándar Literario (780px)</option>
                 <option value="960px">Amplio y Panorámico (960px)</option>
                 <option value="100%">Completo Sin Márgenes (100%)</option>
@@ -318,9 +341,9 @@
             <div style="flex: 1; min-width: 150px;">
               <label>Tamaño de Texto</label>
               <select id="settingsEditorSizeSelect">
-                <option value="size-standard">Estándar (17px)</option>
-                <option value="size-compact">Compacto (15px)</option>
-                <option value="size-large">Grande (19px)</option>
+                <option value="size-standard">Equilibrado (14.8px • recomendado)</option>
+                <option value="size-compact">Compacto (13.8px • más denso)</option>
+                <option value="size-large">Grande (16px • accesible)</option>
               </select>
             </div>
           </div>
