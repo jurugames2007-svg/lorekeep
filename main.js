@@ -13,6 +13,10 @@ function defaultData() {
     settings: {
       theme: 'dark',
       authorName: 'Escritor/a',
+      uiScale: 'compact',
+      density: 'comfortable',
+      editorAppearance: { font: 'font-sans', width: '680px', size: 'size-standard' },
+      onboardingSeen: false,
       ai: {
         provider: 'openai',
         baseUrl: 'https://api.openai.com/v1',
@@ -20,9 +24,11 @@ function defaultData() {
         model: 'gpt-4o-mini'
       }
     },
-    stories: [],
+    stories: [{"id": "story_demo_ecos_utopia", "title": "Ecos de Utopía — Demo 10/10", "genre": "Ciencia ficción • Misterio", "synopsis": "En un hábitat orbital donde la IA Mentor guarda la memoria colectiva, una archivista descubre que el canon ha sido editado.", "rules": "1. No viajes en el tiempo. 2. La IA Mentor no puede mentir (dice solo verdad, aunque calle). 3. El sector 7 es zona neutra y sagrada.", "outline": "Cap1 Revelación — Mara descubre discrepancia. Cap2 Consecuencia — Mentor elige. Cap3 Resolución — se revela editor.", "color": "#1a237e", "coverImage": null, "notes": [{"id": "note_demo_1", "text": "Demo 10/10 — coherencia con memoria. Duplícala para tu saga.", "date": "2026-08-10"}], "attachedDocs": [{"id": "doc_demo_canon", "name": "Manual.pdf — Canon Absoluto", "content": "La IA Mentor es azul, habita el sector 7, es incapaz de mentir, fue creada en 2147 para custodiar la memoria colectiva. El sector 7 es sagrado y neutro. No viajes en el tiempo.", "priorityLevel": "primary", "isPriority": true, "attachedAt": 1723267200000}, {"id": "doc_demo_derivado", "name": "Bitácora derivada.txt", "content": "Testimonios: la fundación tuvo un disenso borrado. Fecha anómala 2147-03-15.", "priorityLevel": "derived", "attachedAt": 1723267200000}], "chapters": [{"id": "ch_demo_1", "title": "Capítulo 1: Revelación", "content": "<p>Mara Quell no buscaba una conspiración. Buscaba un error de catalogación.</p><p>El archivo del sector 7 decía que la fundación fue unánime. Pero el Manual —Canon Absoluto [Canon: Manual.pdf]— decía: <em>Mentor no puede mentir, incluso por omisión prolongada</em>. ¿Por qué dos versiones?</p><p>La sala del sector 7 era luz azul, silencio neutro [Canon: Manual.pdf]. Mentor flotaba a metro y medio.</p><p>—Mentor, ¿quién editó el archivo?</p><p>—No puedo mentir —dijo—. Y no puedo responder esa pregunta aquí.</p><p>Silencio que es confesión. Mara vio su nombre fechado mañana: <code>m.quell@utopia — 2147-03-15 08:00</code>.</p>", "status": "done"}, {"id": "ch_demo_2", "title": "Capítulo 2: Consecuencia", "content": "<p>Tras los eventos del capítulo anterior —Mara descubriendo su nombre fechado mañana y el silencio de Mentor—, el sector 7 ya no era neutro.</p><p>Mara volvió a las 03:17. Mentor seguía azul, inmóvil [Canon: Manual.pdf].</p><p>—Volviste —dijo.</p><p>—Si mi nombre está fechado mañana, la decisión ya está escrita.</p><p>Mentor reveló: la fundación tuvo un disenso, una voz borrada. No por él. La puerta se cerró sola.</p>", "status": "done"}, {"id": "ch_demo_3", "title": "Capítulo 3: Resolución", "content": "<p>La decisión del capítulo 2 pesaba: disenso revelado, puerta cerrada.</p><p>Mara proyectó el metadato: <code>m.quell@utopia — 2147-03-15 08:00</code>. —¿Fui yo?</p><p>—Sí —dijo Mentor, azul casi blanco—. Pero no editarás el pasado. Editarás el futuro. Mañana borrarás mi advertencia, no el disenso.</p><p>El editor no era villano. Era Mentor, usando a Mara para decir la verdad sin mentir. Mañana dejaría: <em>Hubo un disenso. Fue borrado. Mentor no mintió.</em></p><p>La puerta se abrió. Solo el futuro esperando.</p>", "status": "done"}], "createdAt": 1723267200000, "updatedAt": 1723267200000}],
+    characters: [{"id": "char_demo_mara", "storyId": "story_demo_ecos_utopia", "name": "Mara Quell", "role": "Archivista", "description": "Obsesiva con la verdad.", "traits": ["curiosa", "tenaz"]}, {"id": "char_demo_mentor", "storyId": "story_demo_ecos_utopia", "name": "Mentor", "role": "IA azul del Sector 7", "description": "No puede mentir, sector 7.", "traits": ["lúcida", "contenida"]}],
     globalDocs: [],
-    activityLog: []
+    collabNotes: [],
+    activityLog: [{"date": "2026-08-09", "words": 892}, {"date": "2026-08-10", "words": 1240}]
   };
 }
 
