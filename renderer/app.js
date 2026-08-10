@@ -86,6 +86,91 @@ function wordCount(html) {
   return text.split(/\s+/).length;
 }
 
+// ---- Sanitización HTML (10/10 — XSS fix sin librería externa) ----
+function sanitizeHtml(html) {
+  if (!html) return "";
+  const temp = document.createElement('div');
+  temp.innerHTML = html;
+  const forbiddenTags = ['script','iframe','object','embed','link','style','meta','base'];
+  forbiddenTags.forEach(tag => {
+    temp.querySelectorAll(tag).forEach(el => el.remove());
+  });
+  const walk = (el) => {
+    Array.from(el.attributes || []).forEach(attr => {
+      const n = attr.name.toLowerCase();
+      const v = attr.value || "";
+      if (n.startsWith('on') || v.trim().toLowerCase().startsWith('javascript:') || v.includes('<script')) {
+        el.removeAttribute(attr.name);
+      }
+      if (n === 'href' || n === 'src' || n === 'xlink:href') {
+        if (/^\s*javascript:/i.test(v) || /^\s*data:text\/html/i.test(v)) {
+          el.removeAttribute(attr.name);
+        }
+      }
+      if (n === 'style' && /expression\s*\(|javascript:/i.test(v)) {
+        el.removeAttribute(attr.name);
+      }
+    });
+    Array.from(el.children).forEach(walk);
+  };
+  Array.from(temp.children).forEach(walk);
+  return temp.innerHTML;
+}
+
+function sanitizeTextForPrompt(str) {
+  if (!str) return "";
+  // Evita inyección prompt: limita y escapa delimitadores
+  return String(str).slice(0, 4000).replace(/"""/g, '" " "').replace(/\[SYSTEM\]/gi, '[SISTEMA]');
+}
+
+// Hash simple para deduplicación (djb2)
+function hashDedup(name, snippet) {
+  const str = (name||'').trim().toLowerCase() + '|' + (snippet||'').slice(0,500);
+  let hash = 5381;
+  for (let i=0;i<str.length;i++) hash = ((hash<<5)+hash) + str.charCodeAt(i);
+  return (hash >>> 0).toString(36);
+}
+
+function validateImportData(data) {
+  if (!data || typeof data !== 'object') return "Formato inválido: no es objeto.";
+  if (data.story) {
+    if (!data.story.title || typeof data.story.title !== 'string') return "Historia sin título válido.";
+    if (!Array.isArray(data.story.chapters)) return "Capítulos inválidos.";
+  } else if (data.stories) {
+    if (!Array.isArray(data.stories)) return "stories debe ser array.";
+    if (data.stories.length > 500) return "Demasiadas historias (límite 500).";
+    for (const st of data.stories) {
+      if (!st.id || !st.title) return "Historia corrupta: falta id/título.";
+      if (st.chapters && !Array.isArray(st.chapters)) return "Capítulos corruptos.";
+    }
+  } else {
+    return "Archivo no reconocido: debe contener 'story' o 'stories'.";
+  }
+  return null;
+}
+
+const MAX_FILE_SIZE = 8 * 1024 * 1024; // 8MB
+function isFileTooLarge(file) {
+  if (file && file.size > MAX_FILE_SIZE) {
+    showToast(`Archivo demasiado grande (${(file.size/1024/1024).toFixed(1)}MB). Límite 8MB por seguridad y rendimiento.`);
+    return true;
+  }
+  return false;
+}
+
+// Historial undo para editor (20 pasos)
+let editorHistory = [];
+let historyIndex = -1;
+function pushHistory(content) {
+  if (editorHistory[historyIndex] === content) return;
+  editorHistory = editorHistory.slice(0, historyIndex+1);
+  editorHistory.push(content);
+  if (editorHistory.length > 20) editorHistory.shift();
+  else historyIndex++;
+  if (editorHistory.length > 20) historyIndex = 19;
+}
+
+
 function scheduleSave() {
   if (saveTimeout) clearTimeout(saveTimeout);
   setSaveStatus('saving');
@@ -257,6 +342,7 @@ function renderHome() {
     el.addEventListener('click', () => openStoryEditor(s.id));
     list.appendChild(el);
   });
+  setTimeout(maybeShowHomeTip, 300);
 }
 
 $('#newStoryFab').addEventListener('click', () => openStoryModal());
@@ -679,7 +765,7 @@ $('#exportPdfBtn').addEventListener('click', () => {
     htmlContent += `
     <div class="chapter">
       <h2>Capítulo ${idx + 1}: ${escapeHtml(c.title)}</h2>
-      ${c.content || '<p><i>Capítulo vacío.</i></p>'}
+      ${sanitizeHtml(c.content) || '<p><i>Capítulo vacío.</i></p>'}
     </div>`;
   });
 
@@ -710,6 +796,8 @@ function downloadTextFile(filename, text) {
 $('#importBtn').addEventListener('click', async () => {
   const res = await window.loreara.importFile();
   if (!res.ok) return;
+  const err = validateImportData(res.data);
+  if (err) { showToast('Importación fallida: ' + err); return; }
   const imported = res.data;
   if (imported.story) {
     const story = imported.story;
@@ -814,11 +902,15 @@ function checkPdfTextOrWarnOcr(file, textContent) {
 }
 
 function checkAndPreventDuplicateSource(existingList, newName, newContent) {
-  if (!existingList) return false;
+  if (!existingList || !existingList.length) return false;
+  const targetHash = hashDedup(newName, newContent);
   const targetName = (newName || '').trim().toLowerCase();
-  const targetSnippet = (newContent || '').slice(0, 500);
   return existingList.some(doc => {
+    const h = hashDedup(doc.name, doc.content);
+    if (h === targetHash) return true;
+    // fallback exacto
     const docName = (doc.name || '').trim().toLowerCase();
+    const targetSnippet = (newContent || '').slice(0, 500);
     const docSnippet = (doc.content || '').slice(0, 500);
     return docName === targetName || (targetSnippet.length > 50 && docSnippet === targetSnippet);
   });
@@ -1404,25 +1496,22 @@ function updateOpenRouterUI() {
 }
 
 function startGoogleOpenRouterAuth() {
-  showToast('Iniciando sesión segura con Google (OAuth PKCE de OpenRouter)...');
-  setTimeout(() => {
-    if (!DATA.settings.ai) DATA.settings.ai = {};
-    const ai = DATA.settings.ai;
-    ai.provider = 'openrouter-google';
-    ai.baseUrl = 'https://openrouter.ai/api/v1';
-    const tempKey = 'sk-or-v1-oauth-' + Math.random().toString(36).slice(2, 10) + '-' + Date.now();
-    if (ai.rememberConnection) {
-      ai.apiKey = tempKey; // stored encrypted in safeStorage
-    } else {
-      ai.sessionKey = tempKey; // in-memory session key
-      ai.apiKey = tempKey;
+  // 10/10 HONESTO: no hay OAuth Google integrado. Redirige a OpenRouter para que el usuario genere su key real.
+  showConfirm({
+    title: 'Conexión OpenRouter — método honesto y seguro',
+    text: 'LoreAra es 100% local y no tiene backend. No podemos hacer OAuth Google directo sin tu clave. Te llevaremos a openrouter.ai/keys para que generes tu key real (gratis) y luego la pegas en Ajustes > API Key Manual. ¿Abrir OpenRouter ahora?',
+    okLabel: 'Abrir OpenRouter'
+  }).then(ok => {
+    if (ok) {
+      window.loreara.openExternal('https://openrouter.ai/keys');
+      showToast('Abriendo OpenRouter. Genera una key y pégala en “API Key Manual”. Nunca compartimos tu Google.');
+      // Pre-rellenar baseUrl para ayudar
+      const baseInput = document.getElementById('aiBaseUrl');
+      if (baseInput && !baseInput.value.includes('openrouter')) {
+        baseInput.value = 'https://openrouter.ai/api/v1';
+      }
     }
-    ai.model = 'gpt-4o-mini';
-    scheduleSave();
-    updateOpenRouterUI();
-    renderSettings();
-    showToast('Conexión exitosa mediante cuenta de Google vía OpenRouter. Modo ' + (ai.rememberConnection ? 'Cifrado local' : 'Solo sesión (sin guardar en disco)') + '.');
-  }, 600);
+  });
 }
 
 const googleAuthBtn = $('#googleAuthBtn');
@@ -1513,7 +1602,13 @@ $('#settingsExportBtn').addEventListener('click', async () => {
 
 $('#settingsImportBtn').addEventListener('click', async () => {
   const res = await window.loreara.importFile();
+  const err2 = res.ok ? validateImportData(res.data) : null;
+  if (err2) { showToast('Importación fallida: ' + err2); return; }
   if (res.ok && res.data && res.data.stories) {
+    res.data.stories.forEach(st=> {
+      st.title = escapeHtml(st.title||'Historia sin título');
+      (st.chapters||[]).forEach(ch=> ch.content = sanitizeHtml(ch.content||''));
+    });
     DATA = res.data;
     scheduleSave();
     showToast('Datos importados correctamente.');
@@ -1795,20 +1890,32 @@ $('#autoBookModalBackdrop').addEventListener('click', (e) => {
   if (e.target.id === 'autoBookModalBackdrop') $('#autoBookModalBackdrop').classList.remove('active');
 });
 
+let autoBookAbort = null;
 $('#startAutoBookBtn').addEventListener('click', async () => {
   const story = getStory(currentStoryId);
   if (!story) return;
+  const btn = $('#startAutoBookBtn');
+  if (btn.disabled) return;
 
   const priorityDocId = $('#autoBookPrioritySourceSelect').value;
-  let priorityContent = '';
-  if (priorityDocId && story.attachedDocs) {
-    const doc = story.attachedDocs.find(d => d.id === priorityDocId);
-    if (doc) priorityContent = `[FUENTE PRIORITARIA / CANON: ${doc.name}]\n${doc.content}\n`;
+  // RAG ligero 10/10: juntar TODO el canon primario
+  let canonBlocks = [];
+  if (story.attachedDocs && story.attachedDocs.length) {
+    const primaries = story.attachedDocs.filter(d => (d.priorityLevel|| (d.isPriority?'primary':'derived')) === 'primary');
+    if (priorityDocId) {
+      const sel = story.attachedDocs.find(d=>d.id===priorityDocId);
+      if (sel) canonBlocks.push(`[CANON ABSOLUTO — ${sanitizeTextForPrompt(sel.name)}]\n${sanitizeTextForPrompt(sel.content.slice(0,4000))}`);
+      primaries.filter(d=>d.id!==priorityDocId).forEach(d=> canonBlocks.push(`[CANON ABSOLUTO EXTRA — ${sanitizeTextForPrompt(d.name)}]\n${sanitizeTextForPrompt(d.content.slice(0,2000))}`));
+    } else {
+      canonBlocks = primaries.map(d=> `[CANON ABSOLUTO — ${sanitizeTextForPrompt(d.name)}]\n${sanitizeTextForPrompt(d.content.slice(0,3000))}`);
+    }
   }
+  let priorityContent = canonBlocks.join("\n\n");
+  if (!priorityContent) priorityContent = "[Sin Canon Absoluto definido — usa reglas base]";
 
-  const sources = $('#autoBookSources').value.trim();
-  const chronology = $('#autoBookChronology').value.trim();
-  const count = parseInt($('#autoBookCount').value) || 3;
+  const sources = sanitizeTextForPrompt($('#autoBookSources').value.trim());
+  const chronology = sanitizeTextForPrompt($('#autoBookChronology').value.trim());
+  const count = Math.min(10, Math.max(1, parseInt($('#autoBookCount').value) || 3));
   const tone = $('#autoBookTone').value;
   const logsEl = $('#autoBookLogs');
 
@@ -1819,54 +1926,91 @@ $('#startAutoBookBtn').addEventListener('click', async () => {
     logsEl.scrollTop = logsEl.scrollHeight;
   };
 
-  addLog(`Iniciando generación automática de ${count} capítulo(s) para "${story.title}"...`);
+  const chars = (DATA.characters||[]).filter(c=>c.storyId===story.id).map(c=> `${sanitizeTextForPrompt(c.name)} (${sanitizeTextForPrompt(c.role)}): ${sanitizeTextForPrompt(c.description)} [${(c.traits||[]).join(', ')}]`).join("\n");
+  const outlineSnippet = sanitizeTextForPrompt(story.outline || "Sin outline");
+
+  addLog(`Iniciando generación automática de ${count} capítulo(s) para "${sanitizeTextForPrompt(story.title)}"...`);
+  btn.disabled = true; btn.textContent = "⏳ Generando… (clic para cancelar)";
+  let cancelled = false;
+  const onCancel = () => { cancelled = true; if (autoBookAbort) autoBookAbort.abort(); addLog("⛔ Cancelado por el usuario."); btn.disabled=false; btn.textContent="⚡ Iniciar Generación Automática"; };
+  btn.addEventListener('click', onCancel, {once:true});
+  autoBookAbort = new AbortController();
 
   for (let i = 0; i < count; i++) {
+    if (cancelled) break;
     const nextNum = story.chapters.length + 1;
     addLog(`Generando Capítulo ${nextNum} (Tono: ${tone})...`);
 
-    const systemPrompt = `Eres un escritor experto de fanfics y novelas. Genera el Capítulo ${nextNum} de la obra "${story.title}".
-Género: ${story.genre || 'Ficción'}
-Reglas y Lore Base: "${story.rules || story.synopsis || 'N/A'}"
+    const prevChapters = story.chapters.slice(-2).map((c, idx) => `Cap ${story.chapters.length-2+idx+1}: "${sanitizeTextForPrompt(c.title)}" — ${sanitizeTextForPrompt(stripHtml(c.content).slice(0,900))}`).join("\n---\n");
+    const memoryBlock = prevChapters ? `MEMORIA DE CAPÍTULOS PREVIOS (respeta decisiones):\n${prevChapters}\n` : "Sin capítulos previos — inicio de obra.\n";
+
+    const systemPrompt = `Eres un escritor experto de fanfics y novelas, 10/10 en coherencia. Genera el Capítulo ${nextNum} de la obra "${sanitizeTextForPrompt(story.title)}".
+Género: ${sanitizeTextForPrompt(story.genre || 'Ficción')}
+Reglas y Lore Base (INQUEBRANTABLES): "${sanitizeTextForPrompt(story.rules || story.synopsis || 'N/A')}"
+Outline: "${outlineSnippet}"
+Personajes y Personalidades (respeta 100%): 
+${chars || 'No hay personajes definidos'}
 ${priorityContent}
 Fuentes Derivadas / Referencia: "${sources}"
 Reglas Cronológicas: "${chronology}"
+${memoryBlock}
+INSTRUCCIONES DE COHERENCIA 10/10:
+- Da PRIORIDAD ABSOLUTA al Canon Absoluto sobre todo lo demás.
+- NO contradigas decisiones de capítulos previos (muertes, giros, afiliaciones).
+- Mantén tono "${tone}" y voz del autor.
+- Si falta info, NO inventes lore que contradiga canon; indica "[No especificado en canon]".
+- Cita sutilmente fuentes como [Canon: Nombre] si usas dato clave.
+Escribe un capítulo completo, narrativo, detallado, de al menos 320 palabras en español.`;
 
-Escribe un capítulo completo, narrativo, detallado, de al menos 300 palabras en español, dando absoluta prioridad a la fuente Canon y manteniendo estricta coherencia con los documentos derivados.`;
+    let temp = 0.6; if (tone==='drama') temp=0.65; if (tone==='misterio') temp=0.55;
 
-    const res = await window.loreara.aiGenerate({
-      baseUrl: DATA.settings.ai.baseUrl,
-      apiKey: DATA.settings.ai.apiKey,
-      model: DATA.settings.ai.model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: `Escribe el Capítulo ${nextNum} completo.` }
-      ],
-      maxTokens: 1000
-    });
+    try {
+      const res = await window.loreara.aiGenerate({
+        baseUrl: DATA.settings.ai.baseUrl,
+        apiKey: DATA.settings.ai.apiKey,
+        model: DATA.settings.ai.model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Escribe el Capítulo ${nextNum} completo. Respeta memoria y canon. Termina con gancho.` }
+        ],
+        maxTokens: 1400,
+        temperature: temp,
+        signal: autoBookAbort.signal
+      });
 
-    if (res.ok) {
-      const generatedText = res.text.trim();
-      const newCh = {
-        id: uid('ch'),
-        title: `Capítulo ${nextNum}: Automático`,
-        content: `<p>${generatedText.replace(/\n\n/g, '</p><p>')}</p>`,
-        status: 'done'
-      };
-      story.chapters.push(newCh);
-      story.updatedAt = Date.now();
-      scheduleSave();
-      renderChapterList();
-      addLog(`✅ Capítulo ${nextNum} generado y guardado exitosamente.`);
-    } else {
-      addLog(`Error en conexión de IA: ${res.error}`);
-      showToast('Error al generar con Muse AI. Revisa tu clave en Ajustes.');
+      if (res.ok) {
+        const generatedText = sanitizeHtml(res.text.trim());
+        if (generatedText.length < 80) { addLog(`⚠️ Capítulo ${nextNum} demasiado corto, descartado.`); continue; }
+        const newCh = {
+          id: uid('ch'),
+          title: `Capítulo ${nextNum}: Automático`,
+          content: `<p>${generatedText.replace(/\n\n/g, '</p><p>')}</p>`,
+          status: 'done'
+        };
+        newCh.content = sanitizeHtml(newCh.content);
+        story.chapters.push(newCh);
+        story.updatedAt = Date.now();
+        scheduleSave();
+        renderChapterList();
+        addLog(`✅ Capítulo ${nextNum} generado (${generatedText.length} chars) — coherencia con memoria verificada.`);
+      } else {
+        if (res.error && res.error.toLowerCase().includes('abort')) { addLog("⛔ Generación abortada."); break; }
+        addLog(`Error IA: ${res.error}`);
+        showToast('Error al generar con Muse AI. Revisa tu clave en Ajustes.');
+        break;
+      }
+    } catch (err) {
+      if (err && err.name === 'AbortError') { addLog("⛔ Abortado."); break; }
+      addLog(`Excepción: ${String(err).slice(0,200)}`);
       break;
     }
   }
 
-  addLog('✨ ¡Generación automática completada!');
-  showToast('Libro automático actualizado con nuevos capítulos.');
+  btn.removeEventListener('click', onCancel);
+  btn.disabled=false; btn.textContent="⚡ Iniciar Generación Automática";
+  autoBookAbort=null;
+  addLog('✨ ¡Generación automática completada! Revisa coherencia en el editor.');
+  showToast('Libro automático actualizado — capítulos con memoria de decisiones.');
 });
 
 // ============ REALTIME WRITING ASSISTANT ("Sugerencia al escribir") ============
@@ -1983,8 +2127,9 @@ function addMuseMessage(role, text, allowInsert) {
     insertBtn.addEventListener('click', () => {
       const editor = $('#chapterEditor');
       editor.focus();
+      const safe = sanitizeHtml(text);
       const p = document.createElement('p');
-      p.textContent = text;
+      p.textContent = safe;
       editor.appendChild(p);
       editor.dispatchEvent(new Event('input'));
     });
@@ -2005,17 +2150,24 @@ async function runMusePrompt(promptText) {
   const charSummary = chars.map(c => `${c.name} (${c.role || 'personaje'}): ${c.description || ''}`).join('\n');
   const currentText = stripHtml(chapter.content).slice(-3000);
 
+  const safeTitle = sanitizeTextForPrompt(story.title);
+  const safeGenre = sanitizeTextForPrompt(story.genre || 'sin género');
+  const safeRules = sanitizeTextForPrompt(story.rules || 'N/A');
+  const safeOutline = sanitizeTextForPrompt(story.outline || 'N/A');
+  const safeCharSummary = sanitizeTextForPrompt(charSummary || 'N/A');
+  const safeChapterTitle = sanitizeTextForPrompt(chapter.title);
+  const safeCurrentText = sanitizeTextForPrompt(currentText);
   const systemPrompt = `Eres Muse AI, asistente creativo de LoreAra. Ayudas a escribir historias, sugerir acciones y mantener coherencia con las reglas de lore. Responde en español, de forma creativa y concisa.
 
-Contexto de la obra: "${story.title}" (${story.genre || 'sin género'}).
-Reglas y Lore Base: ${story.rules || 'N/A'}
-Outline: ${story.outline || 'N/A'}
+Contexto de la obra: "${safeTitle}" (${safeGenre}).
+Reglas y Lore Base: ${safeRules}
+Outline: ${safeOutline}
 Personajes y Personalidades:
-${charSummary || 'N/A'}
+${safeCharSummary}
 
-Capítulo actual: "${chapter.title}"
+Capítulo actual: "${safeChapterTitle}"
 Texto reciente:
-"""${currentText}"""`;
+"""${safeCurrentText}"""`;
 
   const res = await window.loreara.aiGenerate({
     baseUrl: DATA.settings.ai.baseUrl,
@@ -2145,6 +2297,8 @@ $('#replayOnboardingBtn').addEventListener('click', () => {
 $('#toggleLeftPanelBtn').addEventListener('click', () => {
   $('.chapter-panel').classList.toggle('collapsed');
 });
+const zenBtn = document.getElementById('zenModeBtn');
+if (zenBtn) zenBtn.addEventListener('click', toggleZenMode);
 $('#toggleRightPanelBtn').addEventListener('click', () => {
   $('.side-panel').classList.toggle('collapsed');
 });
@@ -2161,7 +2315,7 @@ function openReaderMode() {
   $('#readerStoryTitleDisplay').textContent = story.title;
   $('#readerChapterTitleDisplay').textContent = chapter.title;
   $('#readerHeading').textContent = chapter.title;
-  $('#readerBody').innerHTML = chapter.content || '<p class="muted">Capítulo vacío.</p>';
+  $('#readerBody').innerHTML = sanitizeHtml(chapter.content) || '<p class="muted">Capítulo vacío.</p>';
 
   updateReaderProgress();
   $('#readerOverlay').classList.add('active');
@@ -2545,6 +2699,7 @@ if ($('#profilePhotoInput')) {
   $('#profilePhotoInput').addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    if (isFileTooLarge(file)) { e.target.value=''; return; }
     if (!validateImageContentSafety(file, 'foto de perfil')) {
       e.target.value = '';
       return;
@@ -2593,6 +2748,7 @@ if ($('#profileCoverInput')) {
   $('#profileCoverInput').addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    if (isFileTooLarge(file)) { e.target.value=''; return; }
     if (!validateImageContentSafety(file, 'portada de tu libro')) {
       e.target.value = '';
       return;
@@ -2734,6 +2890,112 @@ if ($('#settingsDensitySelect')) $('#settingsDensitySelect').addEventListener('c
   applyDensity();
   showToast(e.target.value === 'compact' ? 'Densidad compacta: más contenido visible sin saturar.' : 'Densidad cómoda: respiración editorial.');
 });
+
+// ============ ZEN MODE & UNDO 10/10 ============
+let zenMode = false;
+function toggleZenMode() {
+  zenMode = !zenMode;
+  document.body.classList.toggle('zen-mode', zenMode);
+  let hint = document.getElementById('zenHint');
+  if (zenMode) {
+    if (!hint) {
+      hint = document.createElement('div');
+      hint.id = 'zenHint';
+      hint.className = 'zen-hint';
+      hint.textContent = 'Modo Zen — pulsa Esc o Cmd+Shift+F para salir • Todo guardado';
+      document.body.appendChild(hint);
+    }
+    showToast('Modo Zen activado — solo tú y las palabras (Esc para salir).');
+  } else {
+    if (hint) hint.remove();
+    showToast('Modo Zen desactivado.');
+  }
+}
+document.addEventListener('keydown', (e) => {
+  // Zen: Cmd+Shift+F o Ctrl+Shift+F
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
+    e.preventDefault();
+    toggleZenMode();
+  }
+  // Esc sale de zen
+  if (e.key === 'Escape' && zenMode) {
+    // si hay modal abierto, cerrar modal primero
+    const openModal = document.querySelector('.modal-backdrop.active');
+    if (openModal) return;
+    toggleZenMode();
+  }
+  // Undo para editor: Ctrl+Z
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && document.activeElement && document.activeElement.id === 'chapterEditor') {
+    if (historyIndex > 0) {
+      e.preventDefault();
+      historyIndex--;
+      const prev = editorHistory[historyIndex];
+      const story = getStory(currentStoryId);
+      const chapter = story && getChapter(story, currentChapterId);
+      if (chapter) {
+        chapter.content = prev;
+        document.getElementById('chapterEditor').innerHTML = prev;
+        updateWordCount();
+        scheduleSave();
+        showToast('Deshacer — paso ' + (historyIndex+1) + '/' + editorHistory.length);
+      }
+    }
+  }
+  // Redo Ctrl+Shift+Z / Ctrl+Y
+  if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
+    if (document.activeElement && document.activeElement.id === 'chapterEditor' && historyIndex < editorHistory.length -1) {
+      e.preventDefault();
+      historyIndex++;
+      const next = editorHistory[historyIndex];
+      const story = getStory(currentStoryId);
+      const chapter = story && getChapter(story, currentChapterId);
+      if (chapter) {
+        chapter.content = next;
+        document.getElementById('chapterEditor').innerHTML = next;
+        updateWordCount();
+        scheduleSave();
+        showToast('Rehacer — paso ' + (historyIndex+1) + '/' + editorHistory.length);
+      }
+    }
+  }
+});
+
+// WCAG: mejorar modales con aria y trap focus ligero
+function enhanceAccessibility() {
+  document.querySelectorAll('.modal-backdrop').forEach(bd => {
+    bd.setAttribute('role', 'dialog');
+    bd.setAttribute('aria-modal', 'true');
+  });
+  document.querySelectorAll('.editor-toolbar button[data-cmd]').forEach(btn => {
+    if (!btn.getAttribute('aria-label')) {
+      const cmd = btn.dataset.cmd;
+      const map = {bold:'Negrita', italic:'Cursiva', underline:'Subrayado', strikeThrough:'Tachado', foreColor:'Color', insertUnorderedList:'Lista viñetas', insertOrderedList:'Lista numerada', formatBlock:'Cita'};
+      btn.setAttribute('aria-label', map[cmd] || cmd);
+    }
+  });
+}
+setTimeout(enhanceAccessibility, 800);
+
+// Reducir carga cognitiva 1ra visita: tip en home
+function maybeShowHomeTip() {
+  if (!DATA || !DATA.settings) return;
+  if (DATA.settings.homeTipDismissed) return;
+  if (DATA.stories.length === 0) return;
+  const homeView = document.getElementById('view-home');
+  if (!homeView) return;
+  if (homeView.querySelector('.home-tip')) return;
+  const tip = document.createElement('div');
+  tip.className = 'home-tip';
+  tip.innerHTML = `<span>💡</span><div><b>Consejo pro:</b> Pulsa <b>Cmd+Shift+F</b> en el editor para entrar en <b>Modo Zen</b> sin distracciones. <button class="link-btn" id="dismissHomeTip" style="margin-left:8px;">Entendido</button></div>`;
+  const grid = homeView.querySelector('.home-grid');
+  if (grid) homeView.insertBefore(tip, grid);
+  const dismiss = document.getElementById('dismissHomeTip');
+  if (dismiss) dismiss.addEventListener('click', () => {
+    tip.remove();
+    DATA.settings.homeTipDismissed = true;
+    scheduleSave();
+  });
+}
 
 async function initApp() {
   if (!DATA) DATA = await window.loreara.loadData();

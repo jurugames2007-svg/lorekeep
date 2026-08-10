@@ -27,6 +27,15 @@ function defaultData() {
 }
 
 function loadData() {
+  const tryParse = (p) => {
+    const raw = fs.readFileSync(p, 'utf-8');
+    const parsed = JSON.parse(raw);
+    const base = defaultData();
+    // validar básico
+    if (parsed.stories && !Array.isArray(parsed.stories)) throw new Error('stories no es array');
+    if (parsed.stories && parsed.stories.length > 500) throw new Error('demasiadas historias');
+    return { ...base, ...parsed, settings: { ...base.settings, ...(parsed.settings || {}), ai: { ...base.settings.ai, ...((parsed.settings || {}).ai || {}) } } };
+  };
   try {
     const p = getDataPath();
     if (!fs.existsSync(p)) {
@@ -34,10 +43,16 @@ function loadData() {
       fs.writeFileSync(p, JSON.stringify(initial, null, 2), 'utf-8');
       return initial;
     }
-    const raw = fs.readFileSync(p, 'utf-8');
-    const parsed = JSON.parse(raw);
-    const base = defaultData();
-    return { ...base, ...parsed, settings: { ...base.settings, ...(parsed.settings || {}), ai: { ...base.settings.ai, ...((parsed.settings || {}).ai || {}) } } };
+    try {
+      return tryParse(p);
+    } catch (e) {
+      console.warn('load primary failed, trying bak1', e.message);
+      const bak1 = p + '.bak1';
+      if (fs.existsSync(bak1)) return tryParse(bak1);
+      const bak2 = p + '.bak2';
+      if (fs.existsSync(bak2)) return tryParse(bak2);
+      throw e;
+    }
   } catch (err) {
     console.error('Error cargando datos, usando datos por defecto', err);
     return defaultData();
@@ -46,8 +61,26 @@ function loadData() {
 
 function saveData(data) {
   const p = getDataPath();
-  fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf-8');
-  return true;
+  try {
+    if (fs.existsSync(p)) {
+      const bak1 = p + '.bak1';
+      const bak2 = p + '.bak2';
+      const bak3 = p + '.bak3';
+      // rotar
+      if (fs.existsSync(bak2)) {
+        try { if (fs.existsSync(bak3)) fs.unlinkSync(bak3); fs.renameSync(bak2, bak3); } catch {}
+      }
+      if (fs.existsSync(bak1)) {
+        try { fs.renameSync(bak1, bak2); } catch {}
+      }
+      try { fs.copyFileSync(p, bak1); } catch {}
+    }
+    fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf-8');
+    return true;
+  } catch (e) {
+    console.error('saveData error', e);
+    return false;
+  }
 }
 
 let mainWindow;
@@ -142,8 +175,14 @@ ipcMain.handle('data:importFile', async () => {
   });
   if (canceled || !filePaths[0]) return { ok: false };
   try {
+    const stat = fs.statSync(filePaths[0]);
+    if (stat.size > 8*1024*1024) return { ok: false, error: 'Archivo demasiado grande (límite 8MB).' };
     const raw = fs.readFileSync(filePaths[0], 'utf-8');
+    if (raw.length > 8*1024*1024) return { ok: false, error: 'JSON demasiado grande.' };
     const parsed = JSON.parse(raw);
+    // validación rápida
+    if (parsed.stories && !Array.isArray(parsed.stories)) return { ok: false, error: 'Formato inválido: stories no es array.' };
+    if (parsed.stories && parsed.stories.length > 500) return { ok: false, error: 'Demasiadas historias.' };
     saveData(parsed);
     return { ok: true, data: parsed };
   } catch (err) {
@@ -156,11 +195,16 @@ ipcMain.handle('shell:openExternal', async (_evt, url) => {
 });
 
 ipcMain.handle('ai:generate', async (_evt, payload) => {
-  const { provider, baseUrl, apiKey, model, messages, maxTokens } = payload;
+  const { provider, baseUrl, apiKey, model, messages, maxTokens, temperature, signal } = payload;
 
   if (!apiKey) {
     return { ok: false, error: 'Falta configurar tu API Key en Ajustes > Muse AI.' };
   }
+  // Validación de mensajes para evitar prompt injection extremo: limitar tamaño
+  try {
+    const totalChars = JSON.stringify(messages).length;
+    if (totalChars > 30000) return { ok: false, error: 'Prompt demasiado largo (límite 30k chars). Reduce fuentes o reglas.' };
+  } catch {}
 
   try {
     const url = `${(baseUrl || 'https://api.openai.com/v1').replace(/\/$/, '')}/chat/completions`;
@@ -174,16 +218,23 @@ ipcMain.handle('ai:generate', async (_evt, payload) => {
       headers['X-Title'] = 'LoreAra Desktop';
     }
 
-    const res = await fetch(url, {
+    const fetchOpts = {
       method: 'POST',
       headers,
       body: JSON.stringify({
         model: model || 'gpt-4o-mini',
         messages,
-        max_tokens: maxTokens || 500,
-        temperature: 0.9
+        max_tokens: Math.min(2000, maxTokens || 500),
+        temperature: typeof temperature === 'number' ? Math.max(0, Math.min(1.2, temperature)) : 0.65
       })
-    });
+    };
+    // Soporte AbortSignal si se pasa desde renderer (Electron 28+ soporta)
+    if (signal) {
+      // signal es objeto transferido, intentar usarlo
+      try { fetchOpts.signal = signal; } catch {}
+    }
+
+    const res = await fetch(url, fetchOpts);
 
     if (!res.ok) {
       const errText = await res.text();
