@@ -1477,6 +1477,29 @@ if (triggerNblmSummaryBtn) {
   });
 }
 
+function changeSourceCover(doc, redraw) {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = 'image/jpeg,image/png,image/webp';
+  input.onchange = () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { showToast('La portada debe pesar menos de 2 MB.'); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      doc.coverImage = reader.result;
+      doc.coverImageName = file.name;
+      scheduleSave(); redraw();
+      showToast(`Portada de "${doc.name}" actualizada.`);
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
+}
+function clearSourceCover(doc, redraw) {
+  doc.coverImage = null; doc.coverImageName = '';
+  scheduleSave(); redraw(); showToast('Portada de la fuente eliminada.');
+}
+
 function renderStoryDocs() {
   const story = getStory(currentStoryId);
   const list = $('#storyDocsList');
@@ -1522,7 +1545,7 @@ function renderStoryDocs() {
       </div>
       <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
         <span class="muted">${doc.content ? doc.content.length.toLocaleString('es-CL') + ' car.' : '0 car.'}</span>
-        <button class="link-btn" data-act="view" style="font-size:11px;">Ver extracto</button>
+        <span class="source-cover-actions"><button class="link-btn" data-act="cover">${doc.coverImage ? 'Cambiar portada' : 'Añadir portada'}</button>${doc.coverImage ? '<button class="link-btn" data-act="clear-cover">Quitar</button>' : ''}</span><button class="link-btn" data-act="view" style="font-size:11px;">Ver extracto</button>
       </div>
     `;
 
@@ -1536,6 +1559,10 @@ function renderStoryDocs() {
         showToast(`Jerarquía de "${doc.name}" configurada como: ${getPriorityInfo(doc).label}.`);
       });
     });
+
+    el.querySelectorAll('[data-act="cover"]').forEach(btn => btn.addEventListener('click', () => changeSourceCover(doc, renderStoryDocs)));
+    const clearCover = el.querySelector('[data-act="clear-cover"]');
+    if (clearCover) clearCover.addEventListener('click', () => clearSourceCover(doc, renderStoryDocs));
 
     el.querySelector('[data-act="view"]').addEventListener('click', () => {
       openNblmReaderModal(doc);
