@@ -155,6 +155,28 @@ function hashDedup(name, snippet) {
   return (hash >>> 0).toString(36);
 }
 
+// Índices O(1) para consultas frecuentes; la construcción inicial es O(n).
+let narrativeIndexes = { charactersById: new Map(), variantsByKey: new Map(), storiesById: new Map() };
+function rebuildNarrativeIndexes() {
+  narrativeIndexes = { charactersById: new Map(), variantsByKey: new Map(), storiesById: new Map() };
+  (DATA.stories || []).forEach(story => narrativeIndexes.storiesById.set(story.id, story));
+  (DATA.characters || []).forEach(character => {
+    narrativeIndexes.charactersById.set(character.id, character);
+    const base = String(character.name || '').trim().toLocaleLowerCase();
+    const variant = String(character.variantLabel || base).trim().toLocaleLowerCase();
+    const key = `${character.storyId}\0${variant}`;
+    narrativeIndexes.variantsByKey.set(key, character);
+    // Alias seguro para búsquedas explícitas por nombre base cuando no hay ambigüedad.
+    const baseKey = `${character.storyId}\0${base}`;
+    if (!narrativeIndexes.variantsByKey.has(baseKey)) narrativeIndexes.variantsByKey.set(baseKey, character);
+    else if (narrativeIndexes.variantsByKey.get(baseKey) !== character) narrativeIndexes.variantsByKey.set(baseKey, null);
+  });
+}
+function getCharacterVariant(storyId, variantLabel) {
+  const key = `${storyId}\0${String(variantLabel || '').trim().toLocaleLowerCase()}`;
+  return narrativeIndexes.variantsByKey.get(key) || null;
+}
+
 // Modelo narrativo estructurado: identidad, memoria y causalidad por variante.
 function normalizeNarrativeModel() {
   if (!DATA) return;
@@ -321,7 +343,7 @@ function logActivity(wordsDelta) {
 }
 
 function getStory(id) {
-  return DATA.stories.find(s => s.id === id);
+  return narrativeIndexes.storiesById.get(id) || DATA.stories.find(s => s.id === id);
 }
 
 function getChapter(story, chapterId) {
@@ -3232,6 +3254,7 @@ async function initApp() {
   }
 
   normalizeNarrativeModel();
+  rebuildNarrativeIndexes();
   scheduleSave();
 
   // Hide startup loader after 1.5s (Steam-like cinematic boot)
