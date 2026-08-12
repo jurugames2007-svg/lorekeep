@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('loreara', {
+contextBridge.exposeInMainWorld('lorevinci', {
   loadData: () => ipcRenderer.invoke('data:load'),
   saveData: (data) => ipcRenderer.invoke('data:save', data),
   exportFile: (data) => ipcRenderer.invoke('data:exportFile', data),

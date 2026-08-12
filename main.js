@@ -5,7 +5,7 @@ const fs = require('fs');
 const isDev = !app.isPackaged;
 
 function getDataPath() {
-  return path.join(app.getPath('userData'), 'loreara-data.json');
+  return path.join(app.getPath('userData'), 'lorevinci-data.json');
 }
 
 function defaultData() {
@@ -98,7 +98,7 @@ function createWindow() {
     minWidth: 1100,
     minHeight: 700,
     backgroundColor: '#0b0c10',
-    title: 'LoreAra',
+    title: 'LoreVinci',
     icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -111,7 +111,7 @@ function createWindow() {
   mainWindow.setMenuBarVisibility(false);
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
-  if (isDev && process.env.LoreAra_DEVTOOLS) {
+  if (isDev && process.env.LoreVinci_DEVTOOLS) {
     mainWindow.webContents.openDevTools();
   }
 }
@@ -137,8 +137,8 @@ ipcMain.handle('ai:models', async (_evt, payload) => {
       Authorization: `Bearer ${apiKey}`
     };
     if (baseUrl && baseUrl.includes('openrouter.ai')) {
-      headers['HTTP-Referer'] = 'https://loreara.app';
-      headers['X-Title'] = 'LoreAra Desktop';
+      headers['HTTP-Referer'] = 'https://lorevinci.app';
+      headers['X-Title'] = 'LoreVinci Desktop';
     }
     const res = await fetch(url, { method: 'GET', headers });
     if (!res.ok) {
@@ -164,8 +164,8 @@ ipcMain.handle('data:save', async (_evt, data) => {
 
 ipcMain.handle('data:exportFile', async (_evt, data) => {
   const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
-    title: 'Exportar datos de LoreAra',
-    defaultPath: 'loreara-backup.json',
+    title: 'Exportar datos de LoreVinci',
+    defaultPath: 'lorevinci-backup.json',
     filters: [{ name: 'JSON', extensions: ['json'] }]
   });
   if (canceled || !filePath) return { ok: false };
@@ -175,7 +175,7 @@ ipcMain.handle('data:exportFile', async (_evt, data) => {
 
 ipcMain.handle('data:importFile', async () => {
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
-    title: 'Importar datos de LoreAra',
+    title: 'Importar datos de LoreVinci',
     filters: [{ name: 'JSON', extensions: ['json'] }],
     properties: ['openFile']
   });
@@ -189,7 +189,6 @@ ipcMain.handle('data:importFile', async () => {
     // validación rápida
     if (parsed.stories && !Array.isArray(parsed.stories)) return { ok: false, error: 'Formato inválido: stories no es array.' };
     if (parsed.stories && parsed.stories.length > 500) return { ok: false, error: 'Demasiadas historias.' };
-    saveData(parsed);
     return { ok: true, data: parsed };
   } catch (err) {
     return { ok: false, error: String(err) };
@@ -197,7 +196,12 @@ ipcMain.handle('data:importFile', async () => {
 });
 
 ipcMain.handle('shell:openExternal', async (_evt, url) => {
-  await shell.openExternal(url);
+  try {
+    const parsed = new URL(String(url));
+    if (!['https:', 'http:'].includes(parsed.protocol)) return { ok: false, error: 'URL no permitida.' };
+    await shell.openExternal(parsed.toString());
+    return { ok: true };
+  } catch { return { ok: false, error: 'URL inválida.' }; }
 });
 
 ipcMain.handle('ai:generate', async (_evt, payload) => {
@@ -220,8 +224,8 @@ ipcMain.handle('ai:generate', async (_evt, payload) => {
     };
 
     if (baseUrl && baseUrl.includes('openrouter.ai')) {
-      headers['HTTP-Referer'] = 'https://loreara.app';
-      headers['X-Title'] = 'LoreAra Desktop';
+      headers['HTTP-Referer'] = 'https://lorevinci.app';
+      headers['X-Title'] = 'LoreVinci Desktop';
     }
 
     const fetchOpts = {

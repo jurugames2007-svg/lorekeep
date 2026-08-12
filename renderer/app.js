@@ -1,11 +1,11 @@
-// ============ LoreAra App Logic ============
+// ============ LoreVinci App Logic ============
 
 // Fallback for browser / web preview when not running inside Electron
-if (!window.loreara) {
-  window.loreara = {
+if (!window.lorevinci) {
+  window.lorevinci = {
     loadData: async () => {
       try {
-        const raw = localStorage.getItem('loreara-data');
+        const raw = localStorage.getItem('lorevinci-data');
         if (raw) return JSON.parse(raw);
       } catch (e) {}
       return {
@@ -26,7 +26,7 @@ if (!window.loreara) {
       };
     },
     saveData: async (data) => {
-      try { localStorage.setItem('loreara-data', JSON.stringify(data)); } catch (e) {}
+      try { localStorage.setItem('lorevinci-data', JSON.stringify(data)); } catch (e) {}
       return true;
     },
     exportFile: async (data) => {
@@ -34,7 +34,7 @@ if (!window.loreara) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'loreara-backup.json';
+      a.download = 'lorevinci-backup.json';
       a.click();
       return { ok: true, filePath: 'descargas del navegador' };
     },
@@ -68,6 +68,27 @@ let saveTimeout = null;
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $all = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+// Panel lateral colapsable, persistente y accesible.
+function setupSidebarToggle() {
+  const sidebar = $('#mainSidebar');
+  const button = $('#sidebarToggle');
+  if (!sidebar || !button) return;
+  const collapsed = localStorage.getItem('lorevinci-sidebar-collapsed') === '1';
+  const apply = (value) => {
+    sidebar.classList.toggle('collapsed', value);
+    button.setAttribute('aria-expanded', String(!value));
+    button.setAttribute('aria-label', value ? 'Expandir panel lateral' : 'Contraer panel lateral');
+    button.textContent = value ? '›' : '‹';
+    localStorage.setItem('lorevinci-sidebar-collapsed', value ? '1' : '0');
+  };
+  apply(collapsed);
+  button.addEventListener('click', () => apply(!sidebar.classList.contains('collapsed')));
+  document.addEventListener('keydown', (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'b') { event.preventDefault(); apply(!sidebar.classList.contains('collapsed')); }
+  });
+}
+
 
 function uid(prefix = 'id') {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -178,7 +199,7 @@ function scheduleSave() {
   if (saveTimeout) clearTimeout(saveTimeout);
   setSaveStatus('saving');
   saveTimeout = setTimeout(() => {
-    window.loreara.saveData(DATA).then(() => setSaveStatus('saved'));
+    window.lorevinci.saveData(DATA).then(() => setSaveStatus('saved'));
   }, 400);
 }
 
@@ -197,11 +218,11 @@ function setSaveStatus(status) {
 
 // ---- Toast (reemplaza alert()) ----
 function showToast(message) {
-  let toast = $('#lorearaToast');
+  let toast = $('#lorevinciToast');
   if (!toast) {
     toast = document.createElement('div');
-    toast.id = 'lorearaToast';
-    toast.className = 'loreara-toast';
+    toast.id = 'lorevinciToast';
+    toast.className = 'lorevinci-toast';
     document.body.appendChild(toast);
   }
   toast.textContent = message;
@@ -766,7 +787,7 @@ $('#exportStoryBtn').addEventListener('click', async () => {
   const story = getStory($('#collabStorySelect').value);
   if (!story) return;
   const chars = (DATA.characters || []).filter(c => c.storyId === story.id);
-  const res = await window.loreara.exportFile({ story, characters: chars, exportedFrom: 'LoreAra', exportedAt: new Date().toISOString() });
+  const res = await window.lorevinci.exportFile({ story, characters: chars, exportedFrom: 'LoreVinci', exportedAt: new Date().toISOString() });
   if (res.ok) showToast(`Historia exportada a: ${res.filePath}`);
 });
 
@@ -803,7 +824,7 @@ $('#exportPdfBtn').addEventListener('click', () => {
 </head>
 <body>
   <h1>${escapeHtml(story.title)}</h1>
-  <div class="genre">${escapeHtml(story.genre || 'Novela / Fanfic')} · Creado con LoreAra</div>
+  <div class="genre">${escapeHtml(story.genre || 'Novela / Fanfic')} · Creado con LoreVinci</div>
   ${story.synopsis ? `<div class="synopsis"><b>Sinopsis:</b> ${escapeHtml(story.synopsis)}</div>` : ''}
   <hr style="border:0; border-top:1px solid #ddd; margin: 40px 0;">
 `;
@@ -841,7 +862,7 @@ function downloadTextFile(filename, text) {
   URL.revokeObjectURL(url);
 }
 $('#importBtn').addEventListener('click', async () => {
-  const res = await window.loreara.importFile();
+  const res = await window.lorevinci.importFile();
   if (!res.ok) return;
   const err = validateImportData(res.data);
   if (err) { showToast('Importación fallida: ' + err); return; }
@@ -940,7 +961,7 @@ function checkPdfTextOrWarnOcr(file, textContent) {
   if (file && file.name.toLowerCase().endsWith('.pdf') && (textContent || '').trim().length < 40) {
     showConfirm({
       title: 'Aviso: PDF Escaneado (Sin capa de texto digital)',
-      text: `El documento "${file.name}" parece ser una imagen escaneada y no contiene texto digital seleccionable.\n\nPor nuestro diseño offline-first, LoreAra procesa tus datos en tu máquina sin enviarlos a terceros.\n\n• Qué puedes hacer hoy: Convierte el PDF a texto antes de subirlo con OCR local en tu dispositivo (ej. Adobe Scan / Google Lens en el móvil, o ocrmypdf en terminal).\n• Roadmap: Motor OCR local (Tesseract.js WASM / PaddleOCR) integrado 100% offline en próxima versión.`,
+      text: `El documento "${file.name}" parece ser una imagen escaneada y no contiene texto digital seleccionable.\n\nPor nuestro diseño offline-first, LoreVinci procesa tus datos en tu máquina sin enviarlos a terceros.\n\n• Qué puedes hacer hoy: Convierte el PDF a texto antes de subirlo con OCR local en tu dispositivo (ej. Adobe Scan / Google Lens en el móvil, o ocrmypdf en terminal).\n• Roadmap: Motor OCR local (Tesseract.js WASM / PaddleOCR) integrado 100% offline en próxima versión.`,
       okLabel: 'Entendido'
     });
     return false;
@@ -1346,8 +1367,8 @@ if (triggerNblmSummaryBtn) {
     if (!summaryEl) return;
     summaryEl.textContent = 'Muse AI está analizando y resumiendo la fuente...';
 
-    const systemPrompt = `Eres un investigador literario experto estilo NotebookLM en LoreAra. Sintetiza los puntos clave, reglas del lore y personajes importantes de la fuente adjunta por el autor en 3 o 4 viñetas concisas en español.`;
-    const res = await window.loreara.aiGenerate({
+    const systemPrompt = `Eres un investigador literario experto estilo NotebookLM en LoreVinci. Sintetiza los puntos clave, reglas del lore y personajes importantes de la fuente adjunta por el autor en 3 o 4 viñetas concisas en español.`;
+    const res = await window.lorevinci.aiGenerate({
       baseUrl: DATA.settings.ai.baseUrl,
       apiKey: DATA.settings.ai.apiKey,
       model: DATA.settings.ai.model,
@@ -1546,11 +1567,11 @@ function startGoogleOpenRouterAuth() {
   // 10/10 HONESTO: no hay OAuth Google integrado. Redirige a OpenRouter para que el usuario genere su key real.
   showConfirm({
     title: 'Conexión OpenRouter — método honesto y seguro',
-    text: 'LoreAra es 100% local y no tiene backend. No podemos hacer OAuth Google directo sin tu clave. Te llevaremos a openrouter.ai/keys para que generes tu key real (gratis) y luego la pegas en Ajustes > API Key Manual. ¿Abrir OpenRouter ahora?',
+    text: 'LoreVinci es 100% local y no tiene backend. No podemos hacer OAuth Google directo sin tu clave. Te llevaremos a openrouter.ai/keys para que generes tu key real (gratis) y luego la pegas en Ajustes > API Key Manual. ¿Abrir OpenRouter ahora?',
     okLabel: 'Abrir OpenRouter'
   }).then(ok => {
     if (ok) {
-      window.loreara.openExternal('https://openrouter.ai/keys');
+      window.lorevinci.openExternal('https://openrouter.ai/keys');
       showToast('Abriendo OpenRouter. Genera una key y pégala en “API Key Manual”. Nunca compartimos tu Google.');
       // Pre-rellenar baseUrl para ayudar
       const baseInput = document.getElementById('aiBaseUrl');
@@ -1582,7 +1603,7 @@ if (rememberCheck) {
 const openRouterMyKeysBtn = $('#openrouterMyKeysBtn');
 if (openRouterMyKeysBtn) {
   openRouterMyKeysBtn.addEventListener('click', () => {
-    window.loreara.openExternal('https://openrouter.ai/keys');
+    window.lorevinci.openExternal('https://openrouter.ai/keys');
   });
 }
 
@@ -1617,7 +1638,7 @@ $('#fetchModelsBtn').addEventListener('click', async () => {
   }
 
   resultEl.textContent = 'Conectando y detectando modelos permitidos...';
-  const res = await window.loreara.aiModels({ baseUrl, apiKey });
+  const res = await window.lorevinci.aiModels({ baseUrl, apiKey });
 
   if (res.ok && res.models && res.models.length > 0) {
     selectEl.innerHTML = '';
@@ -1643,12 +1664,12 @@ $('#saveAiBtn').addEventListener('click', () => {
 });
 
 $('#settingsExportBtn').addEventListener('click', async () => {
-  const res = await window.loreara.exportFile(DATA);
+  const res = await window.lorevinci.exportFile(DATA);
   if (res.ok) showToast(`Respaldo guardado en: ${res.filePath}`);
 });
 
 $('#settingsImportBtn').addEventListener('click', async () => {
-  const res = await window.loreara.importFile();
+  const res = await window.lorevinci.importFile();
   const err2 = res.ok ? validateImportData(res.data) : null;
   if (err2) { showToast('Importación fallida: ' + err2); return; }
   if (res.ok && res.data && res.data.stories) {
@@ -2051,7 +2072,7 @@ Escribe un capítulo completo, narrativo, detallado, de al menos 320 palabras en
         generatedText = mockGenerateChapterOffline(story, nextNum, tone, memoryBlock, priorityContent);
         generatedText = sanitizeHtml(generatedText);
       } else {
-        const res = await window.loreara.aiGenerate({
+        const res = await window.lorevinci.aiGenerate({
           baseUrl: DATA.settings.ai.baseUrl,
           apiKey: DATA.settings.ai.apiKey,
           model: DATA.settings.ai.model,
@@ -2157,10 +2178,10 @@ async function triggerRealtimeSuggestion() {
   rsb.style.display = 'block';
   rsbContent.textContent = 'Analizando redacción y coherencia...';
 
-  const systemPrompt = `Eres Muse AI, asistente de redacción en tiempo real de LoreAra. Analiza el último párrafo escrito por el autor y ofrece una sugerencia breve de continuación, mejora de estilo o cohesión argumental en español (máx 2 frases).`;
+  const systemPrompt = `Eres Muse AI, asistente de redacción en tiempo real de LoreVinci. Analiza el último párrafo escrito por el autor y ofrece una sugerencia breve de continuación, mejora de estilo o cohesión argumental en español (máx 2 frases).`;
   const userPrompt = `Texto actual del capítulo:\n"""${text.slice(-1500)}"""\nOfrece una sugerencia constructiva de mejora o continuación.`;
 
-  const res = await window.loreara.aiGenerate({
+  const res = await window.lorevinci.aiGenerate({
     baseUrl: DATA.settings.ai.baseUrl,
     apiKey: DATA.settings.ai.apiKey,
     model: DATA.settings.ai.model,
@@ -2246,7 +2267,7 @@ async function runMusePrompt(promptText) {
   const safeCharSummary = sanitizeTextForPrompt(charSummary || 'N/A');
   const safeChapterTitle = sanitizeTextForPrompt(chapter.title);
   const safeCurrentText = sanitizeTextForPrompt(currentText);
-  const systemPrompt = `Eres Muse AI, asistente creativo de LoreAra. Ayudas a escribir historias, sugerir acciones y mantener coherencia con las reglas de lore. Responde en español, de forma creativa y concisa.
+  const systemPrompt = `Eres Muse AI, asistente creativo de LoreVinci. Ayudas a escribir historias, sugerir acciones y mantener coherencia con las reglas de lore. Responde en español, de forma creativa y concisa.
 
 Contexto de la obra: "${safeTitle}" (${safeGenre}).
 Reglas y Lore Base: ${safeRules}
@@ -2258,7 +2279,7 @@ Capítulo actual: "${safeChapterTitle}"
 Texto reciente:
 """${safeCurrentText}"""`;
 
-  const res = await window.loreara.aiGenerate({
+  const res = await window.lorevinci.aiGenerate({
     baseUrl: DATA.settings.ai.baseUrl,
     apiKey: DATA.settings.ai.apiKey,
     model: DATA.settings.ai.model,
@@ -2536,7 +2557,7 @@ const ALL_BADGES = [
   {
     id: 'author_verified',
     title: 'Autor Verificado',
-    desc: 'Has iniciado tu camino literario en LoreAra.',
+    desc: 'Has iniciado tu camino literario en LoreVinci.',
     check: () => true
   },
   {
@@ -2549,21 +2570,21 @@ const ALL_BADGES = [
   {
     id: 'words_1k',
     title: 'Pluma de Bronce (1K)',
-    desc: 'Alcanzaste 1,000 palabras totales escritas en LoreAra.',
+    desc: 'Alcanzaste 1,000 palabras totales escritas en LoreVinci.',
     check: () => totalWordsAll() >= 1000,
     progress: () => `${Math.min(1000, totalWordsAll()).toLocaleString('es-CL')}/1.000 palabras`
   },
   {
     id: 'words_5k',
     title: 'Pluma de Plata (5K)',
-    desc: 'Alcanzaste 5,000 palabras totales escritas en LoreAra.',
+    desc: 'Alcanzaste 5,000 palabras totales escritas en LoreVinci.',
     check: () => totalWordsAll() >= 5000,
     progress: () => `${Math.min(5000, totalWordsAll()).toLocaleString('es-CL')}/5.000 palabras`
   },
   {
     id: 'words_20k',
     title: 'Pluma de Oro (20K)',
-    desc: 'Alcanzaste 20,000 palabras totales escritas en LoreAra.',
+    desc: 'Alcanzaste 20,000 palabras totales escritas en LoreVinci.',
     check: () => totalWordsAll() >= 20000,
     progress: () => `${Math.min(20000, totalWordsAll()).toLocaleString('es-CL')}/20.000 palabras`
   },
@@ -3087,7 +3108,7 @@ function maybeShowHomeTip() {
 }
 
 async function initApp() {
-  if (!DATA) DATA = await window.loreara.loadData();
+  if (!DATA) DATA = await window.lorevinci.loadData();
   if (!DATA.characters) DATA.characters = [];
   if (!DATA.collabNotes) DATA.collabNotes = [];
   if (!DATA.activityLog) DATA.activityLog = [];
@@ -3156,4 +3177,5 @@ async function initApp() {
   }
 }
 
+setupSidebarToggle();
 initApp();

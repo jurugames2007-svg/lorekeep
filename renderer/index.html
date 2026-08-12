@@ -2,8 +2,8 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'; connect-src 'self' https://api.openai.com https://openrouter.ai https://*.openrouter.ai http://localhost:* http://127.0.0.1:* https://*; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:;">
-<title>LoreAra</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.openai.com https://openrouter.ai https://*.openrouter.ai; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'none';">
+<title>LoreVinci</title>
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -23,14 +23,15 @@
           </defs>
         </svg>
       </div>
-      <h1 class="sl-title">LoreAra</h1>
+      <h1 class="sl-title">LoreVinci</h1>
       <p class="sl-sub">Cargando motor de escritura creativa e investigación local...</p>
-      <div class="sl-progress-bar"><div></div></div>
+      <div class="sl-progress-wrap"><div class="sl-progress-track"><div class="sl-progress-bar"></div></div><div class="sl-loader-meta"><span>Inicializando LoreVinci</span><span aria-live="polite">100%</span></div></div><div class="sl-particles" aria-hidden="true"><i></i><i></i><i></i></div>
     </div>
   </div>
   <div class="app-shell">
     <!-- Sidebar -->
-    <aside class="sidebar">
+    <aside class="sidebar" id="mainSidebar">
+      <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Contraer panel lateral" aria-expanded="true">‹</button>
       <div class="brand">
         <span class="brand-flag">
           <svg width="30" height="30" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -47,7 +48,7 @@
             </defs>
           </svg>
         </span>
-        <span class="brand-name">LoreAra</span>
+        <span class="brand-name">LoreVinci</span>
       </div>
       <nav class="nav">
         <button class="nav-item" data-view="home" title="Ir a Inicio">
@@ -229,7 +230,7 @@
       <!-- COLLAB VIEW -->
       <section class="view dashboard-container" id="view-collab">
         <h1 class="page-title">Colaboración</h1>
-        <p class="page-sub">LoreAra funciona 100% local. Exporta o importa archivos de respaldo y comparte tus notas con colaboradores.</p>
+        <p class="page-sub">LoreVinci funciona 100% local. Exporta o importa archivos de respaldo y comparte tus notas con colaboradores.</p>
         <div class="collab-columns">
             <div class="card">
             <h3>Compartir historia</h3>
@@ -353,23 +354,23 @@
         </div>
         <div class="card settings-card">
           <h3>Muse AI (Asistente de Escritura & Conexión OpenRouter)</h3>
-          <p class="muted small" style="margin-bottom:14px;">LoreAra es offline-first y no incluye servidores de IA de fábrica. Elige cómo deseas conectar tu motor creativo:</p>
+          <p class="muted small" style="margin-bottom:14px;">LoreVinci es offline-first y no incluye servidores de IA de fábrica. Elige cómo deseas conectar tu motor creativo:</p>
 
           <!-- OPCIÓN A: INICIAR SESIÓN CON GOOGLE (OPENROUTER OAUTH PKCE) -->
           <div class="openrouter-oauth-box" style="background:var(--bg-alt); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:18px;">
             <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
               <div>
                 <b style="font-size:14px; color:var(--text); display:block; margin-bottom:3px;">Opción 1: Conexión Rápida y Segura vía OpenRouter</b>
-                <span class="muted small">Conecta con tu cuenta de Google mediante OAuth PKCE. OpenRouter genera una clave temporal que la app usa para tus peticiones de IA.</span>
+                <span class="muted small">No hay OAuth de Google integrado. Abre OpenRouter para generar una API key y pégala manualmente; LoreVinci no recibe tus credenciales.</span>
               </div>
-              <button class="btn-google-auth" id="googleAuthBtn" title="Conectar Muse AI con tu cuenta de Google vía OpenRouter">
+              <button class="btn-google-auth" id="googleAuthBtn" title="Configurar API key de OpenRouter">
                 <svg width="18" height="18" viewBox="0 0 24 24">
                   <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"></path>
                   <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.73-2.46 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.15C3.32 21.44 7.37 24 12 24Z"></path>
                   <path fill="#FBBC05" d="M5.28 14.24A7.19 7.19 0 0 1 4.9 12c0-.78.13-1.54.38-2.24V6.61H1.29A11.96 11.96 0 0 0 0 12c0 2.93 1.1 5.6 2.92 7.64l3.88-3.15-.52-2.25Z"></path>
                   <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.37 0 3.32 2.56 1.29 6.61l3.99 3.15c.95-2.85 3.6-4.96 6.72-4.96Z"></path>
                 </svg>
-                <span>Iniciar sesión con Google</span>
+                <span>Abrir OpenRouter</span>
               </button>
             </div>
 
@@ -377,7 +378,7 @@
             <div style="background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:12px; font-size:12px;">
               <div style="font-weight:700; color:var(--accent); margin-bottom:4px;">Garantía de Privacidad (Cero Servidores Intermedios):</div>
               <ul style="margin:0 0 8px 18px; padding:0; color:var(--muted); line-height:1.5;">
-                <li>La clave <b>NUNCA se guarda en servidores de LoreAra</b> ni se comparte con terceros. Viaja directo desde tu equipo a OpenRouter.</li>
+                <li>La clave <b>NUNCA se guarda en servidores de LoreVinci</b> ni se comparte con terceros. Viaja directo desde tu equipo a OpenRouter.</li>
                 <li><b>Modo por defecto "Solo sesión":</b> la clave vive en memoria temporal y se elimina automáticamente al cerrar la app.</li>
               </ul>
               <div style="display:flex; align-items:center; gap:8px; margin-top:6px;">
@@ -388,7 +389,7 @@
 
             <!-- Estado de la Conexión y Botones de Revocación -->
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-              <span id="openrouterStatusBadge" class="canon-badge canon-reference">Estado: No conectado vía Google</span>
+              <span id="openrouterStatusBadge" class="canon-badge canon-reference">Estado: API key no configurada</span>
               <div class="row-gap" style="margin:0; gap:8px;">
                 <button class="btn-secondary small" id="openrouterMyKeysBtn" style="display:none;">Mis claves en OpenRouter ↗</button>
                 <button class="btn-danger small" id="openrouterLogoutBtn" style="display:none;">Cerrar sesión / Desactivar IA</button>
@@ -551,7 +552,7 @@
                   <path fill="#FBBC05" d="M5.28 14.24A7.19 7.19 0 0 1 4.9 12c0-.78.13-1.54.38-2.24V6.61H1.29A11.96 11.96 0 0 0 0 12c0 2.93 1.1 5.6 2.92 7.64l3.88-3.15-.52-2.25Z"></path>
                   <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.37 0 3.32 2.56 1.29 6.61l3.99 3.15c.95-2.85 3.6-4.96 6.72-4.96Z"></path>
                 </svg>
-                <span>Conectar Google (OpenRouter)</span>
+                <span>Configurar API key de OpenRouter</span>
               </button>
             </div>
             <div class="muse-quick">
@@ -574,7 +575,7 @@
           <span class="dot"></span> <span id="saveIndicatorText">Todo guardado</span>
         </div>
         <div class="status-right">
-          <span class="muted small">LoreAra V6.5</span>
+          <span class="muted small">LoreVinci V6.5</span>
         </div>
       </footer>
 
@@ -855,7 +856,7 @@
             <div class="onboarding-icon-box">
               <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
             </div>
-            <h2>¡Bienvenido/a a LoreAra!</h2>
+            <h2>¡Bienvenido/a a LoreVinci!</h2>
             <p class="muted">Tu suite profesional de escritura con IA local, auto-detección de personajes, portadas, reglas de lore y generación de libros automáticos. Todo se guarda en tu equipo.</p>
           </div>
           <div class="onboarding-slide" data-slide="1" style="display:none">
@@ -896,7 +897,7 @@
       <div class="modal-backdrop" id="helpModalBackdrop">
         <div class="modal help-modal">
           <div class="modal-head">
-            <h3>Guía experta de LoreAra</h3>
+            <h3>Guía experta de LoreVinci</h3>
             <button class="icon-btn" id="closeHelpModal" title="Cerrar">✕</button>
           </div>
           <div class="help-content">
