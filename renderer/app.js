@@ -495,6 +495,7 @@ function renderStories() {
         <div class="progress-bar"><div style="width:${progress}%"></div></div>
         <div class="story-actions">
           <button class="btn-secondary" data-act="open">Abrir</button>
+          <button class="btn-secondary" data-act="configure">Configurar</button>
           <button class="btn-danger" data-act="del">Eliminar</button>
         </div>
       </div>
@@ -502,6 +503,16 @@ function renderStories() {
     card.querySelector('[data-act="open"]').addEventListener('click', (e) => {
       e.stopPropagation();
       openStoryEditor(s.id);
+    });
+    card.querySelector('[data-act="configure"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      openStoryEditor(s.id);
+      requestAnimationFrame(() => {
+        const rulesTab = document.querySelector('.tab-btn[data-tab="rules"]');
+        if (rulesTab) rulesTab.click();
+        const rules = document.getElementById('rulesText');
+        if (rules) rules.focus();
+      });
     });
     card.querySelector('[data-act="del"]').addEventListener('click', async (e) => {
       e.stopPropagation();
