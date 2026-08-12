@@ -155,6 +155,60 @@ function hashDedup(name, snippet) {
   return (hash >>> 0).toString(36);
 }
 
+// Modelo narrativo estructurado: identidad, memoria y causalidad por variante.
+function normalizeNarrativeModel() {
+  if (!DATA) return;
+  DATA.narrativeModelVersion = 2;
+  DATA.stories = (DATA.stories || []).map(story => {
+    story.timeline = Array.isArray(story.timeline) ? story.timeline : [];
+    story.decisions = Array.isArray(story.decisions) ? story.decisions : [];
+    story.rules = typeof story.rules === 'string' ? story.rules : '';
+    story.chapters = (story.chapters || []).map((chapter, index) => ({
+      ...chapter,
+      order: Number.isFinite(chapter.order) ? chapter.order : index + 1,
+      decisions: Array.isArray(chapter.decisions) ? chapter.decisions : [],
+      consequences: Array.isArray(chapter.consequences) ? chapter.consequences : [],
+      knowledgeChanges: Array.isArray(chapter.knowledgeChanges) ? chapter.knowledgeChanges : []
+    }));
+    return story;
+  });
+  DATA.characters = (DATA.characters || []).map(character => ({
+    ...character,
+    variantLabel: character.variantLabel || character.name || 'Entidad sin nombre',
+    cosmology: character.cosmology || 'No especificada',
+    knowledge: character.knowledge || '',
+    knowledgeLedger: Array.isArray(character.knowledgeLedger) ? character.knowledgeLedger : [],
+    omniscient: Boolean(character.omniscient)
+  }));
+}
+
+function getVariantIdentity(character) {
+  if (!character) return 'Entidad desconocida';
+  return `${character.variantLabel || character.name} [cosmología: ${character.cosmology || 'no especificada'}]`;
+}
+
+function buildKnowledgeLedger(story) {
+  const chars = (DATA.characters || []).filter(c => c.storyId === story.id);
+  return chars.map(c => `${getVariantIdentity(c)} | omnisciencia: ${c.omniscient ? 'sí' : 'no'} | conocimiento declarado: ${sanitizeTextForPrompt(c.knowledge || 'ninguno; solo hechos presenciados o comunicados')}`).join('\n');
+}
+
+function findNarrativeWarnings(story) {
+  const warnings = [];
+  const names = new Map();
+  (DATA.characters || []).filter(c => c.storyId === story.id).forEach(c => {
+    const key = (c.name || '').trim().toLowerCase();
+    if (!key) return;
+    if (!names.has(key)) names.set(key, []);
+    names.get(key).push(c);
+  });
+  names.forEach((variants, name) => {
+    if (variants.length > 1 && variants.some(v => !v.variantLabel || v.variantLabel.toLowerCase() === name)) {
+      warnings.push(`El nombre base "${name}" tiene ${variants.length} variantes; asigna identificadores únicos.`);
+    }
+  });
+  return warnings;
+}
+
 function validateImportData(data) {
   if (!data || typeof data !== 'object') return "Formato inválido: no es objeto.";
   if (data.story) {
@@ -2038,6 +2092,8 @@ $('#startAutoBookBtn').addEventListener('click', async () => {
   const chars = (DATA.characters||[]).filter(c=>c.storyId===story.id).map(c=> `${sanitizeTextForPrompt(c.variantLabel || c.name)} | nombre base: ${sanitizeTextForPrompt(c.name)} | cosmología: ${sanitizeTextForPrompt(c.cosmology || 'No especificada')} | rol: ${sanitizeTextForPrompt(c.role)} | conocimiento permitido: ${sanitizeTextForPrompt(c.knowledge || 'solo lo mostrado en capítulos')} | omnisciencia: ${c.omniscient ? 'sí' : 'no'} | descripción: ${sanitizeTextForPrompt(c.description)} [${(c.traits||[]).join(', ')}]`).join("\n");
   const outlineSnippet = sanitizeTextForPrompt(story.outline || "Sin outline");
 
+  const modelWarnings = findNarrativeWarnings(story);
+  modelWarnings.forEach(w => addLog(`⚠️ ${w}`));
   addLog(`Iniciando generación automática de ${count} capítulo(s) para "${sanitizeTextForPrompt(story.title)}"...`);
   btn.disabled = true; btn.textContent = "⏳ Generando… (clic para cancelar)";
   let cancelled = false;
@@ -2063,6 +2119,8 @@ ${priorityContent}
 Fuentes Derivadas / Referencia: "${sources}"
 Reglas Cronológicas: "${chronology}"
 ${memoryBlock}
+REGISTRO DE CONOCIMIENTO POR VARIANTE (no inventes acceso):
+${buildKnowledgeLedger(story)}
 INSTRUCCIONES DE COHERENCIA 10/10:
 - Da PRIORIDAD ABSOLUTA al Canon Absoluto sobre todo lo demás.
 - Trata cada variante como una identidad distinta: nunca mezcles personajes con el mismo nombre. Usa el identificador variante/cosmología como clave canónica.
@@ -3172,6 +3230,9 @@ async function initApp() {
   if (DATA.settings.editorAppearance.width === '780px' && DATA.settings.uiScale === 'compact') {
     // mantener respeto a preferencia previa, no forzar
   }
+
+  normalizeNarrativeModel();
+  scheduleSave();
 
   // Hide startup loader after 1.5s (Steam-like cinematic boot)
   setTimeout(() => {
