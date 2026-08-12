@@ -144,7 +144,7 @@
         <div class="section-head">
           <h1 class="page-title">Mis Historias</h1>
           <div class="row-gap" style="margin:0;">
-            <button class="btn-secondary" id="demoBookBtn" title="Crea 'Ecos de Utopía' y genera 3 capítulos coherentes sin necesidad de API key — prueba la memoria 10/10">✨ Demo 10/10 (sin API)</button>
+            <button class="btn-secondary" id="demoBookBtn" title="Crea 'Ecos de Utopía' y genera 3 capítulos coherentes sin necesidad de API key — prueba la memoria 10/10"> Demo 10/10 (sin API)</button>
             <button class="btn-primary" id="newStoryBtn">+ Nueva historia</button>
           </div>
         </div>
@@ -473,7 +473,7 @@
                 <button id="audiobookBtn" title="Reproductor de Audiolibro" style="display:inline-flex; align-items:center; gap:6px;">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"></path><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path></svg>Audiolibro
                 </button>
-                <button id="toggleRightPanelBtn" title="Colapsar/Expandir panel derecho">Panel ▶</button>
+                <button id="toggleRightPanelBtn" title="Colapsar/Expandir panel derecho">Panel </button>
               <span id="wordCount" class="muted small"></span>
               </div>
 
@@ -583,7 +583,7 @@
       <div class="modal-backdrop" id="autoBookModalBackdrop" role="dialog" aria-modal="true" aria-label="Crear libro automático">
         <div class="modal" style="width: 580px;">
           <div class="modal-head">
-            <h3>⚡ Crear Libro Automático (Multi-Fuente, PDFs y Canon)</h3>
+            <h3> Crear Libro Automático (Multi-Fuente, PDFs y Canon)</h3>
             <button class="icon-btn" id="closeAutoBookModal" title="Cerrar">✕</button>
           </div>
           <p class="muted small">Genera automáticamente capítulos coherentes respetando la fuente prioritaria (Canon) y los documentos derivados adjuntos.</p>
@@ -621,7 +621,7 @@
 
           <div class="row-gap" style="justify-content:flex-end; margin-top:14px;">
             <button class="btn-secondary" id="cancelAutoBookBtn">Cerrar</button>
-            <button class="btn-primary" id="startAutoBookBtn">⚡ Iniciar Generación Automática</button>
+            <button class="btn-primary" id="startAutoBookBtn"> Iniciar Generación Automática</button>
           </div>
         </div>
       </div>
@@ -799,6 +799,15 @@
                     </select>
                   </div>
                 </div>
+                <div class="wallpaper-settings" style="margin-top:14px;">
+                  <label style="font-weight:600;">Fondo personalizado</label>
+                  <p class="muted small">Puedes usar una imagen o un GIF animado. Resolución recomendada: 1920 × 1080 px. Para pantallas 4K: 3840 × 2160 px. Relación ideal 16:9.</p>
+                  <div class="row-gap">
+                    <input type="file" id="wallpaperInput" accept="image/jpeg,image/png,image/webp,image/gif" />
+                    <button class="btn-secondary small" id="removeWallpaperBtn" type="button">Quitar fondo</button>
+                  </div>
+                  <label class="small"><input type="checkbox" id="wallpaperOverlayToggle" checked /> Aplicar capa de contraste para facilitar la lectura</label>
+                </div>
               </div>
             </div>
           </div>
@@ -937,9 +946,9 @@
           <button class="filter-btn" data-theme="soft" title="Lectura Cómoda (suave)">Cómodo</button>
         </div>
         <div class="audiobook-controls">
-          <button class="icon-btn" id="abPlay" title="Reproducir audiolibro">▶</button>
-          <button class="icon-btn" id="abPause" title="Pausar audiolibro">⏸</button>
-          <button class="icon-btn" id="abStop" title="Detener audiolibro">⏹</button>
+          <button class="icon-btn" id="abPlay" title="Reproducir audiolibro"></button>
+          <button class="icon-btn" id="abPause" title="Pausar audiolibro"></button>
+          <button class="icon-btn" id="abStop" title="Detener audiolibro"></button>
           <select id="abSpeed" title="Velocidad de lectura" style="width:70px; margin:0; padding:4px;">
             <option value="0.75">0.75x</option>
             <option value="1" selected>1.0x</option>

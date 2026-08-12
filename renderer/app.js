@@ -1764,10 +1764,10 @@ $('#fetchModelsBtn').addEventListener('click', async () => {
       opt.textContent = m;
       selectEl.appendChild(opt);
     });
-    resultEl.textContent = `✅ Se detectaron ${res.models.length} modelos con éxito. Selecciona el deseado o el mejor para contexto.`;
+    resultEl.textContent = ` Se detectaron ${res.models.length} modelos con éxito. Selecciona el deseado o el mejor para contexto.`;
     showToast('Modelos detectados correctamente.');
   } else {
-    resultEl.textContent = `❌ Error detectando modelos: ${res.error || 'Respuesta vacía'}`;
+    resultEl.textContent = ` Error detectando modelos: ${res.error || 'Respuesta vacía'}`;
   }
 });
 
@@ -2142,11 +2142,11 @@ $('#startAutoBookBtn').addEventListener('click', async () => {
   const outlineSnippet = sanitizeTextForPrompt(story.outline || "Sin outline");
 
   const modelWarnings = findNarrativeWarnings(story);
-  modelWarnings.forEach(w => addLog(`⚠️ ${w}`));
+  modelWarnings.forEach(w => addLog(`⚠ ${w}`));
   addLog(`Iniciando generación automática de ${count} capítulo(s) para "${sanitizeTextForPrompt(story.title)}"...`);
   btn.disabled = true; btn.textContent = "⏳ Generando… (clic para cancelar)";
   let cancelled = false;
-  const onCancel = () => { cancelled = true; if (autoBookAbort) autoBookAbort.abort(); addLog("⛔ Cancelado por el usuario."); btn.disabled=false; btn.textContent="⚡ Iniciar Generación Automática"; };
+  const onCancel = () => { cancelled = true; if (autoBookAbort) autoBookAbort.abort(); addLog(" Cancelado por el usuario."); btn.disabled=false; btn.textContent=" Iniciar Generación Automática"; };
   btn.addEventListener('click', onCancel, {once:true});
   autoBookAbort = new AbortController();
 
@@ -2191,7 +2191,7 @@ Escribe un capítulo completo, narrativo, detallado, de al menos 320 palabras en
     try {
       if (!hasKey) {
         usedMock = true;
-        addLog(`ℹ️ Sin API key — usando generador local coherente 10/10 (respeta canon y memoria) para demo.`);
+        addLog(` Sin API key — usando generador local coherente 10/10 (respeta canon y memoria) para demo.`);
         await new Promise(r=>setTimeout(r, 700)); // simula latencia
         generatedText = mockGenerateChapterOffline(story, nextNum, tone, memoryBlock, priorityContent);
         generatedText = sanitizeHtml(generatedText);
@@ -2209,9 +2209,9 @@ Escribe un capítulo completo, narrativo, detallado, de al menos 320 palabras en
           signal: autoBookAbort.signal
         });
         if (!res.ok) {
-          if (res.error && res.error.toLowerCase().includes('abort')) { addLog("⛔ Generación abortada."); break; }
+          if (res.error && res.error.toLowerCase().includes('abort')) { addLog(" Generación abortada."); break; }
           // Fallback mock si falla API (ej: key inválida en demo)
-          addLog(`⚠️ API falló (${res.error.slice(0,80)}…) → fallback mock local coherente.`);
+          addLog(`⚠ API falló (${res.error.slice(0,80)}…) → fallback mock local coherente.`);
           generatedText = mockGenerateChapterOffline(story, nextNum, tone, memoryBlock, priorityContent);
           generatedText = sanitizeHtml(generatedText);
           usedMock = true;
@@ -2220,7 +2220,7 @@ Escribe un capítulo completo, narrativo, detallado, de al menos 320 palabras en
         }
       }
 
-      if (!generatedText || generatedText.length < 80) { addLog(`⚠️ Capítulo ${nextNum} demasiado corto, descartado.`); continue; }
+      if (!generatedText || generatedText.length < 80) { addLog(`⚠ Capítulo ${nextNum} demasiado corto, descartado.`); continue; }
       const newCh = {
         id: uid('ch'),
         title: `Capítulo ${nextNum}: Automático${usedMock ? ' • Demo Local' : ''}`,
@@ -2232,18 +2232,18 @@ Escribe un capítulo completo, narrativo, detallado, de al menos 320 palabras en
       story.updatedAt = Date.now();
       scheduleSave();
       renderChapterList();
-      addLog(`✅ Capítulo ${nextNum} generado (${generatedText.length} chars) ${usedMock ? '[MOCK LOCAL 10/10]' : ''} — coherencia con memoria verificada.`);
+      addLog(` Capítulo ${nextNum} generado (${generatedText.length} chars) ${usedMock ? '[MOCK LOCAL 10/10]' : ''} — coherencia con memoria verificada.`);
     } catch (err) {
-      if (err && err.name === 'AbortError') { addLog("⛔ Abortado."); break; }
+      if (err && err.name === 'AbortError') { addLog(" Abortado."); break; }
       addLog(`Excepción: ${String(err).slice(0,200)}`);
       break;
     }
   }
 
   btn.removeEventListener('click', onCancel);
-  btn.disabled=false; btn.textContent="⚡ Iniciar Generación Automática";
+  btn.disabled=false; btn.textContent=" Iniciar Generación Automática";
   autoBookAbort=null;
-  addLog('✨ ¡Generación automática completada! Revisa coherencia en el editor.');
+  addLog(' ¡Generación automática completada! Revisa coherencia en el editor.');
   showToast('Libro automático actualizado — capítulos con memoria de decisiones.');
 });
 
@@ -2321,7 +2321,7 @@ async function triggerRealtimeSuggestion() {
     rsbContent.textContent = suggestion;
     rsbContent.setAttribute('data-suggestion', suggestion);
   } else {
-    rsbContent.textContent = '💡 Sugerencia: Mantén el ritmo de la escena y profundiza en las motivaciones del protagonista.';
+    rsbContent.textContent = ' Sugerencia: Mantén el ritmo de la escena y profundiza en las motivaciones del protagonista.';
     rsbContent.setAttribute('data-suggestion', 'Mantén el ritmo de la escena y profundiza en las motivaciones del protagonista.');
   }
 }
@@ -2875,6 +2875,8 @@ function renderProfileModal() {
   const themeSel = $('#appThemeBackgroundSelect');
   if (borderSel) borderSel.value = settings.profileBorder || 'rank-gold';
   if (themeSel) themeSel.value = settings.appTheme || 'bg-obsidian';
+  const wallpaperOverlay = $('#wallpaperOverlayToggle');
+  if (wallpaperOverlay) wallpaperOverlay.checked = settings.wallpaperOverlay !== false;
 }
 
 function openAuthorProfileModal() {
@@ -3018,6 +3020,19 @@ if ($('#appThemeBackgroundSelect')) {
   });
 }
 
+if ($('#wallpaperInput')) {
+  $('#wallpaperInput').addEventListener('change', (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    if (file.size > 12 * 1024 * 1024) { showToast('El fondo debe pesar menos de 12 MB.'); event.target.value = ''; return; }
+    const reader = new FileReader();
+    reader.onload = () => { DATA.settings.wallpaper = reader.result; scheduleSave(); applyProfileAndTheme(); showToast('Fondo personalizado guardado. Resolución recomendada: 1920 x 1080 px.'); event.target.value = ''; };
+    reader.readAsDataURL(file);
+  });
+}
+if ($('#removeWallpaperBtn')) $('#removeWallpaperBtn').addEventListener('click', () => { DATA.settings.wallpaper = null; scheduleSave(); applyProfileAndTheme(); showToast('Fondo personalizado eliminado.'); });
+if ($('#wallpaperOverlayToggle')) $('#wallpaperOverlayToggle').addEventListener('change', (event) => { DATA.settings.wallpaperOverlay = event.target.checked; scheduleSave(); applyProfileAndTheme(); });
+
 function applyUiScale() {
   const scale = (DATA && DATA.settings && DATA.settings.uiScale) || 'compact';
   const html = document.documentElement;
@@ -3065,6 +3080,9 @@ function applyProfileAndTheme() {
   if (borderEl) borderEl.className = 'avatar-border ' + border;
 
   const theme = settings.appTheme || 'bg-obsidian';
+  document.documentElement.style.setProperty('--wallpaper-image', settings.wallpaper ? `url(\"${settings.wallpaper}\")` : 'none');
+  document.body.classList.toggle('has-wallpaper', Boolean(settings.wallpaper));
+  document.body.classList.toggle('wallpaper-no-overlay', settings.wallpaperOverlay === false);
   // reconstruir clases de body sin perder densidad
   document.body.className = '';
   if (theme !== 'bg-obsidian') {
@@ -3220,7 +3238,7 @@ function maybeShowHomeTip() {
   if (homeView.querySelector('.home-tip')) return;
   const tip = document.createElement('div');
   tip.className = 'home-tip';
-  tip.innerHTML = `<span>💡</span><div><b>Consejo pro:</b> Pulsa <b>Cmd+Shift+F</b> en el editor para entrar en <b>Modo Zen</b> sin distracciones. <button class="link-btn" id="dismissHomeTip" style="margin-left:8px;">Entendido</button></div>`;
+  tip.innerHTML = `<span></span><div><b>Consejo pro:</b> Pulsa <b>Cmd+Shift+F</b> en el editor para entrar en <b>Modo Zen</b> sin distracciones. <button class="link-btn" id="dismissHomeTip" style="margin-left:8px;">Entendido</button></div>`;
   const grid = homeView.querySelector('.home-grid');
   if (grid) homeView.insertBefore(tip, grid);
   const dismiss = document.getElementById('dismissHomeTip');
