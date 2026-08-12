@@ -672,6 +672,7 @@ $('#autoDetectCharsBtn').addEventListener('click', () => {
             storyId: story.id,
             name: name,
             role: 'Personaje detectado',
+            variantLabel: name, cosmology: 'No especificada', knowledge: '', omniscient: false,
             description: `Detectado automáticamente en los capítulos de "${story.title}". Personalidad analizada del contexto de aparición.`,
             traits: ['activo', 'recurrente']
           });
@@ -695,6 +696,10 @@ function openCharModal(charId) {
     $('#charStorySelect').value = c.storyId;
     $('#charName').value = c.name || '';
     $('#charRole').value = c.role || '';
+    $('#charVariant').value = c.variantLabel || '';
+    $('#charCosmology').value = c.cosmology || '';
+    $('#charKnowledge').value = c.knowledge || '';
+    $('#charOmniscient').checked = Boolean(c.omniscient);
     $('#charDesc').value = c.description || '';
     $('#charTraits').value = (c.traits || []).join(', ');
     $('#deleteCharBtn').style.display = 'inline-block';
@@ -703,6 +708,10 @@ function openCharModal(charId) {
     if (currentStoryId) $('#charStorySelect').value = currentStoryId;
     $('#charName').value = '';
     $('#charRole').value = '';
+    $('#charVariant').value = '';
+    $('#charCosmology').value = '';
+    $('#charKnowledge').value = '';
+    $('#charOmniscient').checked = false;
     $('#charDesc').value = '';
     $('#charTraits').value = '';
     $('#deleteCharBtn').style.display = 'none';
@@ -722,6 +731,10 @@ $('#saveCharBtn').addEventListener('click', () => {
     storyId: $('#charStorySelect').value,
     name: $('#charName').value.trim() || 'Sin nombre',
     role: $('#charRole').value.trim(),
+    variantLabel: $('#charVariant').value.trim() || $('#charName').value.trim(),
+    cosmology: $('#charCosmology').value.trim() || 'No especificada',
+    knowledge: $('#charKnowledge').value.trim(),
+    omniscient: $('#charOmniscient').checked,
     description: $('#charDesc').value.trim(),
     traits: $('#charTraits').value.split(',').map(t => t.trim()).filter(Boolean)
   };
@@ -2022,7 +2035,7 @@ $('#startAutoBookBtn').addEventListener('click', async () => {
     logsEl.scrollTop = logsEl.scrollHeight;
   };
 
-  const chars = (DATA.characters||[]).filter(c=>c.storyId===story.id).map(c=> `${sanitizeTextForPrompt(c.name)} (${sanitizeTextForPrompt(c.role)}): ${sanitizeTextForPrompt(c.description)} [${(c.traits||[]).join(', ')}]`).join("\n");
+  const chars = (DATA.characters||[]).filter(c=>c.storyId===story.id).map(c=> `${sanitizeTextForPrompt(c.variantLabel || c.name)} | nombre base: ${sanitizeTextForPrompt(c.name)} | cosmología: ${sanitizeTextForPrompt(c.cosmology || 'No especificada')} | rol: ${sanitizeTextForPrompt(c.role)} | conocimiento permitido: ${sanitizeTextForPrompt(c.knowledge || 'solo lo mostrado en capítulos')} | omnisciencia: ${c.omniscient ? 'sí' : 'no'} | descripción: ${sanitizeTextForPrompt(c.description)} [${(c.traits||[]).join(', ')}]`).join("\n");
   const outlineSnippet = sanitizeTextForPrompt(story.outline || "Sin outline");
 
   addLog(`Iniciando generación automática de ${count} capítulo(s) para "${sanitizeTextForPrompt(story.title)}"...`);
@@ -2052,6 +2065,10 @@ Reglas Cronológicas: "${chronology}"
 ${memoryBlock}
 INSTRUCCIONES DE COHERENCIA 10/10:
 - Da PRIORIDAD ABSOLUTA al Canon Absoluto sobre todo lo demás.
+- Trata cada variante como una identidad distinta: nunca mezcles personajes con el mismo nombre. Usa el identificador variante/cosmología como clave canónica.
+- Ningún personaje puede saber información que no haya presenciado, deducido o recibido, salvo omnisciencia declarada.
+- No resuelvas el conflicto principal instantáneamente: introduce escalada, obstáculos, coste, decisiones y consecuencias; conserva problemas abiertos para capítulos posteriores.
+- No otorgues nuevas transformaciones, técnicas, aliados o información sin preparación narrativa y evidencia.
 - NO contradigas decisiones de capítulos previos (muertes, giros, afiliaciones).
 - Mantén tono "${tone}" y voz del autor.
 - Si falta info, NO inventes lore que contradiga canon; indica "[No especificado en canon]".
@@ -2267,7 +2284,7 @@ async function runMusePrompt(promptText) {
   const safeCharSummary = sanitizeTextForPrompt(charSummary || 'N/A');
   const safeChapterTitle = sanitizeTextForPrompt(chapter.title);
   const safeCurrentText = sanitizeTextForPrompt(currentText);
-  const systemPrompt = `Eres Muse AI, asistente creativo de LoreVinci. Ayudas a escribir historias, sugerir acciones y mantener coherencia con las reglas de lore. Responde en español, de forma creativa y concisa.
+  const systemPrompt = `Eres Muse AI, asistente creativo de LoreVinci. Ayudas a escribir historias, sugerir acciones y mantener coherencia con las reglas de lore. Distingue siempre variantes por universo/cosmología; no mezcles sus recuerdos. No resuelvas conflictos en segundos: propone progresión, coste y consecuencias. Responde en español, de forma creativa y concisa.
 
 Contexto de la obra: "${safeTitle}" (${safeGenre}).
 Reglas y Lore Base: ${safeRules}
