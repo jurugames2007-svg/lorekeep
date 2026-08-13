@@ -41,21 +41,104 @@ Windows para generar el `.exe`, en macOS para el `.dmg`).
 - **Characters**: ficha de personajes (rol, descripción, rasgos) por historia.
 - **Collab**: exporta una historia como `.json` (para compartir con otro colaborador que la importe) o como `.txt` plano; deja notas para tu equipo.
 - **Stats**: palabras totales, capítulos, racha de escritura y actividad de los últimos 14 días.
-- **Settings**: nombre de autor/a, configuración de Muse AI (proveedor, modelo, API key) y respaldo/restauración de todos tus datos.
+- **Settings**: nombre de autor/a, configuración y **verificación real** de Muse AI (proveedor, modelo, API key) y respaldo/restauración de todos tus datos.
+- **Fuentes & PDFs**: carga de **múltiples PDFs a la vez** con extracción real de texto, clasificación automática por **sub-tipo de historia** y **verso**, y filtros combinados.
 
-## Configurar Muse AI
+## Fuentes y PDFs (carga múltiple)
 
-Ve a **Settings → Muse AI** e ingresa:
+En **Fuentes & PDFs** puedes subir **muchos PDFs al mismo tiempo**:
 
+- Pulsa *"Subir varios PDFs / artículos"* y selecciona todos los archivos que quieras
+  (hasta 40 por lote), o simplemente **arrástralos juntos** sobre la zona de carga.
+- El texto de cada PDF se extrae de verdad con **pdf.js incluido en la app** (100% offline):
+  se conserva el número de páginas y el contenido queda buscable.
+- Una barra de progreso muestra archivo por archivo qué se añadió, qué era duplicado y
+  qué falló. Los PDFs escaneados sin capa de texto se marcan como *"Requiere OCR"*.
+- La **deduplicación** sigue activa: un mismo documento no entra dos veces.
+
+### Filtrado por historia, sub-tipo y verso
+
+Cada fuente se clasifica automáticamente al subirla y puedes corregirla a mano:
+
+- **Historia**: a qué libro pertenece la fuente.
+- **Sub-tipo de historia**: Canon oficial, Fanfic/Derivado, What If, Precuela, Secuela,
+  Spin-off, Crossover, Worldbuilding, Fichas de personaje, Cronología, Guion, Notas,
+  Capítulos/Manuscrito.
+- **Verso**: canon principal, universo alterno, multiverso, línea futura/pasada o una
+  línea temporal divergente. También se reconoce un verso explícito en el nombre del
+  archivo, por ejemplo `Cronologia [Verso: Universo 7].pdf`.
+
+La barra de filtros combina búsqueda de texto completo + historia + sub-tipo + verso +
+jerarquía de canon. Al generar un libro automático puedes limitar el contexto a un
+sub-tipo y a un verso concretos.
+
+## Configurar un libro (parámetros iniciales, siempre editables)
+
+El botón **Configurar** de cada historia (y *"Configurar libro"* dentro del editor) abre
+un panel con pestañas para cambiar en cualquier momento lo que definiste al crearla:
+
+- **Identidad**: título, género, sinopsis y outline.
+- **Portada**: subir/quitar imagen de portada y color de respaldo, con vista previa.
+- **Lore y reglas**: reglas inquebrantables, lore base extendido y reglas cronológicas.
+- **Estilo y voz**: ver más abajo.
+- **Fuentes**: adjuntar varios PDFs al libro y revisar los que ya tiene.
+
+## Mantener la personalidad y la escritura de la obra
+
+En **Configurar → Estilo y voz** defines cómo debe sonar la prosa:
+
+- **Obra o autor de referencia** a imitar (ej. *Dragon Ball (Toriyama)*).
+- **Notas de voz narrativa**, **persona narrativa**, **registro/tono** y **fidelidad al
+  estilo** (alta / media / baja).
+- **Muestra de estilo**: un fragmento canónico que la IA usa como patrón de ritmo,
+  sintaxis y vocabulario.
+- **"Extraer estilo de lo ya escrito"** analiza tus capítulos y fuentes para deducir la
+  voz automáticamente (funciona sin API con un analizador local; con API es más fino).
+
+Estas instrucciones se inyectan en cada generación y tienen prioridad sobre el enfoque
+narrativo puntual, para que la obra no cambie de voz entre capítulos.
+
+## Aprovechamiento máximo del contenido
+
+Al generar capítulos, LoreVinci ya no manda solo un documento recortado:
+
+- **Digest multi-fuente**: trocea *todas* las fuentes del libro, las puntúa por relevancia
+  frente al contexto actual y por jerarquía de canon, y arma el mejor contexto posible
+  dentro del presupuesto disponible. Ningún *Canon Absoluto* queda fuera.
+- **Memoria narrativa completa**: resume todos los capítulos anteriores y añade los dos
+  últimos en detalle, en lugar de mirar solo los dos últimos.
+- Cada pasaje va etiquetado con su documento, sub-tipo y verso para que la IA sepa de
+  dónde sale cada dato.
+
+## Configurar y verificar Muse AI
+
+Ve a **Ajustes → Muse AI** e ingresa:
+
+- **Proveedor**: un desplegable rellena la URL base por ti (OpenAI, OpenRouter, Groq,
+  Ollama, LM Studio) o elige *Personalizado*.
 - **URL base**: por defecto `https://api.openai.com/v1` (funciona con cualquier API
-  compatible con "Chat Completions" de OpenAI: OpenAI, OpenRouter, Groq, un servidor
-  local como LM Studio/Ollama con endpoint compatible, etc.).
-- **Modelo**: por ejemplo `gpt-4o-mini`.
-- **API Key**: tu clave personal. Se guarda solo en tu computador, en el archivo de
-  datos local de la app (nunca se envía a ningún servidor de LoreVinci, porque no existe
-  tal servidor: todo corre localmente).
+  compatible con "Chat Completions" de OpenAI).
+- **API Key**: tu clave personal. Se guarda solo en tu computador (nunca se envía a
+  ningún servidor de LoreVinci, porque no existe tal servidor: todo corre localmente).
+  Un botón *Ver/Ocultar* te deja comprobar lo que pegaste.
+- **Modelo**: pulsa *"Detectar modelos"* para traer el catálogo real de tu cuenta.
 
-Pulsa "Probar conexión" para verificar que quedó bien configurado.
+Pulsa **"Verificar y activar API"**. La verificación es real y de extremo a extremo:
+
+1. Comprueba que hay credencial (o que es un servidor local que no la necesita).
+2. Autentica contra `/models` y lista los modelos disponibles.
+3. Confirma que el modelo elegido existe en tu catálogo.
+4. Lanza una generación mínima contra `/chat/completions` para probar que **de verdad
+   escribe**.
+
+Cada paso se muestra en verde o rojo con el motivo exacto del fallo (401 clave inválida,
+402 sin créditos, 404 URL o modelo incorrecto, 429 límite de cuota, host inalcanzable…).
+Al pasar, la insignia queda en **"operativo"** con fecha de verificación. Si cambias la
+clave, la URL o el modelo, la verificación se invalida y hay que repetirla.
+
+> El botón de inicio de sesión con Google se eliminó del widget flotante de Muse AI y de
+> Ajustes: no había OAuth real detrás y estorbaba. Toda la conexión se gestiona ahora
+> desde el panel de verificación de Ajustes.
 
 ## Dónde se guardan tus datos
 

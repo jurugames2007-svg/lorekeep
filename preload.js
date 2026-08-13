@@ -6,5 +6,8 @@ contextBridge.exposeInMainWorld('lorevinci', {
   exportFile: (data) => ipcRenderer.invoke('data:exportFile', data),
   importFile: () => ipcRenderer.invoke('data:importFile'),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
-  aiGenerate: (payload) => ipcRenderer.invoke('ai:generate', payload)
+  aiGenerate: (payload) => ipcRenderer.invoke('ai:generate', payload),
+  aiModels: (payload) => ipcRenderer.invoke('ai:models', payload),
+  aiVerify: (payload) => ipcRenderer.invoke('ai:verify', payload),
+  isDesktop: true
 });

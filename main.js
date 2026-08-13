@@ -154,6 +154,98 @@ ipcMain.handle('ai:models', async (_evt, payload) => {
   }
 });
 
+// Verificación completa de la API: comprueba credencial (GET /models) y capacidad real
+// de generación (POST /chat/completions con un ping mínimo). Devuelve un diagnóstico
+// accionable para que el usuario deje la IA operativa desde Ajustes.
+ipcMain.handle('ai:verify', async (_evt, payload) => {
+  const { baseUrl, apiKey, model } = payload || {};
+  const steps = [];
+  const root = (baseUrl || 'https://api.openai.com/v1').replace(/\/$/, '');
+  const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])/i.test(root);
+
+  if (!apiKey && !isLocal) {
+    return {
+      ok: false,
+      steps: [{ id: 'key', ok: false, label: 'API Key presente', detail: 'No hay API Key configurada.' }],
+      error: 'Falta la API Key. Pégala en el campo de arriba y vuelve a verificar.'
+    };
+  }
+  steps.push({ id: 'key', ok: true, label: 'API Key presente', detail: isLocal && !apiKey ? 'Servidor local sin key (correcto)' : 'Clave detectada' });
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  if (root.includes('openrouter.ai')) {
+    headers['HTTP-Referer'] = 'https://lorevinci.app';
+    headers['X-Title'] = 'LoreVinci Desktop';
+  }
+
+  let models = [];
+  // Paso 1: credencial + catálogo de modelos
+  try {
+    const res = await fetch(`${root}/models`, { method: 'GET', headers });
+    if (!res.ok) {
+      const errText = (await res.text()).slice(0, 300);
+      let hint = `Error ${res.status}.`;
+      if (res.status === 401 || res.status === 403) hint = 'Credencial rechazada (401/403). Revisa que la API Key sea válida y esté activa.';
+      else if (res.status === 404) hint = 'Endpoint /models no encontrado (404). Revisa la URL base: suele terminar en /v1.';
+      else if (res.status === 429) hint = 'Límite de cuota alcanzado (429). Espera o revisa tu plan.';
+      steps.push({ id: 'auth', ok: false, label: 'Autenticación y catálogo', detail: `${hint} ${errText}`.trim() });
+      return { ok: false, steps, error: hint };
+    }
+    const json = await res.json();
+    const list = json.data || json.models || [];
+    models = list.map(m => m.id || m.name || m).filter(Boolean);
+    steps.push({ id: 'auth', ok: true, label: 'Autenticación y catálogo', detail: `${models.length} modelo(s) disponibles` });
+  } catch (err) {
+    steps.push({ id: 'auth', ok: false, label: 'Autenticación y catálogo', detail: `No hay conexión con ${root}: ${String(err).slice(0, 200)}` });
+    return { ok: false, steps, error: `No se pudo contactar ${root}. Revisa la URL base y tu conexión.` };
+  }
+
+  // Paso 2: el modelo elegido existe en el catálogo
+  const chosen = model || models[0] || 'gpt-4o-mini';
+  const modelExists = models.length === 0 || models.includes(chosen);
+  steps.push({
+    id: 'model',
+    ok: modelExists,
+    label: 'Modelo seleccionado',
+    detail: modelExists ? `"${chosen}" disponible` : `"${chosen}" no aparece en el catálogo; elige uno de la lista detectada.`
+  });
+
+  // Paso 3: generación real (prueba de extremo a extremo)
+  try {
+    const res = await fetch(`${root}/chat/completions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: chosen,
+        messages: [
+          { role: 'system', content: 'Responde exactamente con la palabra: OPERATIVO' },
+          { role: 'user', content: 'ping' }
+        ],
+        max_tokens: 12,
+        temperature: 0
+      })
+    });
+    if (!res.ok) {
+      const errText = (await res.text()).slice(0, 300);
+      let hint = `La generación falló (${res.status}).`;
+      if (res.status === 402) hint = 'Sin créditos (402). Recarga saldo en tu proveedor.';
+      else if (res.status === 401 || res.status === 403) hint = 'La clave lee modelos pero no puede generar (permisos insuficientes).';
+      else if (res.status === 404) hint = `El modelo "${chosen}" no existe para esta cuenta.`;
+      else if (res.status === 429) hint = 'Límite de peticiones (429). Reintenta en unos segundos.';
+      steps.push({ id: 'generate', ok: false, label: 'Generación de texto', detail: `${hint} ${errText}`.trim() });
+      return { ok: false, steps, models, error: hint };
+    }
+    const json = await res.json();
+    const text = json?.choices?.[0]?.message?.content || '';
+    steps.push({ id: 'generate', ok: true, label: 'Generación de texto', detail: `Respuesta recibida: "${String(text).trim().slice(0, 40) || '(vacía)'}"` });
+    return { ok: true, steps, models, model: chosen };
+  } catch (err) {
+    steps.push({ id: 'generate', ok: false, label: 'Generación de texto', detail: String(err).slice(0, 200) });
+    return { ok: false, steps, models, error: 'No se pudo completar la prueba de generación.' };
+  }
+});
+
 ipcMain.handle('data:load', async () => {
   return loadData();
 });
@@ -213,7 +305,7 @@ ipcMain.handle('ai:generate', async (_evt, payload) => {
   // Validación de mensajes para evitar prompt injection extremo: limitar tamaño
   try {
     const totalChars = JSON.stringify(messages).length;
-    if (totalChars > 30000) return { ok: false, error: 'Prompt demasiado largo (límite 30k chars). Reduce fuentes o reglas.' };
+    if (totalChars > 120000) return { ok: false, error: 'Prompt demasiado largo (límite 120k chars). Reduce fuentes o reglas.' };
   } catch {}
 
   try {
@@ -234,7 +326,7 @@ ipcMain.handle('ai:generate', async (_evt, payload) => {
       body: JSON.stringify({
         model: model || 'gpt-4o-mini',
         messages,
-        max_tokens: Math.min(2000, maxTokens || 500),
+        max_tokens: Math.min(8000, maxTokens || 500),
         temperature: typeof temperature === 'number' ? Math.max(0, Math.min(1.2, temperature)) : 0.65
       })
     };
