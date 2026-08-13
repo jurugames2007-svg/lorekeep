@@ -637,10 +637,14 @@
           <label>Reglas cronológicas y de continuidad</label>
           <textarea id="autoBookChronology" rows="2" placeholder="Ej: Mantener orden cronológico estricto, respetar nivel de poder, no contradecir fuentes..."></textarea>
           
-          <div style="display:flex; gap:10px;">
-            <div style="flex:1;">
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:120px;">
               <label>Capítulos a generar</label>
               <input type="number" id="autoBookCount" value="3" min="1" max="10" />
+            </div>
+            <div style="flex:1; min-width:140px;">
+              <label>Palabras por capítulo</label>
+              <input type="number" id="autoBookLength" value="1200" min="300" max="4000" step="100" />
             </div>
             <div style="flex:1;">
               <label>Enfoque narrativo</label>
@@ -652,6 +656,11 @@
               </select>
             </div>
           </div>
+
+          <label class="autobook-check" style="display:flex; align-items:center; gap:8px; margin-top:10px; font-weight:600; color:var(--text); cursor:pointer;">
+            <input type="checkbox" id="autoBookPlanning" checked style="width:auto; margin:0;" />
+            Planificar una escaleta antes de escribir (más coherente, usa una llamada extra)
+          </label>
 
           <div id="autoBookLogs" class="notes-list" style="margin-top:12px; max-height:140px; background:var(--bg); padding:8px; border-radius:8px; font-family:monospace; font-size:11px;">
             <div class="muted">Esperando inicio de generación automática...</div>

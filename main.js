@@ -326,7 +326,7 @@ ipcMain.handle('ai:generate', async (_evt, payload) => {
       body: JSON.stringify({
         model: model || 'gpt-4o-mini',
         messages,
-        max_tokens: Math.min(8000, maxTokens || 500),
+        max_tokens: Math.min(32000, maxTokens || 500),
         temperature: typeof temperature === 'number' ? Math.max(0, Math.min(1.2, temperature)) : 0.65
       })
     };
@@ -344,8 +344,24 @@ ipcMain.handle('ai:generate', async (_evt, payload) => {
     }
 
     const json = await res.json();
-    const text = json?.choices?.[0]?.message?.content || '';
-    return { ok: true, text };
+    const choice = json?.choices?.[0];
+    const text = choice?.message?.content || '';
+    // finish_reason es la única forma fiable de saber si el modelo se quedó sin
+    // presupuesto a mitad de frase. Sin esto guardaríamos capítulos cortados
+    // haciéndolos pasar por completos.
+    const finishReason = choice?.finish_reason || choice?.native_finish_reason || null;
+    const usage = json?.usage || null;
+    return {
+      ok: true,
+      text,
+      finishReason,
+      truncated: finishReason === 'length',
+      usage: usage ? {
+        promptTokens: usage.prompt_tokens ?? null,
+        completionTokens: usage.completion_tokens ?? null,
+        totalTokens: usage.total_tokens ?? null
+      } : null
+    };
   } catch (err) {
     return { ok: false, error: `No se pudo conectar con el proveedor de IA: ${String(err)}` };
   }

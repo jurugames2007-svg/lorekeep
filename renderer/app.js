@@ -1054,6 +1054,225 @@ function renderStats() {
   });
 }
 
+// ============ ANCLAS DE ESTILO, ESCALETA Y VERIFICACIÓN NARRATIVA ============
+
+/**
+ * El estilo se demuestra mejor que se describe. Extrae fragmentos reales de los
+ * capítulos ya escritos para que el modelo tenga ejemplos concretos de la voz,
+ * en vez de solo adjetivos.
+ */
+function buildStyleAnchors(story, budgetChars = 2400) {
+  const chapters = (story.chapters || []).filter(c => stripHtml(c.content).trim().length > 200);
+  if (!chapters.length) return '';
+
+  // Preferimos capítulos marcados como terminados: son los que el autor validó.
+  const done = chapters.filter(c => c.status === 'done');
+  const pool = done.length ? done : chapters;
+  const picks = [];
+  if (pool.length) picks.push(pool[pool.length - 1]);              // el más reciente manda
+  if (pool.length > 2) picks.push(pool[Math.floor(pool.length / 2)]);
+  if (pool.length > 1) picks.push(pool[0]);                        // el que fijó el tono
+
+  const per = Math.floor(budgetChars / Math.max(1, picks.length));
+  const blocks = picks.slice(0, 3).map((c, i) => {
+    const text = stripHtml(c.content).replace(/\s+/g, ' ').trim();
+    // El arranque de escena es lo más representativo de la voz.
+    return `--- Muestra ${i + 1} (de "${sanitizeTextForPrompt(c.title)}") ---\n${sanitizeTextForPrompt(text.slice(0, per))}`;
+  });
+
+  return `MUESTRAS REALES DE LA VOZ DE ESTA OBRA (escribe con este mismo ritmo, sintaxis y vocabulario; NO reutilices su contenido):\n${blocks.join('\n\n')}`;
+}
+
+/**
+ * Genera una escaleta breve antes de redactar. Planificar y luego escribir da
+ * capítulos mucho más coherentes que pedir la prosa de una sola pasada.
+ */
+async function planChapterBeat(story, nextNum, tone, contextBlock, signal) {
+  const systemPrompt = `Eres un editor de mesa que planifica capítulos. Devuelves SOLO un JSON válido, sin markdown ni explicaciones.`;
+  const userPrompt = `Planifica el Capítulo ${nextNum} de "${sanitizeTextForPrompt(story.title)}".
+
+${contextBlock}
+
+Devuelve exactamente este JSON:
+{
+  "titulo": "título evocador del capítulo, sin la palabra Capítulo ni número",
+  "objetivo": "qué debe lograr este capítulo en el arco general",
+  "escenas": ["escena 1: qué pasa y dónde", "escena 2: ...", "escena 3: ..."],
+  "conflicto": "el obstáculo concreto que enfrenta el protagonista",
+  "coste": "qué pierde o arriesga alguien en este capítulo",
+  "revelacion": "el dato nuevo que aprende el lector, anclado en el canon",
+  "gancho": "con qué imagen o frase queda suspendido el final",
+  "continuidad": ["decisión previa que este capítulo respeta", "..."]
+}`;
+
+  const res = await window.lorevinci.aiGenerate({
+    baseUrl: DATA.settings.ai.baseUrl,
+    apiKey: DATA.settings.ai.apiKey,
+    model: DATA.settings.ai.model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ],
+    maxTokens: 700,
+    temperature: 0.7,
+    signal
+  });
+
+  if (!res.ok) return { ok: false, error: res.error };
+  const parsed = extractJsonObject(res.text);
+  if (!parsed) return { ok: false, error: 'La escaleta no devolvió JSON válido.' };
+  return { ok: true, beat: parsed };
+}
+
+/** Extrae el primer objeto JSON de una respuesta, tolerando ```json y texto alrededor. */
+function extractJsonObject(text) {
+  if (!text) return null;
+  let t = String(text).trim();
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) t = fence[1].trim();
+  const start = t.indexOf('{');
+  const end = t.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) return null;
+  const candidate = t.slice(start, end + 1);
+  try { return JSON.parse(candidate); } catch {}
+  // Segundo intento: limpiar comas colgantes típicas de los modelos.
+  try { return JSON.parse(candidate.replace(/,\s*([}\]])/g, '$1')); } catch {}
+  return null;
+}
+
+function formatBeatForPrompt(beat) {
+  if (!beat) return '';
+  const arr = (v) => Array.isArray(v) ? v.filter(Boolean) : (v ? [v] : []);
+  const lines = ['ESCALETA APROBADA PARA ESTE CAPÍTULO (síguela; es el plan, no el texto):'];
+  if (beat.titulo) lines.push(`- Título: ${sanitizeTextForPrompt(beat.titulo)}`);
+  if (beat.objetivo) lines.push(`- Objetivo narrativo: ${sanitizeTextForPrompt(beat.objetivo)}`);
+  const escenas = arr(beat.escenas);
+  if (escenas.length) lines.push(`- Escenas:\n${escenas.map((e, i) => `   ${i + 1}. ${sanitizeTextForPrompt(String(e))}`).join('\n')}`);
+  if (beat.conflicto) lines.push(`- Conflicto central: ${sanitizeTextForPrompt(beat.conflicto)}`);
+  if (beat.coste) lines.push(`- Coste o riesgo: ${sanitizeTextForPrompt(beat.coste)}`);
+  if (beat.revelacion) lines.push(`- Revelación anclada en canon: ${sanitizeTextForPrompt(beat.revelacion)}`);
+  if (beat.gancho) lines.push(`- Gancho final: ${sanitizeTextForPrompt(beat.gancho)}`);
+  const cont = arr(beat.continuidad);
+  if (cont.length) lines.push(`- Continuidad a respetar: ${cont.map(c => sanitizeTextForPrompt(String(c))).join(' | ')}`);
+  return lines.join('\n');
+}
+
+/**
+ * Comprobaciones locales del capítulo generado: baratas, deterministas y sin API.
+ * Detecta los fallos que de verdad arruinan un capítulo automático.
+ */
+function auditChapterLocally(text, story, beat) {
+  const issues = [];
+  const clean = stripHtml(text).trim();
+  const words = clean.split(/\s+/).filter(Boolean).length;
+
+  if (words < 250) issues.push({ level: 'warn', msg: `Capítulo corto (${words} palabras).` });
+
+  // Corte a media frase: el síntoma clásico del truncado por tokens.
+  if (clean && !/[.!?…"»)\]]$/.test(clean.slice(-1))) {
+    issues.push({ level: 'error', msg: 'El texto no termina en signo de cierre: posible corte a media frase.' });
+  }
+
+  // Fugas del asistente hacia el manuscrito.
+  const leaks = [
+    [/\b(como (?:modelo|IA|inteligencia artificial)|no puedo (?:generar|continuar)|lo siento,)/i, 'Fuga de voz del asistente en el texto.'],
+    [/\b(aquí (?:tienes|está) (?:el|tu) cap[íi]tulo|espero que (?:te guste|disfrutes))/i, 'Preámbulo o cierre meta del asistente.'],
+    [/^\s*```/m, 'Bloque de código markdown en la prosa.'],
+    [/\[No especificado en canon\]/i, 'Marcador de canon faltante visible en el texto.']
+  ];
+  leaks.forEach(([rx, msg]) => { if (rx.test(clean)) issues.push({ level: 'error', msg }); });
+
+  // Repetición literal de las fuentes en vez de integrarlas.
+  const primaries = (story.attachedDocs || []).filter(d => getPriorityInfo(d).level === 'primary');
+  for (const doc of primaries) {
+    const src = (doc.content || '').replace(/\s+/g, ' ');
+    for (let i = 0; i + 120 <= src.length; i += 400) {
+      const probe = src.slice(i, i + 120).trim();
+      if (probe.length >= 100 && clean.replace(/\s+/g, ' ').includes(probe)) {
+        issues.push({ level: 'warn', msg: `Copia literal desde "${doc.name}".` });
+        break;
+      }
+    }
+  }
+
+  // Cumplimiento de la escaleta: ¿aparece el gancho o la revelación planificada?
+  if (beat) {
+    const lower = clean.toLowerCase();
+    const keyTerms = (s) => String(s || '').toLowerCase().split(/[^\wáéíóúñü]+/).filter(x => x.length > 4);
+    const hookTerms = keyTerms(beat.gancho);
+    if (hookTerms.length >= 2) {
+      const hits = hookTerms.filter(t => lower.includes(t)).length;
+      if (hits === 0) issues.push({ level: 'warn', msg: 'El gancho planificado no se reconoce en el texto.' });
+    }
+  }
+
+  return { words, issues, ok: !issues.some(i => i.level === 'error') };
+}
+
+// ============ PRESUPUESTO DE CONTEXTO ADAPTATIVO ============
+
+// Ventanas de contexto conocidas (en tokens). Se busca por coincidencia parcial
+// del id del modelo, de patrón más específico a más genérico.
+const MODEL_CONTEXT_WINDOWS = [
+  [/gpt-4\.1|gpt-4o|o1|o3|o4/i, 128000],
+  [/gpt-4-turbo|gpt-4-1106|gpt-4-0125/i, 128000],
+  [/gpt-4-32k/i, 32768],
+  [/gpt-4/i, 8192],
+  [/gpt-3\.5-turbo-16k/i, 16384],
+  [/gpt-3\.5/i, 16385],
+  [/claude-3|claude-sonnet|claude-opus|claude-haiku|claude-4/i, 200000],
+  [/gemini-1\.5-pro|gemini-2/i, 1000000],
+  [/gemini-1\.5-flash|gemini/i, 1000000],
+  [/llama-?3\.[123]|llama-?3-70b|llama-?4/i, 128000],
+  [/llama-?3/i, 8192],
+  [/mixtral|mistral-large|mistral-nemo/i, 128000],
+  [/mistral/i, 32000],
+  [/qwen|deepseek/i, 128000],
+  [/command-r/i, 128000]
+];
+
+const DEFAULT_CONTEXT_WINDOW = 16000;   // conservador si el modelo es desconocido
+const CHARS_PER_TOKEN = 3.6;            // aproximación para español
+
+function getModelContextWindow(model) {
+  const id = String(model || '');
+  for (const [rx, win] of MODEL_CONTEXT_WINDOWS) {
+    if (rx.test(id)) return win;
+  }
+  return DEFAULT_CONTEXT_WINDOW;
+}
+
+/**
+ * Reparte la ventana del modelo entre entrada y salida en lugar de usar topes
+ * fijos. Devuelve presupuestos en CARACTERES para las secciones del prompt y en
+ * TOKENS para la respuesta.
+ */
+function computePromptBudget(model, { reserveForOutput = null, hardCapChars = 115000 } = {}) {
+  const windowTokens = getModelContextWindow(model);
+
+  // Salida: suficiente para un capítulo largo sin cortes, sin pasarse en modelos pequeños.
+  const outputTokens = reserveForOutput || Math.min(8000, Math.max(1600, Math.floor(windowTokens * 0.22)));
+
+  // Margen de seguridad del 12% para desviaciones del tokenizador.
+  const inputTokens = Math.max(2000, Math.floor((windowTokens - outputTokens) * 0.88));
+  let inputChars = Math.floor(inputTokens * CHARS_PER_TOKEN);
+  inputChars = Math.min(inputChars, hardCapChars);
+
+  // Secciones fijas (instrucciones, estilo, personajes, reglas) ~ 20%.
+  const overhead = Math.floor(inputChars * 0.20);
+  const available = Math.max(1500, inputChars - overhead);
+
+  return {
+    windowTokens,
+    outputTokens,
+    inputChars,
+    // Las fuentes se llevan la mayor parte: son lo que da concreción al capítulo.
+    sourcesChars: Math.floor(available * 0.62),
+    memoryChars: Math.floor(available * 0.30),
+    styleChars: Math.floor(available * 0.08)
+  };
+}
+
 // ============ MOTOR DE ESTILO Y APROVECHAMIENTO MÁXIMO DEL CONTENIDO ============
 
 function aiIsConfigured() {
@@ -2062,11 +2281,11 @@ if (triggerNblmSummaryBtn) {
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Documento "${activeNblmReaderDoc.name}":\n"""${(activeNblmReaderDoc.content || '').slice(0, 4000)}"""\nGenera un resumen ejecutivo de lore.` }
       ],
-      maxTokens: 350
+      maxTokens: 700
     });
 
     if (res.ok) {
-      summaryEl.textContent = res.text.trim();
+      summaryEl.textContent = res.text.trim() + (res.truncated ? ' […resumen cortado por límite de tokens]' : '');
       showToast('Resumen ejecutivo de lore generado por Muse AI.');
     } else {
       summaryEl.textContent = `Aviso: No se pudo generar con IA (${res.error}). Muestra un resumen general del contenido leíble abajo.`;
@@ -2902,11 +3121,19 @@ function renderChapterList() {
     const words = wordCount(c.content);
     const item = document.createElement('div');
     item.className = 'chapter-item' + (c.id === currentChapterId ? ' active' : '');
+    const gen = c.generation;
+    const hasError = gen && (gen.truncated || (gen.issues || []).some(x => x.level === 'error'));
+    const hasWarn = gen && (gen.issues || []).some(x => x.level === 'warn');
+    const flag = hasError
+      ? `<span class="ch-flag ch-flag-error" title="${escapeHtml((gen.issues || []).map(x => x.msg).join(' · ') || 'Capítulo posiblemente incompleto')}">Revisar</span>`
+      : hasWarn
+        ? `<span class="ch-flag ch-flag-warn" title="${escapeHtml((gen.issues || []).map(x => x.msg).join(' · '))}">Avisos</span>`
+        : gen ? '<span class="ch-flag ch-flag-ok" title="Generado y verificado sin incidencias">IA ✓</span>' : '';
     item.innerHTML = `
       <button class="ch-del" title="Eliminar capítulo">✕</button>
       <div class="ch-num">Capítulo ${idx + 1} de ${story.chapters.length}</div>
       <div class="ch-title">${escapeHtml(c.title || 'Sin título')}</div>
-      <div class="ch-progress">${words} palabras · ${statusLabel(c.status)}</div>
+      <div class="ch-progress">${words} palabras · ${statusLabel(c.status)} ${flag}</div>
     `;
     item.addEventListener('click', () => {
       currentChapterId = c.id;
@@ -3185,6 +3412,9 @@ $('#startAutoBookBtn').addEventListener('click', async () => {
   const count = Math.min(10, Math.max(1, parseInt($('#autoBookCount').value) || 3));
   const tone = $('#autoBookTone').value;
   const logsEl = $('#autoBookLogs');
+  const targetWords = Math.min(4000, Math.max(300, parseInt(($('#autoBookLength') || {}).value) || 1200));
+  const planningEnabled = ($('#autoBookPlanning') || {}).checked !== false;
+  const hasApiKeyForRun = aiIsConfigured();
 
   const addLog = (msg) => {
     const div = document.createElement('div');
@@ -3210,83 +3440,155 @@ $('#startAutoBookBtn').addEventListener('click', async () => {
     const nextNum = story.chapters.length + 1;
     addLog(`Generando Capítulo ${nextNum} (Tono: ${tone})...`);
 
-    const memoryBlock = `MEMORIA NARRATIVA COMPLETA (respeta cada decisión):\n${buildFullMemory(story)}\n`;
+    // --- Presupuesto adaptativo según la ventana real del modelo ---
+    const budget = computePromptBudget(DATA.settings.ai.model);
+    if (i === 0) {
+      addLog(`Modelo "${DATA.settings.ai.model}" — ventana ~${budget.windowTokens.toLocaleString('es-CL')} tokens · entrada ${budget.inputChars.toLocaleString('es-CL')} car. · salida ${budget.outputTokens.toLocaleString('es-CL')} tokens.`);
+    }
+
+    const memoryBlock = `MEMORIA NARRATIVA (respeta cada decisión ya tomada):\n${buildFullMemory(story, budget.memoryChars)}`;
 
     // Aprovechamiento máximo de las fuentes: pasajes relevantes de TODOS los documentos
     const focusQuery = [story.outline, story.synopsis, sources, chronology, stripHtml((story.chapters.slice(-1)[0] || {}).content || '')].join(' ');
-    const digest = buildSourceDigest(scopedStory, focusQuery, 9000);
+    const digest = buildSourceDigest(scopedStory, focusQuery, budget.sourcesChars);
     const priorityContent = digest.text;
     if (i === 0) {
       addLog(`Contexto construido desde ${digest.used.length} fuente(s): ${digest.used.slice(0, 6).join(', ')}${digest.used.length > 6 ? '…' : ''}`);
     }
     const styleDirective = buildStyleDirective(story);
+    const styleAnchors = buildStyleAnchors(story, budget.styleChars);
 
-    const systemPrompt = `Eres un escritor experto de fanfics y novelas, 10/10 en coherencia. Genera el Capítulo ${nextNum} de la obra "${sanitizeTextForPrompt(story.title)}".
-Género: ${sanitizeTextForPrompt(story.genre || 'Ficción')}
-Sinopsis: "${sanitizeTextForPrompt(story.synopsis || 'N/A')}"
-Reglas (INQUEBRANTABLES): "${sanitizeTextForPrompt(story.rules || 'N/A')}"
-Lore base del mundo: "${sanitizeTextForPrompt(story.loreBase || 'No especificado')}"
-Outline: "${outlineSnippet}"
+    // --- Bloque de contexto compartido por la escaleta y la redacción ---
+    const contextBlock = `Género: ${sanitizeTextForPrompt(story.genre || 'Ficción')}
+Sinopsis: ${sanitizeTextForPrompt(story.synopsis || 'N/A')}
+Reglas inquebrantables: ${sanitizeTextForPrompt(story.rules || 'N/A')}
+Lore base del mundo: ${sanitizeTextForPrompt(story.loreBase || 'No especificado')}
+Outline general: ${outlineSnippet}
 
-${styleDirective}
-
-Personajes y Personalidades (respeta 100%): 
+PERSONAJES (respeta su personalidad y sus límites de conocimiento):
 ${chars || 'No hay personajes definidos'}
 
-FUENTES DEL LIBRO — pasajes seleccionados por relevancia (usa TODO lo que aporte; respeta la jerarquía de canon):
+FUENTES DEL LIBRO — pasajes seleccionados por relevancia y jerarquía de canon:
 ${priorityContent}
 
-Material adicional del autor: "${sources}"
-Reglas Cronológicas: "${sanitizeTextForPrompt(story.chronology || '')} ${chronology}"
+Material adicional del autor: ${sources || 'N/A'}
+Reglas cronológicas: ${sanitizeTextForPrompt(story.chronology || '')} ${chronology}
+
 ${memoryBlock}
-REGISTRO DE CONOCIMIENTO POR VARIANTE (no inventes acceso):
-${buildKnowledgeLedger(story)}
-INSTRUCCIONES DE COHERENCIA 10/10:
-- Da PRIORIDAD ABSOLUTA al Canon Absoluto sobre todo lo demás.
-- Trata cada variante como una identidad distinta: nunca mezcles personajes con el mismo nombre. Usa el identificador variante/cosmología como clave canónica.
-- Ningún personaje puede saber información que no haya presenciado, deducido o recibido, salvo omnisciencia declarada.
-- No resuelvas el conflicto principal instantáneamente: introduce escalada, obstáculos, coste, decisiones y consecuencias; conserva problemas abiertos para capítulos posteriores.
-- No otorgues nuevas transformaciones, técnicas, aliados o información sin preparación narrativa y evidencia.
-- NO contradigas decisiones de capítulos previos (muertes, giros, afiliaciones).
-- Mantén el enfoque "${tone}" SIN romper la voz definida arriba: el estilo manda sobre el enfoque.
-- Aprovecha al máximo las fuentes entregadas: incorpora detalles concretos (nombres, lugares, objetos, reglas) en lugar de generalidades.
-- No repitas literalmente pasajes de las fuentes; intégralos como narración con la voz de la obra.
-- Si falta info, NO inventes lore que contradiga canon; indica "[No especificado en canon]".
-- Cita sutilmente fuentes como [Canon: Nombre] si usas dato clave.
-Escribe un capítulo completo, narrativo, detallado, de al menos 320 palabras en español.`;
+
+REGISTRO DE CONOCIMIENTO POR VARIANTE:
+${buildKnowledgeLedger(story)}`;
 
     let temp = 0.6; if (tone==='drama') temp=0.65; if (tone==='misterio') temp=0.55;
 
-    // 10/10: si no hay API key, usar mock offline coherente para demo y tests
-    const hasKey = DATA.settings.ai && DATA.settings.ai.apiKey && DATA.settings.ai.apiKey.trim().length > 10;
+    // --- Paso 1: escaleta previa (planificar antes de escribir) ---
+    let beat = null;
+    const wantsPlan = planningEnabled && hasApiKeyForRun;
+    if (wantsPlan) {
+      addLog(`Planificando escaleta del Capítulo ${nextNum}…`);
+      const planRes = await planChapterBeat(story, nextNum, tone, contextBlock, autoBookAbort.signal);
+      if (planRes.ok) {
+        beat = planRes.beat;
+        addLog(`Escaleta lista: "${String(beat.titulo || 'sin título').slice(0, 60)}" · ${(beat.escenas || []).length} escena(s).`);
+      } else {
+        addLog(`⚠ No se pudo planificar (${String(planRes.error).slice(0, 70)}…). Se escribe sin escaleta.`);
+      }
+    }
+    const beatBlock = beat ? `\n\n${formatBeatForPrompt(beat)}` : '';
+
+    // --- Paso 2: redacción ---
+    const systemPrompt = `Eres un novelista profesional que escribe en español. Tu trabajo es redactar el Capítulo ${nextNum} de la obra "${sanitizeTextForPrompt(story.title)}" respetando su canon y su voz.
+
+${contextBlock}
+
+${styleDirective}${styleAnchors ? '\n\n' + styleAnchors : ''}
+
+CÓMO ESCRIBIR ESTE CAPÍTULO:
+- El Canon Absoluto manda sobre cualquier otra fuente; el material derivado solo lo complementa.
+- Trata cada variante de personaje como una identidad separada, identificada por su cosmología.
+- Limita lo que sabe cada personaje a lo que ha presenciado, deducido o le han contado.
+- Haz avanzar el conflicto mediante obstáculos, decisiones y consecuencias, dejando hilos abiertos.
+- Justifica con antelación cualquier poder, aliado o información nueva.
+- Mantén intactas las decisiones de los capítulos previos: muertes, giros y afiliaciones.
+- Escribe con la voz descrita arriba; el enfoque "${tone}" matiza el contenido, nunca el estilo.
+- Integra datos concretos de las fuentes (nombres, lugares, objetos, reglas) reescritos con tu prosa.
+- Si el canon no cubre algo, resuélvelo con recursos narrativos que no lo contradigan.
+- Entrega únicamente la prosa del capítulo: sin título, sin encabezados, sin comentarios ni markdown.`;
+
+    const userPrompt = `Escribe ahora el Capítulo ${nextNum} completo de "${sanitizeTextForPrompt(story.title)}".${beatBlock}
+
+Requisitos de entrega:
+- Extensión: entre ${targetWords} y ${targetWords + 500} palabras.
+- Prosa continua en párrafos, con diálogo donde la escena lo pida.
+- Cierra el capítulo con el gancho planificado, en una frase completa.
+- Responde solo con el texto del capítulo.`;
+
+
+
+    // Sin API key usamos el generador local para que la demo siga funcionando.
     let generatedText = "";
     let usedMock = false;
+    let truncatedRun = false;
     try {
-      if (!hasKey) {
+      if (!hasApiKeyForRun) {
         usedMock = true;
-        addLog(` Sin API key — usando generador local coherente 10/10 (respeta canon y memoria) para demo.`);
+        addLog(`Sin API key — usando el generador local coherente (respeta canon y memoria).`);
         await new Promise(r=>setTimeout(r, 700)); // simula latencia
-        generatedText = mockGenerateChapterOffline(story, nextNum, tone, memoryBlock, priorityContent);
-        generatedText = sanitizeHtml(generatedText);
+        generatedText = sanitizeHtml(mockGenerateChapterOffline(story, nextNum, tone, memoryBlock, priorityContent));
       } else {
-        const res = await window.lorevinci.aiGenerate({
+        let res = await window.lorevinci.aiGenerate({
           baseUrl: DATA.settings.ai.baseUrl,
           apiKey: DATA.settings.ai.apiKey,
           model: DATA.settings.ai.model,
           messages: [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: `Escribe el Capítulo ${nextNum} completo. Respeta memoria y canon. Termina con gancho.` }
+            { role: 'user', content: userPrompt }
           ],
-          maxTokens: 1400,
+          maxTokens: budget.outputTokens,
           temperature: temp,
           signal: autoBookAbort.signal
         });
+
+        if (res.ok && res.usage && res.usage.totalTokens) {
+          addLog(`Tokens usados: ${res.usage.promptTokens || '?'} entrada + ${res.usage.completionTokens || '?'} salida.`);
+        }
+
+        // El modelo se quedó sin presupuesto a mitad de frase: continuamos el texto
+        // en lugar de guardar un capítulo cortado haciéndolo pasar por completo.
+        if (res.ok && res.truncated) {
+          addLog(`⚠ Capítulo ${nextNum} truncado por límite de tokens — solicitando continuación…`);
+          const partial = res.text.trim();
+          const contRes = await window.lorevinci.aiGenerate({
+            baseUrl: DATA.settings.ai.baseUrl,
+            apiKey: DATA.settings.ai.apiKey,
+            model: DATA.settings.ai.model,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+              { role: 'assistant', content: partial },
+              { role: 'user', content: 'Continúa exactamente desde donde quedó el texto, sin repetir nada de lo ya escrito y sin resumir. Cierra el capítulo con el gancho previsto en una frase completa.' }
+            ],
+            maxTokens: budget.outputTokens,
+            temperature: temp,
+            signal: autoBookAbort.signal
+          });
+          if (contRes.ok && contRes.text.trim()) {
+            const joiner = /[.!?…"»)\]]$/.test(partial.slice(-1)) ? '\n\n' : ' ';
+            res = { ok: true, text: partial + joiner + contRes.text.trim(), truncated: contRes.truncated };
+            addLog(contRes.truncated
+              ? `⚠ La continuación también se truncó; el capítulo puede quedar abierto.`
+              : `Continuación recibida: capítulo completado.`);
+            truncatedRun = Boolean(contRes.truncated);
+          } else {
+            truncatedRun = true;
+            addLog(`⚠ No se pudo continuar el capítulo truncado.`);
+          }
+        }
+
         if (!res.ok) {
-          if (res.error && res.error.toLowerCase().includes('abort')) { addLog(" Generación abortada."); break; }
-          // Fallback mock si falla API (ej: key inválida en demo)
-          addLog(`⚠ API falló (${res.error.slice(0,80)}…) → fallback mock local coherente.`);
-          generatedText = mockGenerateChapterOffline(story, nextNum, tone, memoryBlock, priorityContent);
-          generatedText = sanitizeHtml(generatedText);
+          if (res.error && res.error.toLowerCase().includes('abort')) { addLog("Generación abortada."); break; }
+          addLog(`⚠ La API falló (${String(res.error).slice(0,80)}…) → se usa el generador local.`);
+          generatedText = sanitizeHtml(mockGenerateChapterOffline(story, nextNum, tone, memoryBlock, priorityContent));
           usedMock = true;
         } else {
           generatedText = sanitizeHtml(res.text.trim());
@@ -3294,18 +3596,38 @@ Escribe un capítulo completo, narrativo, detallado, de al menos 320 palabras en
       }
 
       if (!generatedText || generatedText.length < 80) { addLog(`⚠ Capítulo ${nextNum} demasiado corto, descartado.`); continue; }
+
+      // --- Paso 3: auditoría del capítulo generado ---
+      const audit = auditChapterLocally(generatedText, story, beat);
+      audit.issues.forEach(issue => addLog(`${issue.level === 'error' ? '✕' : '⚠'} Revisión: ${issue.msg}`));
+      if (!audit.issues.length) addLog(`✓ Revisión sin incidencias (${audit.words} palabras).`);
+
+      // El título lo propone la escaleta; si no hay, se numera como antes.
+      const beatTitle = beat && beat.titulo ? String(beat.titulo).replace(/^cap[íi]tulo\s*\d+\s*[:\-–]?\s*/i, '').trim() : '';
+      const chapterTitle = beatTitle
+        ? `Capítulo ${nextNum}: ${beatTitle}`
+        : `Capítulo ${nextNum}${usedMock ? ' • Demo Local' : ''}`;
+
       const newCh = {
         id: uid('ch'),
-        title: `Capítulo ${nextNum}: Automático${usedMock ? ' • Demo Local' : ''}`,
-        content: `<p>${generatedText.replace(/\n\n/g, '</p><p>')}</p>`,
-        status: 'done'
+        title: chapterTitle,
+        content: sanitizeHtml(`<p>${generatedText.replace(/\n\n/g, '</p><p>')}</p>`),
+        status: 'done',
+        generation: {
+          model: usedMock ? 'local-mock' : DATA.settings.ai.model,
+          words: audit.words,
+          truncated: truncatedRun,
+          issues: audit.issues,
+          beat: beat || null,
+          sourcesUsed: digest.used,
+          generatedAt: Date.now()
+        }
       };
-      newCh.content = sanitizeHtml(newCh.content);
       story.chapters.push(newCh);
       story.updatedAt = Date.now();
       scheduleSave();
       renderChapterList();
-      addLog(` Capítulo ${nextNum} generado (${generatedText.length} chars) ${usedMock ? '[MOCK LOCAL 10/10]' : ''} — coherencia con memoria verificada.`);
+      addLog(`Capítulo ${nextNum} generado: ${audit.words} palabras${usedMock ? ' [local]' : ''}${truncatedRun ? ' ⚠ posiblemente incompleto' : ''}.`);
     } catch (err) {
       if (err && err.name === 'AbortError') { addLog(" Abortado."); break; }
       addLog(`Excepción: ${String(err).slice(0,200)}`);
@@ -3484,12 +3806,13 @@ Texto reciente:
       { role: 'system', content: systemPrompt },
       { role: 'user', content: promptText }
     ],
-    maxTokens: 600
+    maxTokens: Math.min(4000, Math.max(600, Math.floor(computePromptBudget(DATA.settings.ai.model).outputTokens / 2)))
   });
 
   if (res.ok) {
-    addMuseMessage('assistant', res.text.trim(), true);
-    $('#museStatus').textContent = 'Listo para tu próxima idea.';
+    const reply = res.text.trim() + (res.truncated ? '\n\n[Respuesta cortada por límite de tokens — pide "continúa" para el resto.]' : '');
+    addMuseMessage('assistant', reply, true);
+    $('#museStatus').textContent = res.truncated ? 'Respuesta truncada: pide continuar.' : 'Listo para tu próxima idea.';
   } else {
     addMuseMessage('assistant', `Aviso de conexión: ${res.error}`, false);
     $('#museStatus').textContent = 'Hubo un problema. Revisa tu configuración en Ajustes.';

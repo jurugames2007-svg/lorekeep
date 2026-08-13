@@ -94,9 +94,59 @@ En **Configurar → Estilo y voz** defines cómo debe sonar la prosa:
   sintaxis y vocabulario.
 - **"Extraer estilo de lo ya escrito"** analiza tus capítulos y fuentes para deducir la
   voz automáticamente (funciona sin API con un analizador local; con API es más fino).
+- **Anclas de estilo automáticas**: además de describir la voz, la app envía fragmentos
+  reales de tus capítulos ya escritos (priorizando los marcados como terminados) para que
+  el modelo tenga ejemplos concretos del ritmo y el vocabulario, no solo adjetivos.
 
 Estas instrucciones se inyectan en cada generación y tienen prioridad sobre el enfoque
 narrativo puntual, para que la obra no cambie de voz entre capítulos.
+
+## Generación de capítulos: cómo trabaja el motor
+
+Cada capítulo se produce en tres pasos, no en una sola llamada a ciegas:
+
+1. **Escaleta previa.** Antes de redactar, el modelo planifica en JSON: título,
+   objetivo, escenas, conflicto, coste, revelación, gancho y qué continuidad debe
+   respetar. Planificar y luego escribir da capítulos mucho más coherentes que pedir
+   la prosa de golpe. Puedes desactivarlo con la casilla del modal si prefieres
+   ahorrar una llamada.
+2. **Redacción** con la escaleta aprobada, el canon y la voz de la obra.
+3. **Auditoría automática** del resultado (ver más abajo).
+
+### Presupuesto adaptativo por modelo
+
+El contexto ya no usa topes fijos: se calcula según la ventana real del modelo que
+tengas configurado (GPT-4o 128k, Claude 200k, Gemini 1M, GPT-4 8k…), reservando
+espacio para la respuesta y un margen de seguridad. Las fuentes se llevan el 62% del
+espacio disponible, la memoria el 30% y las anclas de estilo el 8%.
+
+Con un libro real (4 fuentes, 85.000 caracteres de canon, 8 capítulos escritos) y
+GPT-4o, el prompt pasó de **16.857 a 87.104 caracteres**: 61.110 de fuentes reales
+frente a los 9.617 de antes. Un modelo pequeño recibe automáticamente mucho menos.
+
+### Detección de capítulos truncados
+
+Antes se pedían 1.400 tokens fijos de salida (~1.000 palabras) y **nunca se miraba
+`finish_reason`**: si el modelo se quedaba sin presupuesto, la app guardaba el
+capítulo cortado a media frase como si estuviera completo. Ahora:
+
+- El proceso principal devuelve `finish_reason`, `truncated` y el consumo de tokens.
+- Si el capítulo se trunca, la app **pide automáticamente la continuación** y la
+  cose al texto anterior sin repetir nada.
+- Si aun así queda abierto, el capítulo se marca visiblemente en la lista.
+
+### Auditoría automática de cada capítulo
+
+Tras generarlo se revisa en local (sin gastar API) y se avisa de:
+
+- Corte a media frase o capítulo demasiado corto.
+- Fugas del asistente en la prosa ("Aquí tienes el capítulo…", bloques markdown).
+- Copia literal de las fuentes en vez de integrarlas con tu voz.
+- Gancho planificado que no aparece en el texto.
+
+En la lista de capítulos verás una insignia **IA ✓**, **Avisos** o **Revisar**, con
+el detalle al pasar el cursor. Cada capítulo guarda además su metadato de generación:
+modelo, palabras, escaleta usada y fuentes consultadas.
 
 ## Aprovechamiento máximo del contenido
 

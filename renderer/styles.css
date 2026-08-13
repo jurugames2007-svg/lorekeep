@@ -1705,3 +1705,13 @@ body.has-wallpaper.wallpaper-no-overlay::before { background-image:var(--wallpap
   .vstep-detail { grid-column: 2; }
   .cfg-cover-preview { width: 130px; height: 186px; }
 }
+
+/* ---- Indicadores de auditoría de capítulos generados por IA ---- */
+.ch-flag {
+  display: inline-block; margin-left: 6px;
+  font-size: 9.5px; font-weight: 700; letter-spacing: .3px;
+  padding: 1px 6px; border-radius: 20px; vertical-align: 1px;
+}
+.ch-flag-ok { background: rgba(53,208,127,0.15); color: #35d07f; }
+.ch-flag-warn { background: rgba(255,180,60,0.16); color: #ffb43c; }
+.ch-flag-error { background: rgba(255,59,92,0.16); color: #ff3b5c; }
