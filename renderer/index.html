@@ -2,8 +2,8 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'; connect-src *; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:;">
-<title>LoreAra</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.openai.com https://openrouter.ai https://*.openrouter.ai; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'none';">
+<title>LoreVinci</title>
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -23,14 +23,15 @@
           </defs>
         </svg>
       </div>
-      <h1 class="sl-title">LoreAra</h1>
+      <h1 class="sl-title">LoreVinci</h1>
       <p class="sl-sub">Cargando motor de escritura creativa e investigación local...</p>
-      <div class="sl-progress-bar"><div></div></div>
+      <div class="sl-progress-wrap"><div class="sl-progress-track"><div class="sl-progress-bar"></div></div><div class="sl-loader-meta"><span>Inicializando LoreVinci</span><span aria-live="polite">100%</span></div></div><div class="sl-particles" aria-hidden="true"><i></i><i></i><i></i></div>
     </div>
   </div>
   <div class="app-shell">
     <!-- Sidebar -->
-    <aside class="sidebar">
+    <aside class="sidebar" id="mainSidebar">
+      <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Contraer panel lateral" aria-expanded="true">‹</button>
       <div class="brand">
         <span class="brand-flag">
           <svg width="30" height="30" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -47,7 +48,7 @@
             </defs>
           </svg>
         </span>
-        <span class="brand-name">LoreAra</span>
+        <span class="brand-name">LoreVinci</span>
       </div>
       <nav class="nav">
         <button class="nav-item" data-view="home" title="Ir a Inicio">
@@ -142,7 +143,10 @@
       <section class="view dashboard-container" id="view-stories">
         <div class="section-head">
           <h1 class="page-title">Mis Historias</h1>
-          <button class="btn-primary" id="newStoryBtn">+ Nueva historia</button>
+          <div class="row-gap" style="margin:0;">
+            <button class="btn-secondary" id="demoBookBtn" title="Crea 'Ecos de Utopía' y genera 3 capítulos coherentes sin necesidad de API key — prueba la memoria 10/10"> Demo 10/10 (sin API)</button>
+            <button class="btn-primary" id="newStoryBtn">+ Nueva historia</button>
+          </div>
         </div>
         <div class="story-grid" id="storyGrid"></div>
       </section>
@@ -226,7 +230,7 @@
       <!-- COLLAB VIEW -->
       <section class="view dashboard-container" id="view-collab">
         <h1 class="page-title">Colaboración</h1>
-        <p class="page-sub">LoreAra funciona 100% local. Exporta o importa archivos de respaldo y comparte tus notas con colaboradores.</p>
+        <p class="page-sub">LoreVinci funciona 100% local. Exporta o importa archivos de respaldo y comparte tus notas con colaboradores.</p>
         <div class="collab-columns">
             <div class="card">
             <h3>Compartir historia</h3>
@@ -296,8 +300,30 @@
           <input type="text" id="authorNameInput" />
         </div>
         <div class="card settings-card">
+          <h3>Escala y Densidad Visual — modo escritura prolongada</h3>
+          <p class="muted small" style="margin-bottom:12px;">Interfaz recalibrada a escala compacta editorial (menos invasiva). Ajusta la densidad global sin perder legibilidad. Recomendado para escritores que pasan horas en el editor.</p>
+          <div class="row-gap" style="gap: 12px; margin-bottom: 12px; align-items:flex-end;">
+            <div style="flex: 1; min-width: 180px;">
+              <label>Escala global de la interfaz</label>
+              <select id="settingsUiScaleSelect">
+                <option value="compact">Compacta — 90% (Recomendada • menos invasiva)</option>
+                <option value="balanced">Equilibrada — 100% (Clásica)</option>
+                <option value="spacious">Amplia — 108% (Accesible)</option>
+              </select>
+            </div>
+            <div style="flex: 1; min-width: 160px;">
+              <label>Densidad de tarjetas y listas</label>
+              <select id="settingsDensitySelect">
+                <option value="comfortable">Cómoda (equilibrio)</option>
+                <option value="compact">Compacta (más contenido visible)</option>
+              </select>
+            </div>
+            <span class="muted small" style="max-width:220px; line-height:1.4;">La escala compacta reduce ~10% tipografía, paddings y alturas para más respiración y menos fatiga. Se aplica al instante.</span>
+          </div>
+        </div>
+        <div class="card settings-card">
           <h3>Personalización del Editor de Escritura</h3>
-          <p class="muted small" style="margin-bottom:12px;">Configura la experiencia visual, la tipografía y las proporciones del lienzo de redacción en tus capítulos.</p>
+          <p class="muted small" style="margin-bottom:12px;">Configura la experiencia del lienzo. El ancho editorial óptimo es 680px (~66 caracteres por línea) para lectura y flujo.</p>
           <div class="row-gap" style="gap: 16px; margin-bottom: 12px;">
             <div style="flex: 1; min-width: 200px;">
               <label>Tipografía de Narración</label>
@@ -310,6 +336,7 @@
             <div style="flex: 1; min-width: 180px;">
               <label>Ancho del Lienzo</label>
               <select id="settingsEditorWidthSelect">
+                <option value="680px">Editorial Óptimo (680px • 66 caracteres)</option>
                 <option value="780px">Estándar Literario (780px)</option>
                 <option value="960px">Amplio y Panorámico (960px)</option>
                 <option value="100%">Completo Sin Márgenes (100%)</option>
@@ -318,32 +345,32 @@
             <div style="flex: 1; min-width: 150px;">
               <label>Tamaño de Texto</label>
               <select id="settingsEditorSizeSelect">
-                <option value="size-standard">Estándar (17px)</option>
-                <option value="size-compact">Compacto (15px)</option>
-                <option value="size-large">Grande (19px)</option>
+                <option value="size-standard">Equilibrado (14.8px • recomendado)</option>
+                <option value="size-compact">Compacto (13.8px • más denso)</option>
+                <option value="size-large">Grande (16px • accesible)</option>
               </select>
             </div>
           </div>
         </div>
         <div class="card settings-card">
           <h3>Muse AI (Asistente de Escritura & Conexión OpenRouter)</h3>
-          <p class="muted small" style="margin-bottom:14px;">LoreAra es offline-first y no incluye servidores de IA de fábrica. Elige cómo deseas conectar tu motor creativo:</p>
+          <p class="muted small" style="margin-bottom:14px;">LoreVinci es offline-first y no incluye servidores de IA de fábrica. Elige cómo deseas conectar tu motor creativo:</p>
 
           <!-- OPCIÓN A: INICIAR SESIÓN CON GOOGLE (OPENROUTER OAUTH PKCE) -->
           <div class="openrouter-oauth-box" style="background:var(--bg-alt); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:18px;">
             <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
               <div>
                 <b style="font-size:14px; color:var(--text); display:block; margin-bottom:3px;">Opción 1: Conexión Rápida y Segura vía OpenRouter</b>
-                <span class="muted small">Conecta con tu cuenta de Google mediante OAuth PKCE. OpenRouter genera una clave temporal que la app usa para tus peticiones de IA.</span>
+                <span class="muted small">El acceso con Google requiere configurar un Client ID OAuth de Google para esta instalación. El inicio de sesión no sustituye la API key de OpenRouter.</span>
               </div>
-              <button class="btn-google-auth" id="googleAuthBtn" title="Conectar Muse AI con tu cuenta de Google vía OpenRouter">
+              <button class="btn-google-auth" id="googleAuthBtn" title="Configurar Google OAuth / API key de OpenRouter">
                 <svg width="18" height="18" viewBox="0 0 24 24">
                   <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"></path>
                   <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.73-2.46 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.15C3.32 21.44 7.37 24 12 24Z"></path>
                   <path fill="#FBBC05" d="M5.28 14.24A7.19 7.19 0 0 1 4.9 12c0-.78.13-1.54.38-2.24V6.61H1.29A11.96 11.96 0 0 0 0 12c0 2.93 1.1 5.6 2.92 7.64l3.88-3.15-.52-2.25Z"></path>
                   <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.37 0 3.32 2.56 1.29 6.61l3.99 3.15c.95-2.85 3.6-4.96 6.72-4.96Z"></path>
                 </svg>
-                <span>Iniciar sesión con Google</span>
+                <span>Abrir OpenRouter</span>
               </button>
             </div>
 
@@ -351,7 +378,7 @@
             <div style="background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:12px; font-size:12px;">
               <div style="font-weight:700; color:var(--accent); margin-bottom:4px;">Garantía de Privacidad (Cero Servidores Intermedios):</div>
               <ul style="margin:0 0 8px 18px; padding:0; color:var(--muted); line-height:1.5;">
-                <li>La clave <b>NUNCA se guarda en servidores de LoreAra</b> ni se comparte con terceros. Viaja directo desde tu equipo a OpenRouter.</li>
+                <li>La clave <b>NUNCA se guarda en servidores de LoreVinci</b> ni se comparte con terceros. Viaja directo desde tu equipo a OpenRouter.</li>
                 <li><b>Modo por defecto "Solo sesión":</b> la clave vive en memoria temporal y se elimina automáticamente al cerrar la app.</li>
               </ul>
               <div style="display:flex; align-items:center; gap:8px; margin-top:6px;">
@@ -362,7 +389,7 @@
 
             <!-- Estado de la Conexión y Botones de Revocación -->
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-              <span id="openrouterStatusBadge" class="canon-badge canon-reference">Estado: No conectado vía Google</span>
+              <span id="openrouterStatusBadge" class="canon-badge canon-reference">Estado: API key no configurada</span>
               <div class="row-gap" style="margin:0; gap:8px;">
                 <button class="btn-secondary small" id="openrouterMyKeysBtn" style="display:none;">Mis claves en OpenRouter ↗</button>
                 <button class="btn-danger small" id="openrouterLogoutBtn" style="display:none;">Cerrar sesión / Desactivar IA</button>
@@ -423,8 +450,8 @@
               <input type="text" id="storyTitleInput" class="story-title-input" placeholder="Escribe el título de tu historia..." />
 
               <div class="editor-toolbar">
-                <button data-cmd="bold" title="Negrita (Ctrl+B)"><b>B</b></button>
-                <button data-cmd="italic" title="Cursiva (Ctrl+I)"><i>I</i></button>
+                <button data-cmd="bold" title="Negrita (Ctrl+B)" aria-label="Negrita"><b>B</b></button>
+                <button data-cmd="italic" title="Cursiva (Ctrl+I)" aria-label="Cursiva"><i>I</i></button>
                 <button data-cmd="underline" title="Subrayado (Ctrl+U)"><u>U</u></button>
                 <button data-cmd="strikeThrough" title="Tachado"><s>S</s></button>
                 <button data-cmd="foreColor" data-arg="#ff3b5c" title="Color de texto (rojo)">A</button>
@@ -438,6 +465,7 @@
                 <button id="realtimeAssistantToggle" class="btn-secondary small" title="Activar/Desactivar sugerencias de estilo en tiempo real al escribir" style="display:inline-flex; align-items:center; gap:6px;">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>Asistente de estilo: <span id="assistantStatusText">OFF</span>
                 </button>
+                <button id="zenModeBtn" title="Modo Zen — solo escritura (Cmd+Shift+F)" aria-label="Modo Zen" style="display:inline-flex; align-items:center; gap:6px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>Zen</button>
                 <button id="toggleLeftPanelBtn" title="Colapsar/Expandir panel izquierdo">◀ Panel</button>
                 <button id="readerModeBtn" title="Entrar en Modo Lectura Inmersivo" style="display:inline-flex; align-items:center; gap:6px;">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>Modo Lectura
@@ -445,7 +473,7 @@
                 <button id="audiobookBtn" title="Reproductor de Audiolibro" style="display:inline-flex; align-items:center; gap:6px;">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"></path><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path></svg>Audiolibro
                 </button>
-                <button id="toggleRightPanelBtn" title="Colapsar/Expandir panel derecho">Panel ▶</button>
+                <button id="toggleRightPanelBtn" title="Colapsar/Expandir panel derecho">Panel </button>
               <span id="wordCount" class="muted small"></span>
               </div>
 
@@ -524,7 +552,7 @@
                   <path fill="#FBBC05" d="M5.28 14.24A7.19 7.19 0 0 1 4.9 12c0-.78.13-1.54.38-2.24V6.61H1.29A11.96 11.96 0 0 0 0 12c0 2.93 1.1 5.6 2.92 7.64l3.88-3.15-.52-2.25Z"></path>
                   <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.37 0 3.32 2.56 1.29 6.61l3.99 3.15c.95-2.85 3.6-4.96 6.72-4.96Z"></path>
                 </svg>
-                <span>Conectar Google (OpenRouter)</span>
+                <span>Configurar Google OAuth / API key de OpenRouter</span>
               </button>
             </div>
             <div class="muse-quick">
@@ -547,15 +575,15 @@
           <span class="dot"></span> <span id="saveIndicatorText">Todo guardado</span>
         </div>
         <div class="status-right">
-          <span class="muted small">LoreAra V6.5</span>
+          <span class="muted small">LoreVinci V6.5</span>
         </div>
       </footer>
 
       <!-- AUTOMATIC BOOK GENERATOR MODAL -->
-      <div class="modal-backdrop" id="autoBookModalBackdrop">
+      <div class="modal-backdrop" id="autoBookModalBackdrop" role="dialog" aria-modal="true" aria-label="Crear libro automático">
         <div class="modal" style="width: 580px;">
           <div class="modal-head">
-            <h3>⚡ Crear Libro Automático (Multi-Fuente, PDFs y Canon)</h3>
+            <h3> Crear Libro Automático (Multi-Fuente, PDFs y Canon)</h3>
             <button class="icon-btn" id="closeAutoBookModal" title="Cerrar">✕</button>
           </div>
           <p class="muted small">Genera automáticamente capítulos coherentes respetando la fuente prioritaria (Canon) y los documentos derivados adjuntos.</p>
@@ -593,13 +621,13 @@
 
           <div class="row-gap" style="justify-content:flex-end; margin-top:14px;">
             <button class="btn-secondary" id="cancelAutoBookBtn">Cerrar</button>
-            <button class="btn-primary" id="startAutoBookBtn">⚡ Iniciar Generación Automática</button>
+            <button class="btn-primary" id="startAutoBookBtn"> Iniciar Generación Automática</button>
           </div>
         </div>
       </div>
 
       <!-- CHARACTER DETAIL MODAL -->
-      <div class="modal-backdrop" id="charModalBackdrop">
+      <div class="modal-backdrop" id="charModalBackdrop" role="dialog" aria-modal="true" aria-label="Personaje">
         <div class="modal">
           <div class="modal-head">
             <h3>Personaje y Personalidad</h3>
@@ -611,6 +639,13 @@
           <input type="text" id="charName" />
           <label>Rol</label>
           <input type="text" id="charRole" placeholder="Protagonista, antagonista, secundario..." />
+          <label>Identificador de variante / universo</label>
+          <input type="text" id="charVariant" placeholder="Ej: Goku (WHAT IF — Saiyajin sin Tierra)" />
+          <label>Cosmología o línea temporal</label>
+          <input type="text" id="charCosmology" placeholder="Canon Z, Universo 7, Metaverso, línea temporal 3..." />
+          <label>Conocimiento y límites</label>
+          <textarea id="charKnowledge" rows="3" placeholder="Qué sabe, qué no sabe y quién se lo contó..."></textarea>
+          <label><input type="checkbox" id="charOmniscient" /> Tiene omnisciencia declarada</label>
           <label>Descripción y Personalidad (Auto-detectada o manual)</label>
           <textarea id="charDesc" rows="4" placeholder="Personalidad, motivaciones, comportamiento..."></textarea>
           <label>Rasgos (separados por coma)</label>
@@ -623,7 +658,7 @@
       </div>
 
       <!-- NEW STORY MODAL -->
-      <div class="modal-backdrop" id="storyModalBackdrop">
+      <div class="modal-backdrop" id="storyModalBackdrop" role="dialog" aria-modal="true" aria-label="Nueva historia">
         <div class="modal">
           <div class="modal-head">
             <h3>Nueva historia</h3>
@@ -648,7 +683,7 @@
       </div>
 
       <!-- CONFIRM MODAL -->
-      <div class="modal-backdrop" id="confirmModalBackdrop">
+      <div class="modal-backdrop" id="confirmModalBackdrop" role="dialog" aria-modal="true" aria-label="Confirmar">
         <div class="modal small-modal">
           <div class="modal-head">
             <h3 id="confirmModalTitle">¿Confirmar?</h3>
@@ -662,7 +697,7 @@
       </div>
 
       <!-- AUTHOR PROFILE & BADGES SHOWCASE MODAL -->
-      <div class="modal-backdrop" id="profileModalBackdrop">
+      <div class="modal-backdrop" id="profileModalBackdrop" role="dialog" aria-modal="true" aria-label="Perfil literario">
         <div class="modal author-profile-modal">
           <div class="modal-head" style="border-bottom: 1px solid var(--border); padding-bottom: 14px; margin-bottom: 18px;">
             <div>
@@ -764,6 +799,15 @@
                     </select>
                   </div>
                 </div>
+                <div class="wallpaper-settings" style="margin-top:14px;">
+                  <label style="font-weight:600;">Fondo personalizado</label>
+                  <p class="muted small">Puedes usar una imagen o un GIF animado. Resolución recomendada: 1920 × 1080 px. Para pantallas 4K: 3840 × 2160 px. Relación ideal 16:9.</p>
+                  <div class="row-gap">
+                    <input type="file" id="wallpaperInput" accept="image/jpeg,image/png,image/webp,image/gif" />
+                    <button class="btn-secondary small" id="removeWallpaperBtn" type="button">Quitar fondo</button>
+                  </div>
+                  <label class="small"><input type="checkbox" id="wallpaperOverlayToggle" checked /> Aplicar capa de contraste para facilitar la lectura</label>
+                </div>
               </div>
             </div>
           </div>
@@ -828,7 +872,7 @@
             <div class="onboarding-icon-box">
               <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
             </div>
-            <h2>¡Bienvenido/a a LoreAra!</h2>
+            <h2>¡Bienvenido/a a LoreVinci!</h2>
             <p class="muted">Tu suite profesional de escritura con IA local, auto-detección de personajes, portadas, reglas de lore y generación de libros automáticos. Todo se guarda en tu equipo.</p>
           </div>
           <div class="onboarding-slide" data-slide="1" style="display:none">
@@ -869,7 +913,7 @@
       <div class="modal-backdrop" id="helpModalBackdrop">
         <div class="modal help-modal">
           <div class="modal-head">
-            <h3>Guía experta de LoreAra</h3>
+            <h3>Guía experta de LoreVinci</h3>
             <button class="icon-btn" id="closeHelpModal" title="Cerrar">✕</button>
           </div>
           <div class="help-content">
@@ -902,9 +946,9 @@
           <button class="filter-btn" data-theme="soft" title="Lectura Cómoda (suave)">Cómodo</button>
         </div>
         <div class="audiobook-controls">
-          <button class="icon-btn" id="abPlay" title="Reproducir audiolibro">▶</button>
-          <button class="icon-btn" id="abPause" title="Pausar audiolibro">⏸</button>
-          <button class="icon-btn" id="abStop" title="Detener audiolibro">⏹</button>
+          <button class="icon-btn" id="abPlay" title="Reproducir audiolibro"></button>
+          <button class="icon-btn" id="abPause" title="Pausar audiolibro"></button>
+          <button class="icon-btn" id="abStop" title="Detener audiolibro"></button>
           <select id="abSpeed" title="Velocidad de lectura" style="width:70px; margin:0; padding:4px;">
             <option value="0.75">0.75x</option>
             <option value="1" selected>1.0x</option>
