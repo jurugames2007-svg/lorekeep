@@ -1,4 +1,4 @@
-# LoreAra
+# LoreVinci
 
 Aplicación de escritorio para escritores: gestiona historias, capítulos, personajes,
 notas y colaboración, con un asistente de escritura **Muse AI** integrado.
@@ -14,12 +14,12 @@ no en la nube.
 ## Cómo ejecutarla en modo desarrollo
 
 ```bash
-cd loreara-desktop
+cd lorevinci-desktop
 npm install
 npm start
 ```
 
-Esto abrirá la ventana de la aplicación LoreAra en tu computador.
+Esto abrirá la ventana de la aplicación LoreVinci en tu computador.
 
 ## Cómo generar un instalador (.exe / .dmg / .AppImage)
 
@@ -52,13 +52,13 @@ Ve a **Settings → Muse AI** e ingresa:
   local como LM Studio/Ollama con endpoint compatible, etc.).
 - **Modelo**: por ejemplo `gpt-4o-mini`.
 - **API Key**: tu clave personal. Se guarda solo en tu computador, en el archivo de
-  datos local de la app (nunca se envía a ningún servidor de LoreAra, porque no existe
+  datos local de la app (nunca se envía a ningún servidor de LoreVinci, porque no existe
   tal servidor: todo corre localmente).
 
 Pulsa "Probar conexión" para verificar que quedó bien configurado.
 
 ## Dónde se guardan tus datos
 
-La app guarda un archivo `loreara-data.json` en la carpeta de datos de usuario de tu
+La app guarda un archivo `lorevinci-data.json` en la carpeta de datos de usuario de tu
 sistema operativo (gestionada automáticamente por Electron). Puedes hacer respaldo o
 restaurar tus datos completos desde **Settings → Datos → Exportar/Importar**.

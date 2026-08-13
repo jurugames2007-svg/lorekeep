@@ -1,11 +1,11 @@
-// ============ LoreAra App Logic ============
+// ============ LoreVinci App Logic ============
 
 // Fallback for browser / web preview when not running inside Electron
-if (!window.loreara) {
-  window.loreara = {
+if (!window.lorevinci) {
+  window.lorevinci = {
     loadData: async () => {
       try {
-        const raw = localStorage.getItem('loreara-data');
+        const raw = localStorage.getItem('lorevinci-data');
         if (raw) return JSON.parse(raw);
       } catch (e) {}
       return {
@@ -26,7 +26,7 @@ if (!window.loreara) {
       };
     },
     saveData: async (data) => {
-      try { localStorage.setItem('loreara-data', JSON.stringify(data)); } catch (e) {}
+      try { localStorage.setItem('lorevinci-data', JSON.stringify(data)); } catch (e) {}
       return true;
     },
     exportFile: async (data) => {
@@ -34,7 +34,7 @@ if (!window.loreara) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'loreara-backup.json';
+      a.download = 'lorevinci-backup.json';
       a.click();
       return { ok: true, filePath: 'descargas del navegador' };
     },
@@ -68,6 +68,28 @@ let saveTimeout = null;
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $all = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+// Panel lateral colapsable, persistente y accesible.
+function setupSidebarToggle() {
+  const sidebar = $('#mainSidebar');
+  const button = $('#sidebarToggle');
+  if (!sidebar || !button) return;
+  const collapsed = localStorage.getItem('lorevinci-sidebar-collapsed') === '1';
+  // El estado se conserva, pero el control de recuperación siempre queda visible.
+  const apply = (value) => {
+    sidebar.classList.toggle('collapsed', value);
+    button.setAttribute('aria-expanded', String(!value));
+    button.setAttribute('aria-label', value ? 'Expandir panel lateral' : 'Contraer panel lateral');
+    button.textContent = value ? '›' : '‹';
+    localStorage.setItem('lorevinci-sidebar-collapsed', value ? '1' : '0');
+  };
+  apply(collapsed);
+  button.addEventListener('click', () => apply(!sidebar.classList.contains('collapsed')));
+  document.addEventListener('keydown', (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'b') { event.preventDefault(); apply(!sidebar.classList.contains('collapsed')); }
+  });
+}
+
 
 function uid(prefix = 'id') {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -134,6 +156,82 @@ function hashDedup(name, snippet) {
   return (hash >>> 0).toString(36);
 }
 
+// Índices O(1) para consultas frecuentes; la construcción inicial es O(n).
+let narrativeIndexes = { charactersById: new Map(), variantsByKey: new Map(), storiesById: new Map() };
+function rebuildNarrativeIndexes() {
+  narrativeIndexes = { charactersById: new Map(), variantsByKey: new Map(), storiesById: new Map() };
+  (DATA.stories || []).forEach(story => narrativeIndexes.storiesById.set(story.id, story));
+  (DATA.characters || []).forEach(character => {
+    narrativeIndexes.charactersById.set(character.id, character);
+    const base = String(character.name || '').trim().toLocaleLowerCase();
+    const variant = String(character.variantLabel || base).trim().toLocaleLowerCase();
+    const key = `${character.storyId}\0${variant}`;
+    narrativeIndexes.variantsByKey.set(key, character);
+    // Alias seguro para búsquedas explícitas por nombre base cuando no hay ambigüedad.
+    const baseKey = `${character.storyId}\0${base}`;
+    if (!narrativeIndexes.variantsByKey.has(baseKey)) narrativeIndexes.variantsByKey.set(baseKey, character);
+    else if (narrativeIndexes.variantsByKey.get(baseKey) !== character) narrativeIndexes.variantsByKey.set(baseKey, null);
+  });
+}
+function getCharacterVariant(storyId, variantLabel) {
+  const key = `${storyId}\0${String(variantLabel || '').trim().toLocaleLowerCase()}`;
+  return narrativeIndexes.variantsByKey.get(key) || null;
+}
+
+// Modelo narrativo estructurado: identidad, memoria y causalidad por variante.
+function normalizeNarrativeModel() {
+  if (!DATA) return;
+  DATA.narrativeModelVersion = 2;
+  DATA.stories = (DATA.stories || []).map(story => {
+    story.timeline = Array.isArray(story.timeline) ? story.timeline : [];
+    story.decisions = Array.isArray(story.decisions) ? story.decisions : [];
+    story.rules = typeof story.rules === 'string' ? story.rules : '';
+    story.chapters = (story.chapters || []).map((chapter, index) => ({
+      ...chapter,
+      order: Number.isFinite(chapter.order) ? chapter.order : index + 1,
+      decisions: Array.isArray(chapter.decisions) ? chapter.decisions : [],
+      consequences: Array.isArray(chapter.consequences) ? chapter.consequences : [],
+      knowledgeChanges: Array.isArray(chapter.knowledgeChanges) ? chapter.knowledgeChanges : []
+    }));
+    return story;
+  });
+  DATA.characters = (DATA.characters || []).map(character => ({
+    ...character,
+    variantLabel: character.variantLabel || character.name || 'Entidad sin nombre',
+    cosmology: character.cosmology || 'No especificada',
+    knowledge: character.knowledge || '',
+    knowledgeLedger: Array.isArray(character.knowledgeLedger) ? character.knowledgeLedger : [],
+    omniscient: Boolean(character.omniscient)
+  }));
+}
+
+function getVariantIdentity(character) {
+  if (!character) return 'Entidad desconocida';
+  return `${character.variantLabel || character.name} [cosmología: ${character.cosmology || 'no especificada'}]`;
+}
+
+function buildKnowledgeLedger(story) {
+  const chars = (DATA.characters || []).filter(c => c.storyId === story.id);
+  return chars.map(c => `${getVariantIdentity(c)} | omnisciencia: ${c.omniscient ? 'sí' : 'no'} | conocimiento declarado: ${sanitizeTextForPrompt(c.knowledge || 'ninguno; solo hechos presenciados o comunicados')}`).join('\n');
+}
+
+function findNarrativeWarnings(story) {
+  const warnings = [];
+  const names = new Map();
+  (DATA.characters || []).filter(c => c.storyId === story.id).forEach(c => {
+    const key = (c.name || '').trim().toLowerCase();
+    if (!key) return;
+    if (!names.has(key)) names.set(key, []);
+    names.get(key).push(c);
+  });
+  names.forEach((variants, name) => {
+    if (variants.length > 1 && variants.some(v => !v.variantLabel || v.variantLabel.toLowerCase() === name)) {
+      warnings.push(`El nombre base "${name}" tiene ${variants.length} variantes; asigna identificadores únicos.`);
+    }
+  });
+  return warnings;
+}
+
 function validateImportData(data) {
   if (!data || typeof data !== 'object') return "Formato inválido: no es objeto.";
   if (data.story) {
@@ -178,7 +276,7 @@ function scheduleSave() {
   if (saveTimeout) clearTimeout(saveTimeout);
   setSaveStatus('saving');
   saveTimeout = setTimeout(() => {
-    window.loreara.saveData(DATA).then(() => setSaveStatus('saved'));
+    window.lorevinci.saveData(DATA).then(() => setSaveStatus('saved'));
   }, 400);
 }
 
@@ -197,11 +295,11 @@ function setSaveStatus(status) {
 
 // ---- Toast (reemplaza alert()) ----
 function showToast(message) {
-  let toast = $('#lorearaToast');
+  let toast = $('#lorevinciToast');
   if (!toast) {
     toast = document.createElement('div');
-    toast.id = 'lorearaToast';
-    toast.className = 'loreara-toast';
+    toast.id = 'lorevinciToast';
+    toast.className = 'lorevinci-toast';
     document.body.appendChild(toast);
   }
   toast.textContent = message;
@@ -246,7 +344,7 @@ function logActivity(wordsDelta) {
 }
 
 function getStory(id) {
-  return DATA.stories.find(s => s.id === id);
+  return narrativeIndexes.storiesById.get(id) || DATA.stories.find(s => s.id === id);
 }
 
 function getChapter(story, chapterId) {
@@ -398,6 +496,7 @@ function renderStories() {
         <div class="progress-bar"><div style="width:${progress}%"></div></div>
         <div class="story-actions">
           <button class="btn-secondary" data-act="open">Abrir</button>
+          <button class="btn-secondary" data-act="configure">Configurar</button>
           <button class="btn-danger" data-act="del">Eliminar</button>
         </div>
       </div>
@@ -405,6 +504,16 @@ function renderStories() {
     card.querySelector('[data-act="open"]').addEventListener('click', (e) => {
       e.stopPropagation();
       openStoryEditor(s.id);
+    });
+    card.querySelector('[data-act="configure"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      openStoryEditor(s.id);
+      requestAnimationFrame(() => {
+        const rulesTab = document.querySelector('.tab-btn[data-tab="rules"]');
+        if (rulesTab) rulesTab.click();
+        const rules = document.getElementById('rulesText');
+        if (rules) rules.focus();
+      });
     });
     card.querySelector('[data-act="del"]').addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -651,6 +760,7 @@ $('#autoDetectCharsBtn').addEventListener('click', () => {
             storyId: story.id,
             name: name,
             role: 'Personaje detectado',
+            variantLabel: name, cosmology: 'No especificada', knowledge: '', omniscient: false,
             description: `Detectado automáticamente en los capítulos de "${story.title}". Personalidad analizada del contexto de aparición.`,
             traits: ['activo', 'recurrente']
           });
@@ -674,6 +784,10 @@ function openCharModal(charId) {
     $('#charStorySelect').value = c.storyId;
     $('#charName').value = c.name || '';
     $('#charRole').value = c.role || '';
+    $('#charVariant').value = c.variantLabel || '';
+    $('#charCosmology').value = c.cosmology || '';
+    $('#charKnowledge').value = c.knowledge || '';
+    $('#charOmniscient').checked = Boolean(c.omniscient);
     $('#charDesc').value = c.description || '';
     $('#charTraits').value = (c.traits || []).join(', ');
     $('#deleteCharBtn').style.display = 'inline-block';
@@ -682,6 +796,10 @@ function openCharModal(charId) {
     if (currentStoryId) $('#charStorySelect').value = currentStoryId;
     $('#charName').value = '';
     $('#charRole').value = '';
+    $('#charVariant').value = '';
+    $('#charCosmology').value = '';
+    $('#charKnowledge').value = '';
+    $('#charOmniscient').checked = false;
     $('#charDesc').value = '';
     $('#charTraits').value = '';
     $('#deleteCharBtn').style.display = 'none';
@@ -701,6 +819,10 @@ $('#saveCharBtn').addEventListener('click', () => {
     storyId: $('#charStorySelect').value,
     name: $('#charName').value.trim() || 'Sin nombre',
     role: $('#charRole').value.trim(),
+    variantLabel: $('#charVariant').value.trim() || $('#charName').value.trim(),
+    cosmology: $('#charCosmology').value.trim() || 'No especificada',
+    knowledge: $('#charKnowledge').value.trim(),
+    omniscient: $('#charOmniscient').checked,
     description: $('#charDesc').value.trim(),
     traits: $('#charTraits').value.split(',').map(t => t.trim()).filter(Boolean)
   };
@@ -766,7 +888,7 @@ $('#exportStoryBtn').addEventListener('click', async () => {
   const story = getStory($('#collabStorySelect').value);
   if (!story) return;
   const chars = (DATA.characters || []).filter(c => c.storyId === story.id);
-  const res = await window.loreara.exportFile({ story, characters: chars, exportedFrom: 'LoreAra', exportedAt: new Date().toISOString() });
+  const res = await window.lorevinci.exportFile({ story, characters: chars, exportedFrom: 'LoreVinci', exportedAt: new Date().toISOString() });
   if (res.ok) showToast(`Historia exportada a: ${res.filePath}`);
 });
 
@@ -803,7 +925,7 @@ $('#exportPdfBtn').addEventListener('click', () => {
 </head>
 <body>
   <h1>${escapeHtml(story.title)}</h1>
-  <div class="genre">${escapeHtml(story.genre || 'Novela / Fanfic')} · Creado con LoreAra</div>
+  <div class="genre">${escapeHtml(story.genre || 'Novela / Fanfic')} · Creado con LoreVinci</div>
   ${story.synopsis ? `<div class="synopsis"><b>Sinopsis:</b> ${escapeHtml(story.synopsis)}</div>` : ''}
   <hr style="border:0; border-top:1px solid #ddd; margin: 40px 0;">
 `;
@@ -841,7 +963,7 @@ function downloadTextFile(filename, text) {
   URL.revokeObjectURL(url);
 }
 $('#importBtn').addEventListener('click', async () => {
-  const res = await window.loreara.importFile();
+  const res = await window.lorevinci.importFile();
   if (!res.ok) return;
   const err = validateImportData(res.data);
   if (err) { showToast('Importación fallida: ' + err); return; }
@@ -940,7 +1062,7 @@ function checkPdfTextOrWarnOcr(file, textContent) {
   if (file && file.name.toLowerCase().endsWith('.pdf') && (textContent || '').trim().length < 40) {
     showConfirm({
       title: 'Aviso: PDF Escaneado (Sin capa de texto digital)',
-      text: `El documento "${file.name}" parece ser una imagen escaneada y no contiene texto digital seleccionable.\n\nPor nuestro diseño offline-first, LoreAra procesa tus datos en tu máquina sin enviarlos a terceros.\n\n• Qué puedes hacer hoy: Convierte el PDF a texto antes de subirlo con OCR local en tu dispositivo (ej. Adobe Scan / Google Lens en el móvil, o ocrmypdf en terminal).\n• Roadmap: Motor OCR local (Tesseract.js WASM / PaddleOCR) integrado 100% offline en próxima versión.`,
+      text: `El documento "${file.name}" parece ser una imagen escaneada y no contiene texto digital seleccionable.\n\nPor nuestro diseño offline-first, LoreVinci procesa tus datos en tu máquina sin enviarlos a terceros.\n\n• Qué puedes hacer hoy: Convierte el PDF a texto antes de subirlo con OCR local en tu dispositivo (ej. Adobe Scan / Google Lens en el móvil, o ocrmypdf en terminal).\n• Roadmap: Motor OCR local (Tesseract.js WASM / PaddleOCR) integrado 100% offline en próxima versión.`,
       okLabel: 'Entendido'
     });
     return false;
@@ -1346,8 +1468,8 @@ if (triggerNblmSummaryBtn) {
     if (!summaryEl) return;
     summaryEl.textContent = 'Muse AI está analizando y resumiendo la fuente...';
 
-    const systemPrompt = `Eres un investigador literario experto estilo NotebookLM en LoreAra. Sintetiza los puntos clave, reglas del lore y personajes importantes de la fuente adjunta por el autor en 3 o 4 viñetas concisas en español.`;
-    const res = await window.loreara.aiGenerate({
+    const systemPrompt = `Eres un investigador literario experto estilo NotebookLM en LoreVinci. Sintetiza los puntos clave, reglas del lore y personajes importantes de la fuente adjunta por el autor en 3 o 4 viñetas concisas en español.`;
+    const res = await window.lorevinci.aiGenerate({
       baseUrl: DATA.settings.ai.baseUrl,
       apiKey: DATA.settings.ai.apiKey,
       model: DATA.settings.ai.model,
@@ -1365,6 +1487,29 @@ if (triggerNblmSummaryBtn) {
       summaryEl.textContent = `Aviso: No se pudo generar con IA (${res.error}). Muestra un resumen general del contenido leíble abajo.`;
     }
   });
+}
+
+function changeSourceCover(doc, redraw) {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = 'image/jpeg,image/png,image/webp';
+  input.onchange = () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { showToast('La portada debe pesar menos de 2 MB.'); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      doc.coverImage = reader.result;
+      doc.coverImageName = file.name;
+      scheduleSave(); redraw();
+      showToast(`Portada de "${doc.name}" actualizada.`);
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
+}
+function clearSourceCover(doc, redraw) {
+  doc.coverImage = null; doc.coverImageName = '';
+  scheduleSave(); redraw(); showToast('Portada de la fuente eliminada.');
 }
 
 function renderStoryDocs() {
@@ -1412,7 +1557,7 @@ function renderStoryDocs() {
       </div>
       <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
         <span class="muted">${doc.content ? doc.content.length.toLocaleString('es-CL') + ' car.' : '0 car.'}</span>
-        <button class="link-btn" data-act="view" style="font-size:11px;">Ver extracto</button>
+        <span class="source-cover-actions"><button class="link-btn" data-act="cover">${doc.coverImage ? 'Cambiar portada' : 'Añadir portada'}</button>${doc.coverImage ? '<button class="link-btn" data-act="clear-cover">Quitar</button>' : ''}</span><button class="link-btn" data-act="view" style="font-size:11px;">Ver extracto</button>
       </div>
     `;
 
@@ -1426,6 +1571,10 @@ function renderStoryDocs() {
         showToast(`Jerarquía de "${doc.name}" configurada como: ${getPriorityInfo(doc).label}.`);
       });
     });
+
+    el.querySelectorAll('[data-act="cover"]').forEach(btn => btn.addEventListener('click', () => changeSourceCover(doc, renderStoryDocs)));
+    const clearCover = el.querySelector('[data-act="clear-cover"]');
+    if (clearCover) clearCover.addEventListener('click', () => clearSourceCover(doc, renderStoryDocs));
 
     el.querySelector('[data-act="view"]').addEventListener('click', () => {
       openNblmReaderModal(doc);
@@ -1546,11 +1695,11 @@ function startGoogleOpenRouterAuth() {
   // 10/10 HONESTO: no hay OAuth Google integrado. Redirige a OpenRouter para que el usuario genere su key real.
   showConfirm({
     title: 'Conexión OpenRouter — método honesto y seguro',
-    text: 'LoreAra es 100% local y no tiene backend. No podemos hacer OAuth Google directo sin tu clave. Te llevaremos a openrouter.ai/keys para que generes tu key real (gratis) y luego la pegas en Ajustes > API Key Manual. ¿Abrir OpenRouter ahora?',
+    text: 'LoreVinci es 100% local y no tiene backend. No podemos hacer OAuth Google directo sin tu clave. Te llevaremos a openrouter.ai/keys para que generes tu key real (gratis) y luego la pegas en Ajustes > API Key Manual. ¿Abrir OpenRouter ahora?',
     okLabel: 'Abrir OpenRouter'
   }).then(ok => {
     if (ok) {
-      window.loreara.openExternal('https://openrouter.ai/keys');
+      window.lorevinci.openExternal('https://openrouter.ai/keys');
       showToast('Abriendo OpenRouter. Genera una key y pégala en “API Key Manual”. Nunca compartimos tu Google.');
       // Pre-rellenar baseUrl para ayudar
       const baseInput = document.getElementById('aiBaseUrl');
@@ -1582,7 +1731,7 @@ if (rememberCheck) {
 const openRouterMyKeysBtn = $('#openrouterMyKeysBtn');
 if (openRouterMyKeysBtn) {
   openRouterMyKeysBtn.addEventListener('click', () => {
-    window.loreara.openExternal('https://openrouter.ai/keys');
+    window.lorevinci.openExternal('https://openrouter.ai/keys');
   });
 }
 
@@ -1617,7 +1766,7 @@ $('#fetchModelsBtn').addEventListener('click', async () => {
   }
 
   resultEl.textContent = 'Conectando y detectando modelos permitidos...';
-  const res = await window.loreara.aiModels({ baseUrl, apiKey });
+  const res = await window.lorevinci.aiModels({ baseUrl, apiKey });
 
   if (res.ok && res.models && res.models.length > 0) {
     selectEl.innerHTML = '';
@@ -1627,10 +1776,10 @@ $('#fetchModelsBtn').addEventListener('click', async () => {
       opt.textContent = m;
       selectEl.appendChild(opt);
     });
-    resultEl.textContent = `✅ Se detectaron ${res.models.length} modelos con éxito. Selecciona el deseado o el mejor para contexto.`;
+    resultEl.textContent = ` Se detectaron ${res.models.length} modelos con éxito. Selecciona el deseado o el mejor para contexto.`;
     showToast('Modelos detectados correctamente.');
   } else {
-    resultEl.textContent = `❌ Error detectando modelos: ${res.error || 'Respuesta vacía'}`;
+    resultEl.textContent = ` Error detectando modelos: ${res.error || 'Respuesta vacía'}`;
   }
 });
 
@@ -1643,12 +1792,12 @@ $('#saveAiBtn').addEventListener('click', () => {
 });
 
 $('#settingsExportBtn').addEventListener('click', async () => {
-  const res = await window.loreara.exportFile(DATA);
+  const res = await window.lorevinci.exportFile(DATA);
   if (res.ok) showToast(`Respaldo guardado en: ${res.filePath}`);
 });
 
 $('#settingsImportBtn').addEventListener('click', async () => {
-  const res = await window.loreara.importFile();
+  const res = await window.lorevinci.importFile();
   const err2 = res.ok ? validateImportData(res.data) : null;
   if (err2) { showToast('Importación fallida: ' + err2); return; }
   if (res.ok && res.data && res.data.stories) {
@@ -2001,13 +2150,15 @@ $('#startAutoBookBtn').addEventListener('click', async () => {
     logsEl.scrollTop = logsEl.scrollHeight;
   };
 
-  const chars = (DATA.characters||[]).filter(c=>c.storyId===story.id).map(c=> `${sanitizeTextForPrompt(c.name)} (${sanitizeTextForPrompt(c.role)}): ${sanitizeTextForPrompt(c.description)} [${(c.traits||[]).join(', ')}]`).join("\n");
+  const chars = (DATA.characters||[]).filter(c=>c.storyId===story.id).map(c=> `${sanitizeTextForPrompt(c.variantLabel || c.name)} | nombre base: ${sanitizeTextForPrompt(c.name)} | cosmología: ${sanitizeTextForPrompt(c.cosmology || 'No especificada')} | rol: ${sanitizeTextForPrompt(c.role)} | conocimiento permitido: ${sanitizeTextForPrompt(c.knowledge || 'solo lo mostrado en capítulos')} | omnisciencia: ${c.omniscient ? 'sí' : 'no'} | descripción: ${sanitizeTextForPrompt(c.description)} [${(c.traits||[]).join(', ')}]`).join("\n");
   const outlineSnippet = sanitizeTextForPrompt(story.outline || "Sin outline");
 
+  const modelWarnings = findNarrativeWarnings(story);
+  modelWarnings.forEach(w => addLog(`⚠ ${w}`));
   addLog(`Iniciando generación automática de ${count} capítulo(s) para "${sanitizeTextForPrompt(story.title)}"...`);
   btn.disabled = true; btn.textContent = "⏳ Generando… (clic para cancelar)";
   let cancelled = false;
-  const onCancel = () => { cancelled = true; if (autoBookAbort) autoBookAbort.abort(); addLog("⛔ Cancelado por el usuario."); btn.disabled=false; btn.textContent="⚡ Iniciar Generación Automática"; };
+  const onCancel = () => { cancelled = true; if (autoBookAbort) autoBookAbort.abort(); addLog(" Cancelado por el usuario."); btn.disabled=false; btn.textContent=" Iniciar Generación Automática"; };
   btn.addEventListener('click', onCancel, {once:true});
   autoBookAbort = new AbortController();
 
@@ -2029,8 +2180,14 @@ ${priorityContent}
 Fuentes Derivadas / Referencia: "${sources}"
 Reglas Cronológicas: "${chronology}"
 ${memoryBlock}
+REGISTRO DE CONOCIMIENTO POR VARIANTE (no inventes acceso):
+${buildKnowledgeLedger(story)}
 INSTRUCCIONES DE COHERENCIA 10/10:
 - Da PRIORIDAD ABSOLUTA al Canon Absoluto sobre todo lo demás.
+- Trata cada variante como una identidad distinta: nunca mezcles personajes con el mismo nombre. Usa el identificador variante/cosmología como clave canónica.
+- Ningún personaje puede saber información que no haya presenciado, deducido o recibido, salvo omnisciencia declarada.
+- No resuelvas el conflicto principal instantáneamente: introduce escalada, obstáculos, coste, decisiones y consecuencias; conserva problemas abiertos para capítulos posteriores.
+- No otorgues nuevas transformaciones, técnicas, aliados o información sin preparación narrativa y evidencia.
 - NO contradigas decisiones de capítulos previos (muertes, giros, afiliaciones).
 - Mantén tono "${tone}" y voz del autor.
 - Si falta info, NO inventes lore que contradiga canon; indica "[No especificado en canon]".
@@ -2046,12 +2203,12 @@ Escribe un capítulo completo, narrativo, detallado, de al menos 320 palabras en
     try {
       if (!hasKey) {
         usedMock = true;
-        addLog(`ℹ️ Sin API key — usando generador local coherente 10/10 (respeta canon y memoria) para demo.`);
+        addLog(` Sin API key — usando generador local coherente 10/10 (respeta canon y memoria) para demo.`);
         await new Promise(r=>setTimeout(r, 700)); // simula latencia
         generatedText = mockGenerateChapterOffline(story, nextNum, tone, memoryBlock, priorityContent);
         generatedText = sanitizeHtml(generatedText);
       } else {
-        const res = await window.loreara.aiGenerate({
+        const res = await window.lorevinci.aiGenerate({
           baseUrl: DATA.settings.ai.baseUrl,
           apiKey: DATA.settings.ai.apiKey,
           model: DATA.settings.ai.model,
@@ -2064,9 +2221,9 @@ Escribe un capítulo completo, narrativo, detallado, de al menos 320 palabras en
           signal: autoBookAbort.signal
         });
         if (!res.ok) {
-          if (res.error && res.error.toLowerCase().includes('abort')) { addLog("⛔ Generación abortada."); break; }
+          if (res.error && res.error.toLowerCase().includes('abort')) { addLog(" Generación abortada."); break; }
           // Fallback mock si falla API (ej: key inválida en demo)
-          addLog(`⚠️ API falló (${res.error.slice(0,80)}…) → fallback mock local coherente.`);
+          addLog(`⚠ API falló (${res.error.slice(0,80)}…) → fallback mock local coherente.`);
           generatedText = mockGenerateChapterOffline(story, nextNum, tone, memoryBlock, priorityContent);
           generatedText = sanitizeHtml(generatedText);
           usedMock = true;
@@ -2075,7 +2232,7 @@ Escribe un capítulo completo, narrativo, detallado, de al menos 320 palabras en
         }
       }
 
-      if (!generatedText || generatedText.length < 80) { addLog(`⚠️ Capítulo ${nextNum} demasiado corto, descartado.`); continue; }
+      if (!generatedText || generatedText.length < 80) { addLog(`⚠ Capítulo ${nextNum} demasiado corto, descartado.`); continue; }
       const newCh = {
         id: uid('ch'),
         title: `Capítulo ${nextNum}: Automático${usedMock ? ' • Demo Local' : ''}`,
@@ -2087,18 +2244,18 @@ Escribe un capítulo completo, narrativo, detallado, de al menos 320 palabras en
       story.updatedAt = Date.now();
       scheduleSave();
       renderChapterList();
-      addLog(`✅ Capítulo ${nextNum} generado (${generatedText.length} chars) ${usedMock ? '[MOCK LOCAL 10/10]' : ''} — coherencia con memoria verificada.`);
+      addLog(` Capítulo ${nextNum} generado (${generatedText.length} chars) ${usedMock ? '[MOCK LOCAL 10/10]' : ''} — coherencia con memoria verificada.`);
     } catch (err) {
-      if (err && err.name === 'AbortError') { addLog("⛔ Abortado."); break; }
+      if (err && err.name === 'AbortError') { addLog(" Abortado."); break; }
       addLog(`Excepción: ${String(err).slice(0,200)}`);
       break;
     }
   }
 
   btn.removeEventListener('click', onCancel);
-  btn.disabled=false; btn.textContent="⚡ Iniciar Generación Automática";
+  btn.disabled=false; btn.textContent=" Iniciar Generación Automática";
   autoBookAbort=null;
-  addLog('✨ ¡Generación automática completada! Revisa coherencia en el editor.');
+  addLog(' ¡Generación automática completada! Revisa coherencia en el editor.');
   showToast('Libro automático actualizado — capítulos con memoria de decisiones.');
 });
 
@@ -2157,10 +2314,10 @@ async function triggerRealtimeSuggestion() {
   rsb.style.display = 'block';
   rsbContent.textContent = 'Analizando redacción y coherencia...';
 
-  const systemPrompt = `Eres Muse AI, asistente de redacción en tiempo real de LoreAra. Analiza el último párrafo escrito por el autor y ofrece una sugerencia breve de continuación, mejora de estilo o cohesión argumental en español (máx 2 frases).`;
+  const systemPrompt = `Eres Muse AI, asistente de redacción en tiempo real de LoreVinci. Analiza el último párrafo escrito por el autor y ofrece una sugerencia breve de continuación, mejora de estilo o cohesión argumental en español (máx 2 frases).`;
   const userPrompt = `Texto actual del capítulo:\n"""${text.slice(-1500)}"""\nOfrece una sugerencia constructiva de mejora o continuación.`;
 
-  const res = await window.loreara.aiGenerate({
+  const res = await window.lorevinci.aiGenerate({
     baseUrl: DATA.settings.ai.baseUrl,
     apiKey: DATA.settings.ai.apiKey,
     model: DATA.settings.ai.model,
@@ -2176,7 +2333,7 @@ async function triggerRealtimeSuggestion() {
     rsbContent.textContent = suggestion;
     rsbContent.setAttribute('data-suggestion', suggestion);
   } else {
-    rsbContent.textContent = '💡 Sugerencia: Mantén el ritmo de la escena y profundiza en las motivaciones del protagonista.';
+    rsbContent.textContent = ' Sugerencia: Mantén el ritmo de la escena y profundiza en las motivaciones del protagonista.';
     rsbContent.setAttribute('data-suggestion', 'Mantén el ritmo de la escena y profundiza en las motivaciones del protagonista.');
   }
 }
@@ -2246,7 +2403,7 @@ async function runMusePrompt(promptText) {
   const safeCharSummary = sanitizeTextForPrompt(charSummary || 'N/A');
   const safeChapterTitle = sanitizeTextForPrompt(chapter.title);
   const safeCurrentText = sanitizeTextForPrompt(currentText);
-  const systemPrompt = `Eres Muse AI, asistente creativo de LoreAra. Ayudas a escribir historias, sugerir acciones y mantener coherencia con las reglas de lore. Responde en español, de forma creativa y concisa.
+  const systemPrompt = `Eres Muse AI, asistente creativo de LoreVinci. Ayudas a escribir historias, sugerir acciones y mantener coherencia con las reglas de lore. Distingue siempre variantes por universo/cosmología; no mezcles sus recuerdos. No resuelvas conflictos en segundos: propone progresión, coste y consecuencias. Responde en español, de forma creativa y concisa.
 
 Contexto de la obra: "${safeTitle}" (${safeGenre}).
 Reglas y Lore Base: ${safeRules}
@@ -2258,7 +2415,7 @@ Capítulo actual: "${safeChapterTitle}"
 Texto reciente:
 """${safeCurrentText}"""`;
 
-  const res = await window.loreara.aiGenerate({
+  const res = await window.lorevinci.aiGenerate({
     baseUrl: DATA.settings.ai.baseUrl,
     apiKey: DATA.settings.ai.apiKey,
     model: DATA.settings.ai.model,
@@ -2536,7 +2693,7 @@ const ALL_BADGES = [
   {
     id: 'author_verified',
     title: 'Autor Verificado',
-    desc: 'Has iniciado tu camino literario en LoreAra.',
+    desc: 'Has iniciado tu camino literario en LoreVinci.',
     check: () => true
   },
   {
@@ -2549,21 +2706,21 @@ const ALL_BADGES = [
   {
     id: 'words_1k',
     title: 'Pluma de Bronce (1K)',
-    desc: 'Alcanzaste 1,000 palabras totales escritas en LoreAra.',
+    desc: 'Alcanzaste 1,000 palabras totales escritas en LoreVinci.',
     check: () => totalWordsAll() >= 1000,
     progress: () => `${Math.min(1000, totalWordsAll()).toLocaleString('es-CL')}/1.000 palabras`
   },
   {
     id: 'words_5k',
     title: 'Pluma de Plata (5K)',
-    desc: 'Alcanzaste 5,000 palabras totales escritas en LoreAra.',
+    desc: 'Alcanzaste 5,000 palabras totales escritas en LoreVinci.',
     check: () => totalWordsAll() >= 5000,
     progress: () => `${Math.min(5000, totalWordsAll()).toLocaleString('es-CL')}/5.000 palabras`
   },
   {
     id: 'words_20k',
     title: 'Pluma de Oro (20K)',
-    desc: 'Alcanzaste 20,000 palabras totales escritas en LoreAra.',
+    desc: 'Alcanzaste 20,000 palabras totales escritas en LoreVinci.',
     check: () => totalWordsAll() >= 20000,
     progress: () => `${Math.min(20000, totalWordsAll()).toLocaleString('es-CL')}/20.000 palabras`
   },
@@ -2730,6 +2887,8 @@ function renderProfileModal() {
   const themeSel = $('#appThemeBackgroundSelect');
   if (borderSel) borderSel.value = settings.profileBorder || 'rank-gold';
   if (themeSel) themeSel.value = settings.appTheme || 'bg-obsidian';
+  const wallpaperOverlay = $('#wallpaperOverlayToggle');
+  if (wallpaperOverlay) wallpaperOverlay.checked = settings.wallpaperOverlay !== false;
 }
 
 function openAuthorProfileModal() {
@@ -2873,6 +3032,19 @@ if ($('#appThemeBackgroundSelect')) {
   });
 }
 
+if ($('#wallpaperInput')) {
+  $('#wallpaperInput').addEventListener('change', (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    if (file.size > 12 * 1024 * 1024) { showToast('El fondo debe pesar menos de 12 MB.'); event.target.value = ''; return; }
+    const reader = new FileReader();
+    reader.onload = () => { DATA.settings.wallpaper = reader.result; scheduleSave(); applyProfileAndTheme(); showToast('Fondo personalizado guardado. Resolución recomendada: 1920 x 1080 px.'); event.target.value = ''; };
+    reader.readAsDataURL(file);
+  });
+}
+if ($('#removeWallpaperBtn')) $('#removeWallpaperBtn').addEventListener('click', () => { DATA.settings.wallpaper = null; scheduleSave(); applyProfileAndTheme(); showToast('Fondo personalizado eliminado.'); });
+if ($('#wallpaperOverlayToggle')) $('#wallpaperOverlayToggle').addEventListener('change', (event) => { DATA.settings.wallpaperOverlay = event.target.checked; scheduleSave(); applyProfileAndTheme(); });
+
 function applyUiScale() {
   const scale = (DATA && DATA.settings && DATA.settings.uiScale) || 'compact';
   const html = document.documentElement;
@@ -2920,6 +3092,9 @@ function applyProfileAndTheme() {
   if (borderEl) borderEl.className = 'avatar-border ' + border;
 
   const theme = settings.appTheme || 'bg-obsidian';
+  document.documentElement.style.setProperty('--wallpaper-image', settings.wallpaper ? `url(\"${settings.wallpaper}\")` : 'none');
+  document.body.classList.toggle('has-wallpaper', Boolean(settings.wallpaper));
+  document.body.classList.toggle('wallpaper-no-overlay', settings.wallpaperOverlay === false);
   // reconstruir clases de body sin perder densidad
   document.body.className = '';
   if (theme !== 'bg-obsidian') {
@@ -3075,7 +3250,7 @@ function maybeShowHomeTip() {
   if (homeView.querySelector('.home-tip')) return;
   const tip = document.createElement('div');
   tip.className = 'home-tip';
-  tip.innerHTML = `<span>💡</span><div><b>Consejo pro:</b> Pulsa <b>Cmd+Shift+F</b> en el editor para entrar en <b>Modo Zen</b> sin distracciones. <button class="link-btn" id="dismissHomeTip" style="margin-left:8px;">Entendido</button></div>`;
+  tip.innerHTML = `<span></span><div><b>Consejo pro:</b> Pulsa <b>Cmd+Shift+F</b> en el editor para entrar en <b>Modo Zen</b> sin distracciones. <button class="link-btn" id="dismissHomeTip" style="margin-left:8px;">Entendido</button></div>`;
   const grid = homeView.querySelector('.home-grid');
   if (grid) homeView.insertBefore(tip, grid);
   const dismiss = document.getElementById('dismissHomeTip');
@@ -3087,7 +3262,7 @@ function maybeShowHomeTip() {
 }
 
 async function initApp() {
-  if (!DATA) DATA = await window.loreara.loadData();
+  if (!DATA) DATA = await window.lorevinci.loadData();
   if (!DATA.characters) DATA.characters = [];
   if (!DATA.collabNotes) DATA.collabNotes = [];
   if (!DATA.activityLog) DATA.activityLog = [];
@@ -3135,6 +3310,10 @@ async function initApp() {
     // mantener respeto a preferencia previa, no forzar
   }
 
+  normalizeNarrativeModel();
+  rebuildNarrativeIndexes();
+  scheduleSave();
+
   // Hide startup loader after 1.5s (Steam-like cinematic boot)
   setTimeout(() => {
     const loader = $('#startupLoader');
@@ -3156,4 +3335,5 @@ async function initApp() {
   }
 }
 
+setupSidebarToggle();
 initApp();
