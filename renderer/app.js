@@ -1505,6 +1505,152 @@ async function extractFileContent(file, onProgress) {
   return { text: raw, kind: name.endsWith('.md') ? 'markdown' : 'texto' };
 }
 
+// ============ MOTOR OCR LOCAL (TESSERACT.JS, 100% OFFLINE) ============
+
+const OCR_MAX_PAGES = 60;          // tope de páginas por documento
+const OCR_RENDER_SCALE = 2.0;      // 2x mejora mucho el reconocimiento
+let ocrWorkerPromise = null;
+
+function ocrIsAvailable() {
+  return typeof window.Tesseract !== 'undefined';
+}
+
+/**
+ * Crea (una sola vez) el worker de Tesseract apuntando a los recursos
+ * vendorizados. Todo se resuelve en local: no hay descargas desde CDN.
+ */
+async function getOcrWorker(lang, onProgress) {
+  if (!ocrIsAvailable()) throw new Error('El motor OCR no está disponible.');
+  if (!ocrWorkerPromise) {
+    ocrWorkerPromise = window.Tesseract.createWorker(lang || 'spa', 1, {
+      workerPath: 'vendor/tesseract/worker.min.js',
+      corePath: 'vendor/tesseract/core',
+      langPath: 'vendor/tesseract/lang',
+      gzip: true,
+      logger: (m) => {
+        if (onProgress && m && m.status === 'recognizing text') {
+          onProgress(m.progress || 0);
+        }
+      }
+    }).catch(err => { ocrWorkerPromise = null; throw err; });
+  }
+  return ocrWorkerPromise;
+}
+
+async function terminateOcrWorker() {
+  if (!ocrWorkerPromise) return;
+  try {
+    const worker = await ocrWorkerPromise;
+    await worker.terminate();
+  } catch {}
+  ocrWorkerPromise = null;
+}
+
+/**
+ * Ejecuta OCR sobre un PDF escaneado: rasteriza cada página con pdf.js y la
+ * reconoce con Tesseract. Devuelve el texto y la confianza media.
+ */
+async function ocrPdfFile(file, { lang = 'spa', onPage = null, signal = null } = {}) {
+  if (!ensurePdfJs()) throw new Error('El motor PDF no está disponible.');
+  const worker = await getOcrWorker(lang);
+  const buffer = await readFileAsArrayBuffer(file);
+  const pdf = await window.pdfjsLib.getDocument({
+    data: new Uint8Array(buffer),
+    disableFontFace: true,
+    useSystemFonts: false,
+    isEvalSupported: false
+  }).promise;
+
+  const total = Math.min(pdf.numPages, OCR_MAX_PAGES);
+  const pages = [];
+  const confidences = [];
+
+  for (let i = 1; i <= total; i++) {
+    if (signal && signal.aborted) break;
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: OCR_RENDER_SCALE });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    // Fondo blanco: los PDFs escaneados suelen venir sin capa de color de fondo.
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport }).promise;
+
+    const { data } = await worker.recognize(canvas);
+    const pageText = (data.text || '').replace(/[ \t]{2,}/g, ' ').trim();
+    if (pageText) pages.push(pageText);
+    if (typeof data.confidence === 'number') confidences.push(data.confidence);
+
+    // Liberar memoria: un PDF de 60 páginas a 2x consume mucho.
+    canvas.width = 0; canvas.height = 0;
+    if (onPage) onPage(i, total);
+    await new Promise(r => setTimeout(r, 0));
+  }
+
+  try { await pdf.destroy(); } catch {}
+  const avgConfidence = confidences.length
+    ? Math.round(confidences.reduce((a, b) => a + b, 0) / confidences.length)
+    : 0;
+
+  return {
+    text: pages.join('\n\n').trim(),
+    pageCount: total,
+    truncatedPages: pdf.numPages > OCR_MAX_PAGES ? pdf.numPages - OCR_MAX_PAGES : 0,
+    confidence: avgConfidence
+  };
+}
+
+/**
+ * Reprocesa con OCR un documento ya adjunto que quedó marcado como escaneado.
+ */
+async function runOcrOnDoc(doc, file, redraw) {
+  if (!ocrIsAvailable()) {
+    showToast('El motor OCR no está disponible en este entorno.');
+    return false;
+  }
+  const lang = (DATA.settings.ocrLang || 'spa');
+  showUploadProgress(1, `OCR de "${doc.name}" — esto puede tardar…`);
+  try {
+    const res = await ocrPdfFile(file, {
+      lang,
+      onPage: (p, t) => {
+        $('#uploadProgressLabel').textContent = `OCR "${doc.name}" — página ${p}/${t}…`;
+        $('#uploadProgressFill').style.width = `${Math.round((p / t) * 100)}%`;
+        $('#uploadProgressCount').textContent = `${p}/${t}`;
+      }
+    });
+    if (!res.text || res.text.length < 20) {
+      updateUploadProgress(1, 1, `✕ ${doc.name}: el OCR no encontró texto legible.`, 'error');
+      finishUploadProgress('OCR sin resultados.');
+      showToast('El OCR no pudo extraer texto de este documento.');
+      return false;
+    }
+    doc.content = res.text.slice(0, MAX_DOC_CHARS);
+    doc.fullLength = res.text.length;
+    doc.needsOcr = false;
+    doc.ocrApplied = true;
+    doc.ocrConfidence = res.confidence;
+    doc.pageCount = res.pageCount;
+    // Reclasificar: ahora sí hay texto sobre el que decidir sub-tipo y verso.
+    if (doc.autoClassified !== false) {
+      Object.assign(doc, classifyDocument(doc.name, doc.content));
+    }
+    scheduleSave();
+    updateUploadProgress(1, 1, `✓ ${doc.name}: ${res.text.length.toLocaleString('es-CL')} car. reconocidos (confianza ${res.confidence}%).`, 'ok');
+    finishUploadProgress(`OCR completado sobre "${doc.name}".`);
+    showToast(`OCR completado: ${res.text.length.toLocaleString('es-CL')} caracteres recuperados.`);
+    if (redraw) redraw();
+    return true;
+  } catch (err) {
+    updateUploadProgress(1, 1, `✕ OCR falló: ${String(err.message || err).slice(0, 120)}`, 'error');
+    finishUploadProgress('OCR fallido.');
+    showToast('El OCR falló. Revisa el registro.');
+    return false;
+  }
+}
+
 // --- Clasificación automática: sub-tipo de historia y verso ---
 
 const SUBTYPE_RULES = [
@@ -1607,13 +1753,14 @@ function finishUploadProgress(summary) {
  */
 async function ingestFilesIntoList(files, targetList, options = {}) {
   const { targetName = 'la biblioteca', storyId = null, onDone = null, useProgressUI = true } = options;
+  const ocrEnabled = (DATA.settings.ocrEnabled !== false);
   const list = Array.from(files || []).slice(0, MAX_BATCH_FILES);
-  if (!list.length) return { added: 0, duplicates: 0, failed: 0, ocrPending: 0 };
+  if (!list.length) return { added: 0, duplicates: 0, failed: 0, ocrPending: 0, ocrApplied: 0 };
   if ((files || []).length > MAX_BATCH_FILES) {
     showToast(`Se procesarán los primeros ${MAX_BATCH_FILES} archivos del lote.`);
   }
 
-  const stats = { added: 0, duplicates: 0, failed: 0, ocrPending: 0 };
+  const stats = { added: 0, duplicates: 0, failed: 0, ocrPending: 0, ocrApplied: 0 };
   const ocrPendingNames = [];
   if (useProgressUI) showUploadProgress(list.length, `Procesando ${list.length} documento(s)…`);
 
@@ -1625,19 +1772,48 @@ async function ingestFilesIntoList(files, targetList, options = {}) {
         updateUploadProgress(i + 1, list.length, `✕ ${file.name}: supera el límite de 8 MB.`, 'error');
         continue;
       }
-      const { text, pageCount, kind } = await extractFileContent(file, (page, total) => {
+      const extracted = await extractFileContent(file, (page, total) => {
         if (useProgressUI) {
           $('#uploadProgressLabel').textContent = `Extrayendo "${file.name}" — página ${page}/${total}…`;
         }
       });
-      const clean = (text || '').replace(/\u0000/g, '').trim();
+      const { kind } = extracted;
+      let { text, pageCount } = extracted;
+      let clean = (text || '').replace(/\u0000/g, '').trim();
 
-      // PDF escaneado sin capa de texto → se registra igualmente pero marcado para OCR
-      const needsOcr = kind === 'pdf' && clean.length < 40;
+      // PDF escaneado sin capa de texto: intentamos OCR local automáticamente.
+      let needsOcr = kind === 'pdf' && clean.length < 40;
+      let ocrApplied = false;
+      let ocrConfidence = null;
+      if (needsOcr && ocrEnabled && ocrIsAvailable()) {
+        try {
+          if (useProgressUI) {
+            $('#uploadProgressLabel').textContent = `PDF escaneado: aplicando OCR a "${file.name}"…`;
+          }
+          const ocrRes = await ocrPdfFile(file, {
+            lang: DATA.settings.ocrLang || 'spa',
+            onPage: (p, tt) => {
+              if (useProgressUI) {
+                $('#uploadProgressLabel').textContent = `OCR "${file.name}" — página ${p}/${tt}…`;
+              }
+            }
+          });
+          if (ocrRes.text && ocrRes.text.length >= 40) {
+            clean = ocrRes.text;
+            pageCount = ocrRes.pageCount;
+            needsOcr = false;
+            ocrApplied = true;
+            ocrConfidence = ocrRes.confidence;
+          }
+        } catch (ocrErr) {
+          updateUploadProgress(i, list.length, `⚠ OCR de ${file.name} falló: ${String(ocrErr.message || ocrErr).slice(0, 90)}`, 'warn');
+        }
+      }
       if (needsOcr) {
         stats.ocrPending++;
         ocrPendingNames.push(file.name);
       }
+      if (ocrApplied) stats.ocrApplied++;
 
       if (checkAndPreventDuplicateSource(targetList, file.name, clean)) {
         stats.duplicates++;
@@ -1656,6 +1832,8 @@ async function ingestFilesIntoList(files, targetList, options = {}) {
         pageCount: pageCount || null,
         storyId: storyId || null,
         needsOcr,
+        ocrApplied,
+        ocrConfidence,
         isPriority: isFirst,
         priorityLevel: isFirst ? 'primary' : 'derived',
         ...classification,
@@ -1665,7 +1843,7 @@ async function ingestFilesIntoList(files, targetList, options = {}) {
       updateUploadProgress(
         i + 1,
         list.length,
-        `✓ ${file.name} — ${clean.length.toLocaleString('es-CL')} car.${pageCount ? ` · ${pageCount} pág.` : ''} · ${classification.subtypeLabel}${needsOcr ? ' (requiere OCR)' : ''}`,
+        `✓ ${file.name} — ${clean.length.toLocaleString('es-CL')} car.${pageCount ? ` · ${pageCount} pág.` : ''} · ${classification.subtypeLabel}${ocrApplied ? ` · OCR ${ocrConfidence}%` : ''}${needsOcr ? ' (requiere OCR)' : ''}`,
         needsOcr ? 'warn' : 'ok'
       );
     } catch (err) {
@@ -1677,13 +1855,13 @@ async function ingestFilesIntoList(files, targetList, options = {}) {
   }
 
   scheduleSave();
-  const summary = `${stats.added} añadido(s) · ${stats.duplicates} duplicado(s) · ${stats.failed} con error`;
+  const summary = `${stats.added} añadido(s) · ${stats.duplicates} duplicado(s) · ${stats.failed} con error${stats.ocrApplied ? ` · ${stats.ocrApplied} con OCR` : ''}`;
   if (useProgressUI) finishUploadProgress(`Lote completado en "${targetName}": ${summary}.`);
   showToast(`Carga múltiple: ${summary}.`);
   if (ocrPendingNames.length) {
     showConfirm({
       title: `${ocrPendingNames.length} PDF(s) sin capa de texto`,
-      text: `Estos archivos parecen escaneados (imágenes) y quedaron adjuntos pero sin texto utilizable:\n\n${ocrPendingNames.slice(0, 8).join('\n')}${ocrPendingNames.length > 8 ? `\n…y ${ocrPendingNames.length - 8} más` : ''}\n\nConviértelos con OCR local (ocrmypdf, Adobe Scan, Google Lens) y vuelve a subirlos para que Muse AI pueda aprovecharlos.`,
+      text: `Estos archivos parecen escaneados y el OCR no logró texto utilizable:\n\n${ocrPendingNames.slice(0, 8).join('\n')}${ocrPendingNames.length > 8 ? `\n…y ${ocrPendingNames.length - 8} más` : ''}\n\nPuedes reintentar el OCR desde la ficha de cada fuente, o subir una versión de mejor resolución.`,
       okLabel: 'Entendido'
     });
   }
@@ -1995,10 +2173,12 @@ function renderNotebookLMStudio() {
             <span class="tag-chip tag-verse" title="Verso / línea temporal">${escapeHtml(getDocVerseLabel(doc))}</span>
             <span class="muted small">${doc.content ? doc.content.length.toLocaleString('es-CL') + ' car.' : '0 car.'}${doc.pageCount ? ' · ' + doc.pageCount + ' pág.' : ''}${doc.fileKind ? ' · ' + escapeHtml(doc.fileKind.toUpperCase()) : ''}</span>
             ${doc.needsOcr ? '<span class="canon-badge canon-reference" style="background:rgba(255,180,60,0.18); color:#ffb43c;">Requiere OCR</span>' : ''}
+            ${doc.ocrApplied ? `<span class="canon-badge canon-reference" style="background:rgba(53,208,127,0.15); color:#35d07f;">OCR ${doc.ocrConfidence || ''}%</span>` : ''}
             ${doc.isUniversalLink ? '<span class="canon-badge canon-reference" style="background:rgba(129,140,248,0.15); color:var(--accent);">Vinculado del Universal</span>' : ''}
           </div>
         </div>
         <div class="source-actions-group">
+          ${doc.needsOcr ? '<button class="btn-icon-subtle" data-act="ocr" title="Reintentar OCR sobre este PDF escaneado">OCR</button>' : ''}
           <button class="btn-icon-subtle" data-act="del" title="Desvincular o eliminar fuente">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg>
           </button>
@@ -2073,6 +2253,20 @@ function renderNotebookLMStudio() {
 
     card.querySelector('[data-act="view"]').addEventListener('click', () => {
       openNblmReaderModal(doc);
+    });
+
+    const ocrBtn = card.querySelector('[data-act="ocr"]');
+    if (ocrBtn) ocrBtn.addEventListener('click', () => {
+      // Necesitamos el archivo original: el contenido no se guarda en binario.
+      const input = document.createElement('input');
+      input.type = 'file'; input.accept = '.pdf';
+      input.onchange = async () => {
+        const f = input.files && input.files[0];
+        if (!f) return;
+        await runOcrOnDoc(doc, f, renderNotebookLMStudio);
+      };
+      input.click();
+      showToast(`Selecciona de nuevo "${doc.name}" para reintentar el OCR.`);
     });
 
     card.querySelector('[data-act="del"]').addEventListener('click', () => {
@@ -2431,6 +2625,14 @@ function renderSettings() {
   if (presetSel) presetSel.value = detectProviderPreset(DATA.settings.ai.baseUrl);
   $('#aiTestResult').textContent = '';
   renderVerifySteps(DATA.settings.ai.lastVerifySteps || null, false);
+  const ocrCheck = $('#ocrEnabledCheck');
+  if (ocrCheck) ocrCheck.checked = DATA.settings.ocrEnabled !== false;
+  const ocrLang = $('#ocrLangSelect');
+  if (ocrLang) ocrLang.value = DATA.settings.ocrLang || 'spa';
+  const ocrStatus = $('#ocrStatusText');
+  if (ocrStatus) ocrStatus.textContent = ocrIsAvailable()
+    ? 'Motor OCR cargado y listo (offline).'
+    : 'Motor OCR no disponible en este entorno.';
   // escala y densidad
   const uiScaleSel = $('#settingsUiScaleSelect');
   if (uiScaleSel) uiScaleSel.value = DATA.settings.uiScale || 'compact';
@@ -2673,6 +2875,26 @@ if (openRouterMyKeysBtn) {
 const museOpenSettingsBtn = $('#museOpenSettingsBtn');
 if (museOpenSettingsBtn) {
   museOpenSettingsBtn.addEventListener('click', () => showView('settings'));
+}
+
+const ocrEnabledCheck = $('#ocrEnabledCheck');
+if (ocrEnabledCheck) {
+  ocrEnabledCheck.addEventListener('change', () => {
+    DATA.settings.ocrEnabled = ocrEnabledCheck.checked;
+    scheduleSave();
+    showToast(ocrEnabledCheck.checked
+      ? 'OCR automático activado para PDFs escaneados.'
+      : 'OCR automático desactivado: los PDFs escaneados se marcarán sin procesar.');
+  });
+}
+const ocrLangSelect = $('#ocrLangSelect');
+if (ocrLangSelect) {
+  ocrLangSelect.addEventListener('change', async () => {
+    DATA.settings.ocrLang = ocrLangSelect.value;
+    scheduleSave();
+    await terminateOcrWorker(); // el idioma se fija al crear el worker
+    showToast(`Idioma del OCR: ${ocrLangSelect.options[ocrLangSelect.selectedIndex].text}.`);
+  });
 }
 
 $('#authorNameInput').addEventListener('input', () => {
@@ -3409,7 +3631,7 @@ $('#startAutoBookBtn').addEventListener('click', async () => {
 
   const sources = sanitizeTextForPrompt($('#autoBookSources').value.trim());
   const chronology = sanitizeTextForPrompt($('#autoBookChronology').value.trim());
-  const count = Math.min(10, Math.max(1, parseInt($('#autoBookCount').value) || 3));
+  const count = Math.min(50, Math.max(1, parseInt($('#autoBookCount').value) || 3));
   const tone = $('#autoBookTone').value;
   const logsEl = $('#autoBookLogs');
   const targetWords = Math.min(4000, Math.max(300, parseInt(($('#autoBookLength') || {}).value) || 1200));

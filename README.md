@@ -72,6 +72,20 @@ La barra de filtros combina búsqueda de texto completo + historia + sub-tipo + 
 jerarquía de canon. Al generar un libro automático puedes limitar el contexto a un
 sub-tipo y a un verso concretos.
 
+### OCR local para PDFs escaneados
+
+Si un PDF no trae capa de texto (es una foto o un escaneo), LoreVinci lo rasteriza
+página a página y lo lee con **Tesseract incluido en la app**, con los datos de
+español e inglés empaquetados. No se descarga nada ni se envía nada a internet.
+
+- Se aplica **automáticamente** al subir; puedes desactivarlo en *Ajustes → OCR local*.
+- Idioma configurable: español, inglés o ambos.
+- Cada fuente reconocida muestra su **porcentaje de confianza**; si el OCR no logra
+  texto, la fuente queda marcada *Requiere OCR* con un botón para reintentar.
+- Tras el OCR el documento se reclasifica solo (sub-tipo y verso), porque ya hay
+  texto sobre el que decidir.
+- Tope de 60 páginas por documento para no agotar la memoria.
+
 ## Configurar un libro (parámetros iniciales, siempre editables)
 
 El botón **Configurar** de cada historia (y *"Configurar libro"* dentro del editor) abre
@@ -189,6 +203,18 @@ clave, la URL o el modelo, la verificación se invalida y hay que repetirla.
 > El botón de inicio de sesión con Google se eliminó del widget flotante de Muse AI y de
 > Ajustes: no había OAuth real detrás y estorbaba. Toda la conexión se gestiona ahora
 > desde el panel de verificación de Ajustes.
+
+## Pruebas
+
+```bash
+npm install --no-save jsdom pdfjs-dist@3.11.174 tesseract.js@5.1.1
+npm test
+```
+
+Seis suites, 152 comprobaciones: núcleo y seguridad, ingesta multi-PDF con extracción
+real, motor de generación, handlers del proceso principal, OCR y un **maratón de 30
+capítulos** contra un modelo simulado adverso (que trunca, devuelve JSON roto, falla
+la red y filtra texto del asistente) para comprobar que el libro se entrega íntegro.
 
 ## Dónde se guardan tus datos
 
