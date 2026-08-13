@@ -1502,3 +1502,16 @@ body.has-wallpaper.wallpaper-no-overlay::before { background-image:var(--wallpap
   .sidebar { display:flex; width:196px; min-width:196px; max-width:196px; }
   .sidebar.collapsed { width:36px; min-width:36px; max-width:36px; }
 }
+/* Recuperación garantizada en previews: el control queda fuera del panel colapsado. */
+.sidebar.collapsed .sidebar-toggle {
+  position: fixed !important;
+  left: 8px !important;
+  top: 58px !important;
+  right: auto !important;
+  display: grid !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  z-index: 30000 !important;
+  background: var(--panel) !important;
+}

@@ -75,6 +75,7 @@ function setupSidebarToggle() {
   const button = $('#sidebarToggle');
   if (!sidebar || !button) return;
   const collapsed = localStorage.getItem('lorevinci-sidebar-collapsed') === '1';
+  // El estado se conserva, pero el control de recuperación siempre queda visible.
   const apply = (value) => {
     sidebar.classList.toggle('collapsed', value);
     button.setAttribute('aria-expanded', String(!value));
