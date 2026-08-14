@@ -57,7 +57,8 @@ if (!window.lorevinci) {
       });
     },
     openExternal: async (url) => { window.open(url, '_blank'); },
-    aiGenerate: async () => ({ ok: false, error: 'IA solo disponible en la app de escritorio (o configura CORS en web)' })
+    aiGenerate: async () => ({ ok: false, error: 'IA solo disponible en la app de escritorio (o configura CORS en web)' }),
+    isDesktop: false
   };
 }
 
@@ -507,13 +508,7 @@ function renderStories() {
     });
     card.querySelector('[data-act="configure"]').addEventListener('click', (e) => {
       e.stopPropagation();
-      openStoryEditor(s.id);
-      requestAnimationFrame(() => {
-        const rulesTab = document.querySelector('.tab-btn[data-tab="rules"]');
-        if (rulesTab) rulesTab.click();
-        const rules = document.getElementById('rulesText');
-        if (rules) rules.focus();
-      });
+      openStoryConfigModal(s.id, 'identity');
     });
     card.querySelector('[data-act="del"]').addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -586,6 +581,8 @@ function openStoryModal() {
   $('#newStoryGenre').value = '';
   $('#newStorySynopsis').value = '';
   $('#newStoryRules').value = '';
+  const styleRef = $('#newStoryStyleRef'); if (styleRef) styleRef.value = '';
+  const styleNotes = $('#newStyleNotes'); if (styleNotes) styleNotes.value = '';
   $('#newStoryCoverFile').value = '';
   $('#newStoryColor').value = '#c81e3a';
   $('#storyModalBackdrop').classList.add('active');
@@ -603,13 +600,27 @@ $('#createStoryBtn').addEventListener('click', () => {
   const color = $('#newStoryColor').value;
   const fileInput = $('#newStoryCoverFile');
 
+  const styleRefEl = $('#newStoryStyleRef');
+  const styleNotesEl = $('#newStyleNotes');
+
   const createWithCover = (coverBase64) => {
     const story = {
       id: uid('story'),
       title, genre, synopsis, rules, color,
       coverImage: coverBase64 || null,
       outline: '',
+      loreBase: '',
+      chronology: 'Respetar orden cronológico estricto y coherencia absoluta con el Canon Absoluto.',
+      style: {
+        reference: styleRefEl ? styleRefEl.value.trim() : '',
+        notes: styleNotesEl ? styleNotesEl.value.trim() : '',
+        person: 'auto',
+        register: 'auto',
+        strength: 'alta',
+        sample: ''
+      },
       notes: [],
+      attachedDocs: [],
       chapters: [
         { id: uid('ch'), title: 'Capítulo 1', content: '', status: 'draft' }
       ],
@@ -637,6 +648,7 @@ $('#createStoryBtn').addEventListener('click', () => {
 
 function renderLibrary() {
   const container = $('#libraryByGenre');
+  if (!container) return;
   container.innerHTML = '';
   if (DATA.stories.length === 0) {
     container.innerHTML = `<div class="empty-state">
@@ -1042,6 +1054,821 @@ function renderStats() {
   });
 }
 
+// ============ ANCLAS DE ESTILO, ESCALETA Y VERIFICACIÓN NARRATIVA ============
+
+/**
+ * El estilo se demuestra mejor que se describe. Extrae fragmentos reales de los
+ * capítulos ya escritos para que el modelo tenga ejemplos concretos de la voz,
+ * en vez de solo adjetivos.
+ */
+function buildStyleAnchors(story, budgetChars = 2400) {
+  const chapters = (story.chapters || []).filter(c => stripHtml(c.content).trim().length > 200);
+  if (!chapters.length) return '';
+
+  // Preferimos capítulos marcados como terminados: son los que el autor validó.
+  const done = chapters.filter(c => c.status === 'done');
+  const pool = done.length ? done : chapters;
+  const picks = [];
+  if (pool.length) picks.push(pool[pool.length - 1]);              // el más reciente manda
+  if (pool.length > 2) picks.push(pool[Math.floor(pool.length / 2)]);
+  if (pool.length > 1) picks.push(pool[0]);                        // el que fijó el tono
+
+  const per = Math.floor(budgetChars / Math.max(1, picks.length));
+  const blocks = picks.slice(0, 3).map((c, i) => {
+    const text = stripHtml(c.content).replace(/\s+/g, ' ').trim();
+    // El arranque de escena es lo más representativo de la voz.
+    return `--- Muestra ${i + 1} (de "${sanitizeTextForPrompt(c.title)}") ---\n${sanitizeTextForPrompt(text.slice(0, per))}`;
+  });
+
+  return `MUESTRAS REALES DE LA VOZ DE ESTA OBRA (escribe con este mismo ritmo, sintaxis y vocabulario; NO reutilices su contenido):\n${blocks.join('\n\n')}`;
+}
+
+/**
+ * Genera una escaleta breve antes de redactar. Planificar y luego escribir da
+ * capítulos mucho más coherentes que pedir la prosa de una sola pasada.
+ */
+async function planChapterBeat(story, nextNum, tone, contextBlock, signal) {
+  const systemPrompt = `Eres un editor de mesa que planifica capítulos. Devuelves SOLO un JSON válido, sin markdown ni explicaciones.`;
+  const userPrompt = `Planifica el Capítulo ${nextNum} de "${sanitizeTextForPrompt(story.title)}".
+
+${contextBlock}
+
+Devuelve exactamente este JSON:
+{
+  "titulo": "título evocador del capítulo, sin la palabra Capítulo ni número",
+  "objetivo": "qué debe lograr este capítulo en el arco general",
+  "escenas": ["escena 1: qué pasa y dónde", "escena 2: ...", "escena 3: ..."],
+  "conflicto": "el obstáculo concreto que enfrenta el protagonista",
+  "coste": "qué pierde o arriesga alguien en este capítulo",
+  "revelacion": "el dato nuevo que aprende el lector, anclado en el canon",
+  "gancho": "con qué imagen o frase queda suspendido el final",
+  "continuidad": ["decisión previa que este capítulo respeta", "..."]
+}`;
+
+  const res = await window.lorevinci.aiGenerate({
+    baseUrl: DATA.settings.ai.baseUrl,
+    apiKey: DATA.settings.ai.apiKey,
+    model: DATA.settings.ai.model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ],
+    maxTokens: 700,
+    temperature: 0.7,
+    signal
+  });
+
+  if (!res.ok) return { ok: false, error: res.error };
+  const parsed = extractJsonObject(res.text);
+  if (!parsed) return { ok: false, error: 'La escaleta no devolvió JSON válido.' };
+  return { ok: true, beat: parsed };
+}
+
+/** Extrae el primer objeto JSON de una respuesta, tolerando ```json y texto alrededor. */
+function extractJsonObject(text) {
+  if (!text) return null;
+  let t = String(text).trim();
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) t = fence[1].trim();
+  const start = t.indexOf('{');
+  const end = t.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) return null;
+  const candidate = t.slice(start, end + 1);
+  try { return JSON.parse(candidate); } catch {}
+  // Segundo intento: limpiar comas colgantes típicas de los modelos.
+  try { return JSON.parse(candidate.replace(/,\s*([}\]])/g, '$1')); } catch {}
+  return null;
+}
+
+function formatBeatForPrompt(beat) {
+  if (!beat) return '';
+  const arr = (v) => Array.isArray(v) ? v.filter(Boolean) : (v ? [v] : []);
+  const lines = ['ESCALETA APROBADA PARA ESTE CAPÍTULO (síguela; es el plan, no el texto):'];
+  if (beat.titulo) lines.push(`- Título: ${sanitizeTextForPrompt(beat.titulo)}`);
+  if (beat.objetivo) lines.push(`- Objetivo narrativo: ${sanitizeTextForPrompt(beat.objetivo)}`);
+  const escenas = arr(beat.escenas);
+  if (escenas.length) lines.push(`- Escenas:\n${escenas.map((e, i) => `   ${i + 1}. ${sanitizeTextForPrompt(String(e))}`).join('\n')}`);
+  if (beat.conflicto) lines.push(`- Conflicto central: ${sanitizeTextForPrompt(beat.conflicto)}`);
+  if (beat.coste) lines.push(`- Coste o riesgo: ${sanitizeTextForPrompt(beat.coste)}`);
+  if (beat.revelacion) lines.push(`- Revelación anclada en canon: ${sanitizeTextForPrompt(beat.revelacion)}`);
+  if (beat.gancho) lines.push(`- Gancho final: ${sanitizeTextForPrompt(beat.gancho)}`);
+  const cont = arr(beat.continuidad);
+  if (cont.length) lines.push(`- Continuidad a respetar: ${cont.map(c => sanitizeTextForPrompt(String(c))).join(' | ')}`);
+  return lines.join('\n');
+}
+
+/**
+ * Comprobaciones locales del capítulo generado: baratas, deterministas y sin API.
+ * Detecta los fallos que de verdad arruinan un capítulo automático.
+ */
+function auditChapterLocally(text, story, beat) {
+  const issues = [];
+  const clean = stripHtml(text).trim();
+  const words = clean.split(/\s+/).filter(Boolean).length;
+
+  if (words < 250) issues.push({ level: 'warn', msg: `Capítulo corto (${words} palabras).` });
+
+  // Corte a media frase: el síntoma clásico del truncado por tokens.
+  if (clean && !/[.!?…"»)\]]$/.test(clean.slice(-1))) {
+    issues.push({ level: 'error', msg: 'El texto no termina en signo de cierre: posible corte a media frase.' });
+  }
+
+  // Fugas del asistente hacia el manuscrito.
+  const leaks = [
+    [/\b(como (?:modelo|IA|inteligencia artificial)|no puedo (?:generar|continuar)|lo siento,)/i, 'Fuga de voz del asistente en el texto.'],
+    [/\b(aquí (?:tienes|está) (?:el|tu) cap[íi]tulo|espero que (?:te guste|disfrutes))/i, 'Preámbulo o cierre meta del asistente.'],
+    [/^\s*```/m, 'Bloque de código markdown en la prosa.'],
+    [/\[No especificado en canon\]/i, 'Marcador de canon faltante visible en el texto.']
+  ];
+  leaks.forEach(([rx, msg]) => { if (rx.test(clean)) issues.push({ level: 'error', msg }); });
+
+  // Repetición literal de las fuentes en vez de integrarlas.
+  const primaries = (story.attachedDocs || []).filter(d => getPriorityInfo(d).level === 'primary');
+  for (const doc of primaries) {
+    const src = (doc.content || '').replace(/\s+/g, ' ');
+    for (let i = 0; i + 120 <= src.length; i += 400) {
+      const probe = src.slice(i, i + 120).trim();
+      if (probe.length >= 100 && clean.replace(/\s+/g, ' ').includes(probe)) {
+        issues.push({ level: 'warn', msg: `Copia literal desde "${doc.name}".` });
+        break;
+      }
+    }
+  }
+
+  // Cumplimiento de la escaleta: ¿aparece el gancho o la revelación planificada?
+  if (beat) {
+    const lower = clean.toLowerCase();
+    const keyTerms = (s) => String(s || '').toLowerCase().split(/[^\wáéíóúñü]+/).filter(x => x.length > 4);
+    const hookTerms = keyTerms(beat.gancho);
+    if (hookTerms.length >= 2) {
+      const hits = hookTerms.filter(t => lower.includes(t)).length;
+      if (hits === 0) issues.push({ level: 'warn', msg: 'El gancho planificado no se reconoce en el texto.' });
+    }
+  }
+
+  return { words, issues, ok: !issues.some(i => i.level === 'error') };
+}
+
+// ============ PRESUPUESTO DE CONTEXTO ADAPTATIVO ============
+
+// Ventanas de contexto conocidas (en tokens). Se busca por coincidencia parcial
+// del id del modelo, de patrón más específico a más genérico.
+const MODEL_CONTEXT_WINDOWS = [
+  [/gpt-4\.1|gpt-4o|o1|o3|o4/i, 128000],
+  [/gpt-4-turbo|gpt-4-1106|gpt-4-0125/i, 128000],
+  [/gpt-4-32k/i, 32768],
+  [/gpt-4/i, 8192],
+  [/gpt-3\.5-turbo-16k/i, 16384],
+  [/gpt-3\.5/i, 16385],
+  [/claude-3|claude-sonnet|claude-opus|claude-haiku|claude-4/i, 200000],
+  [/gemini-1\.5-pro|gemini-2/i, 1000000],
+  [/gemini-1\.5-flash|gemini/i, 1000000],
+  [/llama-?3\.[123]|llama-?3-70b|llama-?4/i, 128000],
+  [/llama-?3/i, 8192],
+  [/mixtral|mistral-large|mistral-nemo/i, 128000],
+  [/mistral/i, 32000],
+  [/qwen|deepseek/i, 128000],
+  [/command-r/i, 128000]
+];
+
+const DEFAULT_CONTEXT_WINDOW = 16000;   // conservador si el modelo es desconocido
+const CHARS_PER_TOKEN = 3.6;            // aproximación para español
+
+function getModelContextWindow(model) {
+  const id = String(model || '');
+  for (const [rx, win] of MODEL_CONTEXT_WINDOWS) {
+    if (rx.test(id)) return win;
+  }
+  return DEFAULT_CONTEXT_WINDOW;
+}
+
+/**
+ * Reparte la ventana del modelo entre entrada y salida en lugar de usar topes
+ * fijos. Devuelve presupuestos en CARACTERES para las secciones del prompt y en
+ * TOKENS para la respuesta.
+ */
+function computePromptBudget(model, { reserveForOutput = null, hardCapChars = 115000 } = {}) {
+  const windowTokens = getModelContextWindow(model);
+
+  // Salida: suficiente para un capítulo largo sin cortes, sin pasarse en modelos pequeños.
+  const outputTokens = reserveForOutput || Math.min(8000, Math.max(1600, Math.floor(windowTokens * 0.22)));
+
+  // Margen de seguridad del 12% para desviaciones del tokenizador.
+  const inputTokens = Math.max(2000, Math.floor((windowTokens - outputTokens) * 0.88));
+  let inputChars = Math.floor(inputTokens * CHARS_PER_TOKEN);
+  inputChars = Math.min(inputChars, hardCapChars);
+
+  // Secciones fijas (instrucciones, estilo, personajes, reglas) ~ 20%.
+  const overhead = Math.floor(inputChars * 0.20);
+  const available = Math.max(1500, inputChars - overhead);
+
+  return {
+    windowTokens,
+    outputTokens,
+    inputChars,
+    // Las fuentes se llevan la mayor parte: son lo que da concreción al capítulo.
+    sourcesChars: Math.floor(available * 0.62),
+    memoryChars: Math.floor(available * 0.30),
+    styleChars: Math.floor(available * 0.08)
+  };
+}
+
+// ============ MOTOR DE ESTILO Y APROVECHAMIENTO MÁXIMO DEL CONTENIDO ============
+
+function aiIsConfigured() {
+  const ai = (DATA && DATA.settings && DATA.settings.ai) || {};
+  const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])/i.test(ai.baseUrl || '');
+  return Boolean((ai.apiKey && ai.apiKey.trim().length > 10) || (isLocal && ai.baseUrl));
+}
+
+const PERSON_LABELS = {
+  first: 'primera persona',
+  'third-limited': 'tercera persona limitada',
+  'third-omniscient': 'tercera persona omnisciente',
+  auto: 'la que ya use la obra'
+};
+const REGISTER_LABELS = {
+  literario: 'literario y descriptivo',
+  agil: 'ágil y directo',
+  humoristico: 'humorístico',
+  oscuro: 'oscuro y crudo',
+  epico: 'épico y solemne',
+  auto: 'el registro propio de la obra'
+};
+
+/**
+ * Construye el bloque de instrucciones de VOZ para que la IA imite
+ * la personalidad y escritura de la obra indicada.
+ */
+function buildStyleDirective(story) {
+  const st = (story && story.style) || {};
+  const lines = [];
+  const strength = st.strength || 'alta';
+  const strengthText = {
+    alta: 'Imita la voz de referencia de forma fiel y reconocible; el lector debe sentir que lo escribió la misma pluma.',
+    media: 'Inspírate claramente en la voz de referencia sin calcarla.',
+    baja: 'Mantén voz propia, solo toma detalles sueltos de la referencia.'
+  }[strength];
+
+  lines.push('VOZ Y PERSONALIDAD DE LA ESCRITURA (obligatorio):');
+  if (st.reference) lines.push(`- Obra/autor de referencia a imitar: "${sanitizeTextForPrompt(st.reference)}". ${strengthText}`);
+  else lines.push(`- ${strengthText} Toma como referencia la voz que ya muestran los capítulos escritos.`);
+  lines.push(`- Persona narrativa: ${PERSON_LABELS[st.person || 'auto']}.`);
+  lines.push(`- Registro y tono base: ${REGISTER_LABELS[st.register || 'auto']}.`);
+  if (st.notes) lines.push(`- Rasgos de voz declarados por el autor:\n${sanitizeTextForPrompt(st.notes)}`);
+  if (st.sample) {
+    lines.push(`- MUESTRA DE ESTILO CANÓNICA (imita su ritmo, sintaxis y vocabulario, NO copies su contenido):\n"""${sanitizeTextForPrompt(st.sample.slice(0, 1800))}"""`);
+  }
+  lines.push('- Mantén coherencia de vocabulario, longitud de frase, uso de diálogo y humor con la voz descrita.');
+  lines.push('- No cambies de estilo a mitad del capítulo ni introduzcas metacomentarios del asistente.');
+  return lines.join('\n');
+}
+
+/**
+ * Selección inteligente de fragmentos relevantes de TODAS las fuentes
+ * (RAG local por solapamiento de términos), para aprovechar al máximo el contenido
+ * sin exceder el presupuesto de tokens.
+ */
+function buildSourceDigest(story, queryText, budget = 9000) {
+  const docs = (story.attachedDocs || []).slice();
+  if (!docs.length) return { text: '[Sin fuentes adjuntas]', used: [] };
+
+  const weight = { primary: 3, derived: 2, reference: 1 };
+  const stop = new Set(['para','como','pero','este','esta','esos','esas','desde','hasta','entre','sobre','cuando','porque','donde','todo','todos','cada','muy','sus','los','las','del','que','con','por','una','uno','unos','unas','the','and','for','with','from']);
+  const queryTerms = new Set(
+    String(queryText || '')
+      .toLowerCase()
+      .split(/[^\wáéíóúñü]+/)
+      .filter(w => w.length > 3 && !stop.has(w))
+      .slice(0, 120)
+  );
+
+  // Trocea cada documento en pasajes y puntúa por relevancia + autoridad de canon
+  const passages = [];
+  docs.forEach(doc => {
+    const level = getPriorityInfo(doc).level;
+    const content = doc.content || '';
+    const chunkSize = 1100;
+    for (let i = 0; i < content.length; i += chunkSize) {
+      const chunk = content.slice(i, i + chunkSize);
+      if (chunk.trim().length < 60) continue;
+      let hits = 0;
+      const lower = chunk.toLowerCase();
+      queryTerms.forEach(t => { if (lower.includes(t)) hits++; });
+      passages.push({
+        doc, level, chunk,
+        // El canon absoluto entra siempre, aunque no haya coincidencias léxicas
+        score: hits * 2 + weight[level] * 3 + (i === 0 ? 2 : 0)
+      });
+    }
+  });
+
+  passages.sort((a, b) => b.score - a.score);
+
+  const used = new Map();
+  const out = [];
+  let total = 0;
+  for (const p of passages) {
+    if (total + p.chunk.length > budget) continue;
+    const tag = `[${p.level === 'primary' ? 'CANON ABSOLUTO' : p.level === 'derived' ? 'CANON DERIVADO' : 'REFERENCIA'} — ${sanitizeTextForPrompt(p.doc.name)} | ${getDocSubtypeLabel(p.doc)} | verso: ${getDocVerseLabel(p.doc)}]`;
+    out.push(`${tag}\n${sanitizeTextForPrompt(p.chunk)}`);
+    total += p.chunk.length;
+    used.set(p.doc.id, p.doc.name);
+    if (total >= budget) break;
+  }
+
+  // Garantiza que ningún canon absoluto quede fuera por completo
+  docs.filter(d => getPriorityInfo(d).level === 'primary' && !used.has(d.id)).forEach(d => {
+    const head = (d.content || '').slice(0, 700);
+    if (!head.trim()) return;
+    out.unshift(`[CANON ABSOLUTO — ${sanitizeTextForPrompt(d.name)} | ${getDocSubtypeLabel(d)} | verso: ${getDocVerseLabel(d)}]\n${sanitizeTextForPrompt(head)}`);
+    used.set(d.id, d.name);
+  });
+
+  return { text: out.join('\n\n') || '[Sin fuentes utilizables]', used: Array.from(used.values()) };
+}
+
+/** Resumen comprimido de TODOS los capítulos previos, no solo los dos últimos. */
+function buildFullMemory(story, budget = 4500) {
+  const chapters = story.chapters || [];
+  if (!chapters.length) return 'Sin capítulos previos — inicio de obra.';
+  const recent = chapters.slice(-2);
+  const older = chapters.slice(0, -2);
+  const parts = [];
+  if (older.length) {
+    const perChapter = Math.max(220, Math.floor((budget * 0.45) / older.length));
+    parts.push('RESUMEN DE CAPÍTULOS ANTERIORES:');
+    older.forEach((c, idx) => {
+      const text = stripHtml(c.content).replace(/\s+/g, ' ').trim();
+      if (!text) return;
+      parts.push(`Cap ${idx + 1} "${sanitizeTextForPrompt(c.title)}": ${sanitizeTextForPrompt(text.slice(0, perChapter))}…`);
+    });
+  }
+  if (recent.length) {
+    parts.push('\nCAPÍTULOS INMEDIATAMENTE ANTERIORES (detalle, respeta cada decisión):');
+    recent.forEach((c, idx) => {
+      const num = chapters.length - recent.length + idx + 1;
+      const text = stripHtml(c.content).replace(/\s+/g, ' ').trim();
+      parts.push(`Cap ${num} "${sanitizeTextForPrompt(c.title)}": ${sanitizeTextForPrompt(text.slice(0, 1400))}`);
+    });
+  }
+  return parts.join('\n').slice(0, budget);
+}
+
+// ============ MOTOR DE INGESTA MULTI-DOCUMENTO (PDF REAL + LOTES) ============
+
+// Configuración de pdf.js (vendorizado, 100% offline)
+let pdfjsReady = false;
+function ensurePdfJs() {
+  if (pdfjsReady) return Boolean(window.pdfjsLib);
+  if (window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions) {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdfjs/pdf.worker.min.js';
+    pdfjsReady = true;
+  }
+  return Boolean(window.pdfjsLib);
+}
+
+const MAX_DOC_CHARS = 60000;      // texto conservado por documento
+const MAX_BATCH_FILES = 40;       // tope de archivos por lote
+
+function readFileAsArrayBuffer(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('No se pudo leer el archivo.'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('No se pudo leer el archivo.'));
+    reader.readAsText(file);
+  });
+}
+
+// Extrae texto real de un PDF, página a página, preservando saltos de línea.
+async function extractPdfText(file, onPage) {
+  if (!ensurePdfJs()) throw new Error('El motor PDF no está disponible en este entorno.');
+  const buffer = await readFileAsArrayBuffer(file);
+  // Solo extraemos texto: desactivamos tipografías y recursos de render para ir más rápido.
+  const task = window.pdfjsLib.getDocument({
+    data: new Uint8Array(buffer),
+    disableFontFace: true,
+    useSystemFonts: false,
+    isEvalSupported: false
+  });
+  const pdf = await task.promise;
+  const pages = [];
+  const total = pdf.numPages;
+  for (let i = 1; i <= total; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    let lastY = null;
+    let line = [];
+    const lines = [];
+    content.items.forEach(item => {
+      const y = item.transform ? Math.round(item.transform[5]) : null;
+      if (lastY !== null && y !== null && Math.abs(y - lastY) > 2) {
+        lines.push(line.join(''));
+        line = [];
+      }
+      line.push(item.str);
+      if (item.hasEOL) { lines.push(line.join('')); line = []; }
+      lastY = y;
+    });
+    if (line.length) lines.push(line.join(''));
+    pages.push(lines.join('\n').replace(/[ \t]{2,}/g, ' ').trim());
+    if (onPage) onPage(i, total);
+    if (pages.join('\n').length > MAX_DOC_CHARS * 1.5) break;
+  }
+  try { await pdf.destroy(); } catch {}
+  return { text: pages.join('\n\n').trim(), pageCount: total };
+}
+
+// Lee cualquier tipo soportado y devuelve texto + metadatos.
+async function extractFileContent(file, onProgress) {
+  const name = (file.name || '').toLowerCase();
+  if (name.endsWith('.pdf')) {
+    const { text, pageCount } = await extractPdfText(file, onProgress);
+    return { text, pageCount, kind: 'pdf' };
+  }
+  const raw = await readFileAsText(file);
+  if (name.endsWith('.json')) {
+    try {
+      const parsed = JSON.parse(raw);
+      return { text: JSON.stringify(parsed, null, 2), kind: 'json' };
+    } catch { return { text: raw, kind: 'json' }; }
+  }
+  return { text: raw, kind: name.endsWith('.md') ? 'markdown' : 'texto' };
+}
+
+// ============ MOTOR OCR LOCAL (TESSERACT.JS, 100% OFFLINE) ============
+
+const OCR_MAX_PAGES = 60;          // tope de páginas por documento
+const OCR_RENDER_SCALE = 2.0;      // 2x mejora mucho el reconocimiento
+let ocrWorkerPromise = null;
+
+function ocrIsAvailable() {
+  return typeof window.Tesseract !== 'undefined';
+}
+
+/**
+ * Crea (una sola vez) el worker de Tesseract apuntando a los recursos
+ * vendorizados. Todo se resuelve en local: no hay descargas desde CDN.
+ */
+async function getOcrWorker(lang, onProgress) {
+  if (!ocrIsAvailable()) throw new Error('El motor OCR no está disponible.');
+  if (!ocrWorkerPromise) {
+    ocrWorkerPromise = window.Tesseract.createWorker(lang || 'spa', 1, {
+      workerPath: 'vendor/tesseract/worker.min.js',
+      corePath: 'vendor/tesseract/core',
+      langPath: 'vendor/tesseract/lang',
+      gzip: true,
+      logger: (m) => {
+        if (onProgress && m && m.status === 'recognizing text') {
+          onProgress(m.progress || 0);
+        }
+      }
+    }).catch(err => { ocrWorkerPromise = null; throw err; });
+  }
+  return ocrWorkerPromise;
+}
+
+async function terminateOcrWorker() {
+  if (!ocrWorkerPromise) return;
+  try {
+    const worker = await ocrWorkerPromise;
+    await worker.terminate();
+  } catch {}
+  ocrWorkerPromise = null;
+}
+
+/**
+ * Ejecuta OCR sobre un PDF escaneado: rasteriza cada página con pdf.js y la
+ * reconoce con Tesseract. Devuelve el texto y la confianza media.
+ */
+async function ocrPdfFile(file, { lang = 'spa', onPage = null, signal = null } = {}) {
+  if (!ensurePdfJs()) throw new Error('El motor PDF no está disponible.');
+  const worker = await getOcrWorker(lang);
+  const buffer = await readFileAsArrayBuffer(file);
+  const pdf = await window.pdfjsLib.getDocument({
+    data: new Uint8Array(buffer),
+    disableFontFace: true,
+    useSystemFonts: false,
+    isEvalSupported: false
+  }).promise;
+
+  const total = Math.min(pdf.numPages, OCR_MAX_PAGES);
+  const pages = [];
+  const confidences = [];
+
+  for (let i = 1; i <= total; i++) {
+    if (signal && signal.aborted) break;
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: OCR_RENDER_SCALE });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    // Fondo blanco: los PDFs escaneados suelen venir sin capa de color de fondo.
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport }).promise;
+
+    const { data } = await worker.recognize(canvas);
+    const pageText = (data.text || '').replace(/[ \t]{2,}/g, ' ').trim();
+    if (pageText) pages.push(pageText);
+    if (typeof data.confidence === 'number') confidences.push(data.confidence);
+
+    // Liberar memoria: un PDF de 60 páginas a 2x consume mucho.
+    canvas.width = 0; canvas.height = 0;
+    if (onPage) onPage(i, total);
+    await new Promise(r => setTimeout(r, 0));
+  }
+
+  try { await pdf.destroy(); } catch {}
+  const avgConfidence = confidences.length
+    ? Math.round(confidences.reduce((a, b) => a + b, 0) / confidences.length)
+    : 0;
+
+  return {
+    text: pages.join('\n\n').trim(),
+    pageCount: total,
+    truncatedPages: pdf.numPages > OCR_MAX_PAGES ? pdf.numPages - OCR_MAX_PAGES : 0,
+    confidence: avgConfidence
+  };
+}
+
+/**
+ * Reprocesa con OCR un documento ya adjunto que quedó marcado como escaneado.
+ */
+async function runOcrOnDoc(doc, file, redraw) {
+  if (!ocrIsAvailable()) {
+    showToast('El motor OCR no está disponible en este entorno.');
+    return false;
+  }
+  const lang = (DATA.settings.ocrLang || 'spa');
+  showUploadProgress(1, `OCR de "${doc.name}" — esto puede tardar…`);
+  try {
+    const res = await ocrPdfFile(file, {
+      lang,
+      onPage: (p, t) => {
+        $('#uploadProgressLabel').textContent = `OCR "${doc.name}" — página ${p}/${t}…`;
+        $('#uploadProgressFill').style.width = `${Math.round((p / t) * 100)}%`;
+        $('#uploadProgressCount').textContent = `${p}/${t}`;
+      }
+    });
+    if (!res.text || res.text.length < 20) {
+      updateUploadProgress(1, 1, `✕ ${doc.name}: el OCR no encontró texto legible.`, 'error');
+      finishUploadProgress('OCR sin resultados.');
+      showToast('El OCR no pudo extraer texto de este documento.');
+      return false;
+    }
+    doc.content = res.text.slice(0, MAX_DOC_CHARS);
+    doc.fullLength = res.text.length;
+    doc.needsOcr = false;
+    doc.ocrApplied = true;
+    doc.ocrConfidence = res.confidence;
+    doc.pageCount = res.pageCount;
+    // Reclasificar: ahora sí hay texto sobre el que decidir sub-tipo y verso.
+    if (doc.autoClassified !== false) {
+      Object.assign(doc, classifyDocument(doc.name, doc.content));
+    }
+    scheduleSave();
+    updateUploadProgress(1, 1, `✓ ${doc.name}: ${res.text.length.toLocaleString('es-CL')} car. reconocidos (confianza ${res.confidence}%).`, 'ok');
+    finishUploadProgress(`OCR completado sobre "${doc.name}".`);
+    showToast(`OCR completado: ${res.text.length.toLocaleString('es-CL')} caracteres recuperados.`);
+    if (redraw) redraw();
+    return true;
+  } catch (err) {
+    updateUploadProgress(1, 1, `✕ OCR falló: ${String(err.message || err).slice(0, 120)}`, 'error');
+    finishUploadProgress('OCR fallido.');
+    showToast('El OCR falló. Revisa el registro.');
+    return false;
+  }
+}
+
+// --- Clasificación automática: sub-tipo de historia y verso ---
+
+const SUBTYPE_RULES = [
+  { id: 'canon-oficial', label: 'Canon oficial', patterns: [/manual/i, /canon/i, /guía oficial/i, /databook/i, /bestiary/i, /enciclopedia/i] },
+  { id: 'fanfic', label: 'Fanfic / Derivado', patterns: [/fanfic/i, /fan\s?fiction/i, /doujin/i, /alternate/i, /\bau\b/i] },
+  { id: 'what-if', label: 'What If / Escenario', patterns: [/what[\s_-]?if/i, /y si\b/i, /escenario/i, /hipóte/i] },
+  { id: 'precuela', label: 'Precuela', patterns: [/precuela/i, /prequel/i, /origen/i, /origins?/i] },
+  { id: 'secuela', label: 'Secuela', patterns: [/secuela/i, /sequel/i, /continuación/i, /after/i] },
+  { id: 'spinoff', label: 'Spin-off', patterns: [/spin[\s-]?off/i, /gaiden/i, /side\s?story/i, /historia paralela/i] },
+  { id: 'crossover', label: 'Crossover', patterns: [/crossover/i, /\bvs\.?\b/i, /versus/i, /multiverso/i] },
+  { id: 'worldbuilding', label: 'Worldbuilding', patterns: [/lore/i, /worldbuilding/i, /mundo/i, /geograf/i, /mapa/i, /historia del/i] },
+  { id: 'personajes', label: 'Fichas de personaje', patterns: [/personaje/i, /character/i, /ficha/i, /perfil/i, /elenco/i, /cast/i] },
+  { id: 'cronologia', label: 'Cronología', patterns: [/cronolog/i, /timeline/i, /línea temporal/i, /línea de tiempo/i, /calendario/i] },
+  { id: 'guion', label: 'Guion / Diálogo', patterns: [/guion/i, /guión/i, /script/i, /screenplay/i] },
+  { id: 'notas', label: 'Notas y borradores', patterns: [/nota/i, /bitácora/i, /borrador/i, /draft/i, /apunte/i] },
+  { id: 'capitulo', label: 'Capítulos / Manuscrito', patterns: [/cap[íi]tulo/i, /chapter/i, /volumen/i, /tomo/i, /arco/i, /manuscrito/i] }
+];
+
+const VERSE_RULES = [
+  { id: 'canon-principal', label: 'Verso canónico principal', patterns: [/canon principal/i, /línea principal/i, /main\s?verse/i, /universo principal/i] },
+  { id: 'alterno', label: 'Universo alterno', patterns: [/universo alterno/i, /alternate universe/i, /\bau\b/i, /realidad alterna/i, /mundo alterno/i] },
+  { id: 'multiverso', label: 'Multiverso / Crossover', patterns: [/multiverso/i, /multiverse/i, /crossover/i, /omniverso/i] },
+  { id: 'futuro', label: 'Línea futura', patterns: [/futuro/i, /future/i, /post[\s-]?apocal/i, /años después/i] },
+  { id: 'pasado', label: 'Línea pasada', patterns: [/pasado/i, /antigua era/i, /ancient/i, /era mítica/i, /edad antigua/i] },
+  { id: 'timeline-alt', label: 'Línea temporal divergente', patterns: [/línea temporal \d/i, /timeline \d/i, /divergen/i, /bifurca/i] }
+];
+
+function classifyDocument(name, content) {
+  const haystack = `${name || ''}\n${(content || '').slice(0, 4000)}`;
+  const score = (rules) => {
+    let best = null, bestHits = 0;
+    rules.forEach(rule => {
+      let hits = 0;
+      rule.patterns.forEach(rx => { const m = haystack.match(new RegExp(rx.source, rx.flags.includes('g') ? rx.flags : rx.flags + 'g')); if (m) hits += m.length; });
+      if (hits > bestHits) { bestHits = hits; best = rule; }
+    });
+    return bestHits > 0 ? best : null;
+  };
+  const sub = score(SUBTYPE_RULES);
+  const verse = score(VERSE_RULES);
+  // Detección explícita de verso entre corchetes o paréntesis: "[Universo 7]", "(Verso: X)"
+  let explicitVerse = null;
+  const vm = (name || '').match(/[\[(]\s*(?:verso|verse|universo|universe|timeline|línea)\s*[:\-]?\s*([^\])]{2,40})[\])]/i);
+  if (vm) explicitVerse = vm[1].trim();
+  return {
+    subtype: sub ? sub.id : 'sin-clasificar',
+    subtypeLabel: sub ? sub.label : 'Sin clasificar',
+    verse: explicitVerse || (verse ? verse.id : 'sin-verso'),
+    verseLabel: explicitVerse || (verse ? verse.label : 'Sin verso asignado'),
+    autoClassified: true
+  };
+}
+
+function getDocSubtypeLabel(doc) {
+  if (doc.subtypeLabel) return doc.subtypeLabel;
+  const found = SUBTYPE_RULES.find(r => r.id === doc.subtype);
+  return found ? found.label : 'Sin clasificar';
+}
+function getDocVerseLabel(doc) {
+  if (doc.verseLabel) return doc.verseLabel;
+  const found = VERSE_RULES.find(r => r.id === doc.verse);
+  return found ? found.label : 'Sin verso asignado';
+}
+
+// --- UI de progreso de lote ---
+function showUploadProgress(total, label) {
+  const bar = $('#uploadProgressBar');
+  if (!bar) return;
+  bar.style.display = 'block';
+  $('#uploadProgressLabel').textContent = label || 'Procesando documentos…';
+  $('#uploadProgressCount').textContent = `0/${total}`;
+  $('#uploadProgressFill').style.width = '0%';
+  $('#uploadProgressLog').innerHTML = '';
+}
+function updateUploadProgress(done, total, message, kind) {
+  const bar = $('#uploadProgressBar');
+  if (!bar) return;
+  $('#uploadProgressCount').textContent = `${done}/${total}`;
+  $('#uploadProgressFill').style.width = `${Math.round((done / Math.max(1, total)) * 100)}%`;
+  if (message) {
+    const line = document.createElement('div');
+    line.className = `up-line up-${kind || 'info'}`;
+    line.textContent = message;
+    const log = $('#uploadProgressLog');
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+  }
+}
+function finishUploadProgress(summary) {
+  const bar = $('#uploadProgressBar');
+  if (!bar) return;
+  $('#uploadProgressLabel').textContent = summary || 'Carga completada.';
+  setTimeout(() => { bar.style.display = 'none'; }, 6000);
+}
+
+/**
+ * Ingesta un lote de archivos en la lista destino con extracción real de PDF,
+ * clasificación automática por sub-tipo/verso y deduplicación.
+ * @returns {Promise<{added:number, duplicates:number, failed:number, ocrPending:number}>}
+ */
+async function ingestFilesIntoList(files, targetList, options = {}) {
+  const { targetName = 'la biblioteca', storyId = null, onDone = null, useProgressUI = true } = options;
+  const ocrEnabled = (DATA.settings.ocrEnabled !== false);
+  const list = Array.from(files || []).slice(0, MAX_BATCH_FILES);
+  if (!list.length) return { added: 0, duplicates: 0, failed: 0, ocrPending: 0, ocrApplied: 0 };
+  if ((files || []).length > MAX_BATCH_FILES) {
+    showToast(`Se procesarán los primeros ${MAX_BATCH_FILES} archivos del lote.`);
+  }
+
+  const stats = { added: 0, duplicates: 0, failed: 0, ocrPending: 0, ocrApplied: 0 };
+  const ocrPendingNames = [];
+  if (useProgressUI) showUploadProgress(list.length, `Procesando ${list.length} documento(s)…`);
+
+  for (let i = 0; i < list.length; i++) {
+    const file = list[i];
+    try {
+      if (file.size > MAX_FILE_SIZE) {
+        stats.failed++;
+        updateUploadProgress(i + 1, list.length, `✕ ${file.name}: supera el límite de 8 MB.`, 'error');
+        continue;
+      }
+      const extracted = await extractFileContent(file, (page, total) => {
+        if (useProgressUI) {
+          $('#uploadProgressLabel').textContent = `Extrayendo "${file.name}" — página ${page}/${total}…`;
+        }
+      });
+      const { kind } = extracted;
+      let { text, pageCount } = extracted;
+      let clean = (text || '').replace(/\u0000/g, '').trim();
+
+      // PDF escaneado sin capa de texto: intentamos OCR local automáticamente.
+      let needsOcr = kind === 'pdf' && clean.length < 40;
+      let ocrApplied = false;
+      let ocrConfidence = null;
+      if (needsOcr && ocrEnabled && ocrIsAvailable()) {
+        try {
+          if (useProgressUI) {
+            $('#uploadProgressLabel').textContent = `PDF escaneado: aplicando OCR a "${file.name}"…`;
+          }
+          const ocrRes = await ocrPdfFile(file, {
+            lang: DATA.settings.ocrLang || 'spa',
+            onPage: (p, tt) => {
+              if (useProgressUI) {
+                $('#uploadProgressLabel').textContent = `OCR "${file.name}" — página ${p}/${tt}…`;
+              }
+            }
+          });
+          if (ocrRes.text && ocrRes.text.length >= 40) {
+            clean = ocrRes.text;
+            pageCount = ocrRes.pageCount;
+            needsOcr = false;
+            ocrApplied = true;
+            ocrConfidence = ocrRes.confidence;
+          }
+        } catch (ocrErr) {
+          updateUploadProgress(i, list.length, `⚠ OCR de ${file.name} falló: ${String(ocrErr.message || ocrErr).slice(0, 90)}`, 'warn');
+        }
+      }
+      if (needsOcr) {
+        stats.ocrPending++;
+        ocrPendingNames.push(file.name);
+      }
+      if (ocrApplied) stats.ocrApplied++;
+
+      if (checkAndPreventDuplicateSource(targetList, file.name, clean)) {
+        stats.duplicates++;
+        updateUploadProgress(i + 1, list.length, `⧉ ${file.name}: duplicado bloqueado.`, 'warn');
+        continue;
+      }
+
+      const classification = classifyDocument(file.name, clean);
+      const isFirst = targetList.length === 0;
+      targetList.push({
+        id: uid('doc'),
+        name: file.name,
+        content: clean.slice(0, MAX_DOC_CHARS),
+        fullLength: clean.length,
+        fileKind: kind,
+        pageCount: pageCount || null,
+        storyId: storyId || null,
+        needsOcr,
+        ocrApplied,
+        ocrConfidence,
+        isPriority: isFirst,
+        priorityLevel: isFirst ? 'primary' : 'derived',
+        ...classification,
+        attachedAt: Date.now()
+      });
+      stats.added++;
+      updateUploadProgress(
+        i + 1,
+        list.length,
+        `✓ ${file.name} — ${clean.length.toLocaleString('es-CL')} car.${pageCount ? ` · ${pageCount} pág.` : ''} · ${classification.subtypeLabel}${ocrApplied ? ` · OCR ${ocrConfidence}%` : ''}${needsOcr ? ' (requiere OCR)' : ''}`,
+        needsOcr ? 'warn' : 'ok'
+      );
+    } catch (err) {
+      stats.failed++;
+      updateUploadProgress(i + 1, list.length, `✕ ${file.name}: ${String(err.message || err).slice(0, 120)}`, 'error');
+    }
+    // Ceder el hilo para que la UI respire entre archivos
+    await new Promise(r => setTimeout(r, 0));
+  }
+
+  scheduleSave();
+  const summary = `${stats.added} añadido(s) · ${stats.duplicates} duplicado(s) · ${stats.failed} con error${stats.ocrApplied ? ` · ${stats.ocrApplied} con OCR` : ''}`;
+  if (useProgressUI) finishUploadProgress(`Lote completado en "${targetName}": ${summary}.`);
+  showToast(`Carga múltiple: ${summary}.`);
+  if (ocrPendingNames.length) {
+    showConfirm({
+      title: `${ocrPendingNames.length} PDF(s) sin capa de texto`,
+      text: `Estos archivos parecen escaneados y el OCR no logró texto utilizable:\n\n${ocrPendingNames.slice(0, 8).join('\n')}${ocrPendingNames.length > 8 ? `\n…y ${ocrPendingNames.length - 8} más` : ''}\n\nPuedes reintentar el OCR desde la ficha de cada fuente, o subir una versión de mejor resolución.`,
+      okLabel: 'Entendido'
+    });
+  }
+  if (onDone) onDone(stats);
+  return stats;
+}
+
 // ============ NOTEBOOKLM-STYLE SOURCES STUDIO (WITH DEDUPLICATION & CANON) ============
 
 let activeStudioBookId = 'universal';
@@ -1085,6 +1912,99 @@ function checkAndPreventDuplicateSource(existingList, newName, newContent) {
   });
 }
 
+// --- Estado y lógica de filtros de fuentes ---
+let sourceFilters = { search: '', story: 'all', subtype: 'all', verse: 'all', canon: 'all' };
+
+function docBelongsToStory(doc, storyId) {
+  if (doc.storyId) return doc.storyId === storyId;
+  // Fuentes antiguas sin storyId: se infiere por pertenencia a la lista del libro
+  const story = getStory(storyId);
+  return Boolean(story && (story.attachedDocs || []).some(d => d.id === doc.id));
+}
+
+function applySourceFilters(docs) {
+  const q = (sourceFilters.search || '').trim().toLowerCase();
+  return (docs || []).filter(doc => {
+    if (sourceFilters.canon !== 'all' && getPriorityInfo(doc).level !== sourceFilters.canon) return false;
+    if (sourceFilters.subtype !== 'all' && (doc.subtype || 'sin-clasificar') !== sourceFilters.subtype) return false;
+    if (sourceFilters.verse !== 'all' && (doc.verse || 'sin-verso') !== sourceFilters.verse) return false;
+    if (sourceFilters.story !== 'all' && !docBelongsToStory(doc, sourceFilters.story)) return false;
+    if (q) {
+      const hay = `${doc.name || ''} ${doc.content || ''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function refreshSourceFilterOptions(docs) {
+  const storySel = $('#srcFilterStory');
+  const subSel = $('#srcFilterSubtype');
+  const verseSel = $('#srcFilterVerse');
+  const canonSel = $('#srcFilterCanon');
+  if (!storySel || !subSel || !verseSel) return;
+
+  // Historias
+  const storyOpts = ['<option value="all">Todas las historias</option>']
+    .concat(DATA.stories.map(st => `<option value="${st.id}">${escapeHtml(st.title)}</option>`));
+  storySel.innerHTML = storyOpts.join('');
+  storySel.value = DATA.stories.some(st => st.id === sourceFilters.story) ? sourceFilters.story : 'all';
+  // Cuando estamos dentro de un libro, el filtro por historia sobra
+  const inBook = activeStudioBookId !== 'universal';
+  storySel.parentElement && (storySel.style.display = inBook ? 'none' : '');
+
+  // Sub-tipos presentes (+ catálogo completo)
+  const presentSub = new Map();
+  (docs || []).forEach(d => presentSub.set(d.subtype || 'sin-clasificar', getDocSubtypeLabel(d)));
+  SUBTYPE_RULES.forEach(r => { if (!presentSub.has(r.id)) presentSub.set(r.id, r.label); });
+  subSel.innerHTML = ['<option value="all">Todos los sub-tipos</option>']
+    .concat(Array.from(presentSub.entries()).map(([id, label]) => `<option value="${escapeHtml(id)}">${escapeHtml(label)}</option>`)).join('');
+  subSel.value = presentSub.has(sourceFilters.subtype) ? sourceFilters.subtype : 'all';
+
+  // Versos presentes (+ catálogo)
+  const presentVerse = new Map();
+  (docs || []).forEach(d => presentVerse.set(d.verse || 'sin-verso', getDocVerseLabel(d)));
+  VERSE_RULES.forEach(r => { if (!presentVerse.has(r.id)) presentVerse.set(r.id, r.label); });
+  verseSel.innerHTML = ['<option value="all">Todos los versos</option>']
+    .concat(Array.from(presentVerse.entries()).map(([id, label]) => `<option value="${escapeHtml(id)}">${escapeHtml(label)}</option>`)).join('');
+  verseSel.value = presentVerse.has(sourceFilters.verse) ? sourceFilters.verse : 'all';
+
+  if (canonSel) canonSel.value = sourceFilters.canon;
+  const searchEl = $('#srcFilterSearch');
+  if (searchEl && searchEl.value !== sourceFilters.search) searchEl.value = sourceFilters.search;
+}
+
+function bindSourceFilterControls() {
+  const bind = (sel, key, evt) => {
+    const el = $(sel);
+    if (!el || el.dataset.bound) return;
+    el.dataset.bound = '1';
+    el.addEventListener(evt, () => { sourceFilters[key] = el.value; renderNotebookLMStudio(); });
+  };
+  bind('#srcFilterStory', 'story', 'change');
+  bind('#srcFilterSubtype', 'subtype', 'change');
+  bind('#srcFilterVerse', 'verse', 'change');
+  bind('#srcFilterCanon', 'canon', 'change');
+  const search = $('#srcFilterSearch');
+  if (search && !search.dataset.bound) {
+    search.dataset.bound = '1';
+    let t = null;
+    search.addEventListener('input', () => {
+      if (t) clearTimeout(t);
+      t = setTimeout(() => { sourceFilters.search = search.value; renderNotebookLMStudio(); }, 220);
+    });
+  }
+  const reset = $('#srcFilterReset');
+  if (reset && !reset.dataset.bound) {
+    reset.dataset.bound = '1';
+    reset.addEventListener('click', () => {
+      sourceFilters = { search: '', story: 'all', subtype: 'all', verse: 'all', canon: 'all' };
+      const se = $('#srcFilterSearch'); if (se) se.value = '';
+      renderNotebookLMStudio();
+    });
+  }
+}
+
 function renderGlobalSources() {
   renderNotebookLMStudio();
 }
@@ -1093,6 +2013,7 @@ function renderNotebookLMStudio() {
   const booksListEl = $('#nblmBooksList');
   const countTextEl = $('#nblmBooksCountText');
   if (!booksListEl) return;
+  bindSourceFilterControls();
 
   if (!DATA.globalDocs) DATA.globalDocs = [];
   if (!DATA.settings.uiScale) DATA.settings.uiScale = 'compact';
@@ -1202,7 +2123,18 @@ function renderNotebookLMStudio() {
     }
   }
 
-  // 3. Render Attached Sources for Target List
+  // 3. Filtros por historia, sub-tipo, verso y canon
+  refreshSourceFilterOptions(targetDocsList);
+  const visibleDocs = applySourceFilters(targetDocsList);
+  const summaryEl = $('#srcFilterSummary');
+  if (summaryEl) {
+    const filtering = visibleDocs.length !== targetDocsList.length;
+    summaryEl.textContent = filtering
+      ? `Mostrando ${visibleDocs.length} de ${targetDocsList.length} fuentes según los filtros activos.`
+      : `${targetDocsList.length} fuente(s) en esta sección.`;
+  }
+
+  // 4. Render Attached Sources for Target List
   const sourcesContainer = $('#nblmSourcesList');
   if (!sourcesContainer) return;
   sourcesContainer.innerHTML = '';
@@ -1211,12 +2143,20 @@ function renderNotebookLMStudio() {
     sourcesContainer.innerHTML = `<div class="empty-state">
       <div class="es-icon"><svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" opacity="0.6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg></div>
       <div class="es-title">No hay fuentes en esta sección</div>
-      <div class="es-sub">Adjunta un PDF o artículo, o vincúlalo desde el Repositorio Universal. El motor de deduplicación protegerá tu proyecto de duplicados.</div>
+      <div class="es-sub">Arrastra varios PDFs a la vez o pulsa "Subir varios PDFs". El motor de deduplicación protegerá tu proyecto de duplicados.</div>
     </div>`;
     return;
   }
 
-  targetDocsList.forEach(doc => {
+  if (visibleDocs.length === 0) {
+    sourcesContainer.innerHTML = `<div class="empty-state">
+      <div class="es-title">Ninguna fuente coincide con el filtro</div>
+      <div class="es-sub">Prueba a limpiar los filtros de historia, sub-tipo o verso.</div>
+    </div>`;
+    return;
+  }
+
+  visibleDocs.forEach(doc => {
     const pInfo = getPriorityInfo(doc);
     const card = document.createElement('div');
     card.className = `source-card-item canon-${pInfo.level}-card`;
@@ -1229,11 +2169,16 @@ function renderNotebookLMStudio() {
           <div class="source-filename" title="${escapeHtml(doc.name)}">${escapeHtml(doc.name)}</div>
           <div class="source-meta-row">
             <span class="canon-badge ${pInfo.badgeClass}">${pInfo.label}</span>
-            <span class="muted small">${doc.content ? doc.content.length.toLocaleString('es-CL') + ' caracteres' : '0 car.'}</span>
+            <span class="tag-chip tag-subtype" title="Sub-tipo de historia">${escapeHtml(getDocSubtypeLabel(doc))}</span>
+            <span class="tag-chip tag-verse" title="Verso / línea temporal">${escapeHtml(getDocVerseLabel(doc))}</span>
+            <span class="muted small">${doc.content ? doc.content.length.toLocaleString('es-CL') + ' car.' : '0 car.'}${doc.pageCount ? ' · ' + doc.pageCount + ' pág.' : ''}${doc.fileKind ? ' · ' + escapeHtml(doc.fileKind.toUpperCase()) : ''}</span>
+            ${doc.needsOcr ? '<span class="canon-badge canon-reference" style="background:rgba(255,180,60,0.18); color:#ffb43c;">Requiere OCR</span>' : ''}
+            ${doc.ocrApplied ? `<span class="canon-badge canon-reference" style="background:rgba(53,208,127,0.15); color:#35d07f;">OCR ${doc.ocrConfidence || ''}%</span>` : ''}
             ${doc.isUniversalLink ? '<span class="canon-badge canon-reference" style="background:rgba(129,140,248,0.15); color:var(--accent);">Vinculado del Universal</span>' : ''}
           </div>
         </div>
         <div class="source-actions-group">
+          ${doc.needsOcr ? '<button class="btn-icon-subtle" data-act="ocr" title="Reintentar OCR sobre este PDF escaneado">OCR</button>' : ''}
           <button class="btn-icon-subtle" data-act="del" title="Desvincular o eliminar fuente">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg>
           </button>
@@ -1250,11 +2195,50 @@ function renderNotebookLMStudio() {
           <button class="canon-seg-btn ${pInfo.level === 'reference' ? 'active' : ''}" data-level="reference">3. Referencia Auxiliar</button>
         </div>
       </div>
+      <div class="classify-box">
+        <div class="classify-field">
+          <label>Sub-tipo de historia</label>
+          <select data-act="subtype">
+            ${['sin-clasificar', ...SUBTYPE_RULES.map(r => r.id)].map(id => {
+              const label = id === 'sin-clasificar' ? 'Sin clasificar' : (SUBTYPE_RULES.find(r => r.id === id) || {}).label;
+              return `<option value="${id}" ${((doc.subtype || 'sin-clasificar') === id) ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+            }).join('')}
+          </select>
+        </div>
+        <div class="classify-field">
+          <label>Verso / línea temporal</label>
+          <input type="text" data-act="verse" value="${escapeHtml(getDocVerseLabel(doc))}" placeholder="Ej: Universo 7, AU, Canon principal" />
+        </div>
+      </div>
       <div class="source-meta-row" style="justify-content:space-between; border-top:1px solid var(--border); padding-top:10px;">
-        <span class="muted small" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:65%;">${escapeHtml(doc.content.slice(0, 95))}...</span>
+        <span class="muted small" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:65%;">${escapeHtml((doc.content || '').slice(0, 95))}...</span>
         <button class="link-btn" data-act="view" style="font-weight:600;">Ver / Resumir con IA</button>
       </div>
     `;
+
+    const subtypeSel = card.querySelector('[data-act="subtype"]');
+    if (subtypeSel) subtypeSel.addEventListener('change', () => {
+      doc.subtype = subtypeSel.value;
+      doc.subtypeLabel = subtypeSel.value === 'sin-clasificar'
+        ? 'Sin clasificar'
+        : (SUBTYPE_RULES.find(r => r.id === subtypeSel.value) || {}).label;
+      doc.autoClassified = false;
+      scheduleSave();
+      renderNotebookLMStudio();
+      showToast(`Sub-tipo de "${doc.name}" actualizado a: ${doc.subtypeLabel}.`);
+    });
+
+    const verseInput = card.querySelector('[data-act="verse"]');
+    if (verseInput) verseInput.addEventListener('change', () => {
+      const v = verseInput.value.trim();
+      const known = VERSE_RULES.find(r => r.label.toLowerCase() === v.toLowerCase());
+      doc.verse = known ? known.id : (v || 'sin-verso');
+      doc.verseLabel = v || 'Sin verso asignado';
+      doc.autoClassified = false;
+      scheduleSave();
+      renderNotebookLMStudio();
+      showToast(`Verso de "${doc.name}" actualizado a: ${doc.verseLabel}.`);
+    });
 
     card.querySelectorAll('.canon-seg-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -1269,6 +2253,20 @@ function renderNotebookLMStudio() {
 
     card.querySelector('[data-act="view"]').addEventListener('click', () => {
       openNblmReaderModal(doc);
+    });
+
+    const ocrBtn = card.querySelector('[data-act="ocr"]');
+    if (ocrBtn) ocrBtn.addEventListener('click', () => {
+      // Necesitamos el archivo original: el contenido no se guarda en binario.
+      const input = document.createElement('input');
+      input.type = 'file'; input.accept = '.pdf';
+      input.onchange = async () => {
+        const f = input.files && input.files[0];
+        if (!f) return;
+        await runOcrOnDoc(doc, f, renderNotebookLMStudio);
+      };
+      input.click();
+      showToast(`Selecciona de nuevo "${doc.name}" para reintentar el OCR.`);
     });
 
     card.querySelector('[data-act="del"]').addEventListener('click', () => {
@@ -1300,54 +2298,54 @@ if (addBookSourceBtn) {
   });
 }
 
+// Resuelve la lista destino activa del Studio (repositorio universal o libro concreto).
+function resolveStudioTarget() {
+  if (activeStudioBookId !== 'universal') {
+    const story = getStory(activeStudioBookId);
+    if (story) {
+      if (!story.attachedDocs) story.attachedDocs = [];
+      return { list: story.attachedDocs, name: story.title, storyId: story.id };
+    }
+  }
+  if (!DATA.globalDocs) DATA.globalDocs = [];
+  return { list: DATA.globalDocs, name: 'Repositorio Universal', storyId: null };
+}
+
+async function handleStudioFiles(files) {
+  const target = resolveStudioTarget();
+  await ingestFilesIntoList(files, target.list, {
+    targetName: target.name,
+    storyId: target.storyId,
+    onDone: () => renderNotebookLMStudio()
+  });
+}
+
 const bookDocFileInput = $('#bookDocFileInput');
 if (bookDocFileInput) {
-  bookDocFileInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = function(evt) {
-      const textContent = evt.target.result;
-      if (!checkPdfTextOrWarnOcr(file, textContent)) {
-        e.target.value = '';
-        return;
-      }
-      let targetList = DATA.globalDocs;
-      let targetName = 'Repositorio Universal';
-
-      if (activeStudioBookId !== 'universal') {
-        const story = getStory(activeStudioBookId);
-        if (story) {
-          if (!story.attachedDocs) story.attachedDocs = [];
-          targetList = story.attachedDocs;
-          targetName = story.title;
-        }
-      }
-
-      if (checkAndPreventDuplicateSource(targetList, file.name, textContent)) {
-        showToast(`Deduplicación activa: La fuente "${file.name}" ya está en "${targetName}". Se bloqueó el duplicado.`);
-        e.target.value = '';
-        return;
-      }
-
-      const isFirst = targetList.length === 0;
-      targetList.push({
-        id: uid('doc'),
-        name: file.name,
-        content: textContent.slice(0, 10000),
-        isPriority: isFirst,
-        priorityLevel: isFirst ? 'primary' : 'derived',
-        attachedAt: Date.now()
-      });
-
-      scheduleSave();
-      renderNotebookLMStudio();
-      showToast(`Fuente "${file.name}" adjuntada a "${targetName}" sin duplicados.`);
-      e.target.value = '';
-    };
-    reader.readAsText(file);
+  bookDocFileInput.addEventListener('change', async (e) => {
+    const files = e.target.files;
+    if (!files || !files.length) return;
+    await handleStudioFiles(files);
+    e.target.value = '';
   });
+}
+
+// Arrastrar y soltar múltiples PDFs sobre el Studio
+const studioDropzone = $('#studioDropzone');
+if (studioDropzone) {
+  ['dragenter', 'dragover'].forEach(evt => studioDropzone.addEventListener(evt, (e) => {
+    e.preventDefault(); e.stopPropagation();
+    studioDropzone.classList.add('dz-active');
+  }));
+  ['dragleave', 'drop'].forEach(evt => studioDropzone.addEventListener(evt, (e) => {
+    e.preventDefault(); e.stopPropagation();
+    studioDropzone.classList.remove('dz-active');
+  }));
+  studioDropzone.addEventListener('drop', async (e) => {
+    const files = e.dataTransfer && e.dataTransfer.files;
+    if (files && files.length) await handleStudioFiles(files);
+  });
+  studioDropzone.addEventListener('click', () => $('#bookDocFileInput').click());
 }
 
 // Link from Universal Repository
@@ -1477,11 +2475,11 @@ if (triggerNblmSummaryBtn) {
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Documento "${activeNblmReaderDoc.name}":\n"""${(activeNblmReaderDoc.content || '').slice(0, 4000)}"""\nGenera un resumen ejecutivo de lore.` }
       ],
-      maxTokens: 350
+      maxTokens: 700
     });
 
     if (res.ok) {
-      summaryEl.textContent = res.text.trim();
+      summaryEl.textContent = res.text.trim() + (res.truncated ? ' […resumen cortado por límite de tokens]' : '');
       showToast('Resumen ejecutivo de lore generado por Muse AI.');
     } else {
       summaryEl.textContent = `Aviso: No se pudo generar con IA (${res.error}). Muestra un resumen general del contenido leíble abajo.`;
@@ -1541,6 +2539,8 @@ function renderStoryDocs() {
           <div class="source-filename" title="${escapeHtml(doc.name)}">${escapeHtml(doc.name)}</div>
           <div class="source-meta-row">
             <span class="canon-badge ${pInfo.badgeClass}" style="font-size:10px; padding:2px 6px;">${pInfo.label}</span>
+            <span class="tag-chip tag-subtype" style="font-size:10px;">${escapeHtml(getDocSubtypeLabel(doc))}</span>
+            <span class="tag-chip tag-verse" style="font-size:10px;">${escapeHtml(getDocVerseLabel(doc))}</span>
           </div>
         </div>
         <button class="btn-icon-subtle" data-act="del" title="Eliminar documento">
@@ -1556,7 +2556,7 @@ function renderStoryDocs() {
         </div>
       </div>
       <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
-        <span class="muted">${doc.content ? doc.content.length.toLocaleString('es-CL') + ' car.' : '0 car.'}</span>
+        <span class="muted">${doc.content ? doc.content.length.toLocaleString('es-CL') + ' car.' : '0 car.'}${doc.pageCount ? ' · ' + doc.pageCount + ' pág.' : ''}</span>
         <span class="source-cover-actions"><button class="link-btn" data-act="cover">${doc.coverImage ? 'Cambiar portada' : 'Añadir portada'}</button>${doc.coverImage ? '<button class="link-btn" data-act="clear-cover">Quitar</button>' : ''}</span><button class="link-btn" data-act="view" style="font-size:11px;">Ver extracto</button>
       </div>
     `;
@@ -1598,42 +2598,19 @@ if (triggerAttachDocBtn) {
   });
 }
 
-$('#attachDocFile').addEventListener('change', (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
+$('#attachDocFile').addEventListener('change', async (e) => {
+  const files = e.target.files;
+  if (!files || !files.length) return;
   const story = getStory(currentStoryId);
   if (!story) return;
-
-  const reader = new FileReader();
-  reader.onload = function(evt) {
-    const textContent = evt.target.result;
-    if (!checkPdfTextOrWarnOcr(file, textContent)) {
-      e.target.value = '';
-      return;
-    }
-    if (!story.attachedDocs) story.attachedDocs = [];
-
-    if (checkAndPreventDuplicateSource(story.attachedDocs, file.name, textContent)) {
-      showToast(`Deduplicación activa: La fuente "${file.name}" ya está adjunta a esta historia. No se ha duplicado.`);
-      e.target.value = '';
-      return;
-    }
-
-    const isFirst = story.attachedDocs.length === 0;
-    story.attachedDocs.push({
-      id: uid('doc'),
-      name: file.name,
-      content: textContent.slice(0, 8000), // snippet for context
-      isPriority: isFirst,
-      priorityLevel: isFirst ? 'primary' : 'derived',
-      attachedAt: Date.now()
-    });
-    scheduleSave();
-    renderStoryDocs();
-    showToast(`Documento "${file.name}" adjuntado correctamente.`);
-    e.target.value = '';
-  };
-  reader.readAsText(file);
+  if (!story.attachedDocs) story.attachedDocs = [];
+  await ingestFilesIntoList(files, story.attachedDocs, {
+    targetName: story.title,
+    storyId: story.id,
+    useProgressUI: false,
+    onDone: () => renderStoryDocs()
+  });
+  e.target.value = '';
 });
 
 
@@ -1641,11 +2618,21 @@ function renderSettings() {
   $('#authorNameInput').value = DATA.settings.authorName || '';
   $('#aiBaseUrl').value = DATA.settings.ai.baseUrl || '';
   $('#aiApiKey').value = DATA.settings.ai.apiKey || '';
-  const sel = $('#aiModelSelect');
   const currentModel = DATA.settings.ai.model || 'gpt-4o-mini';
-  sel.innerHTML = `<option value="${currentModel}">${currentModel}</option>`;
-  sel.value = currentModel;
+  const known = Array.isArray(DATA.settings.ai.knownModels) ? DATA.settings.ai.knownModels : [];
+  populateModelSelect(known.length ? known : [currentModel], currentModel);
+  const presetSel = $('#aiProviderPreset');
+  if (presetSel) presetSel.value = detectProviderPreset(DATA.settings.ai.baseUrl);
   $('#aiTestResult').textContent = '';
+  renderVerifySteps(DATA.settings.ai.lastVerifySteps || null, false);
+  const ocrCheck = $('#ocrEnabledCheck');
+  if (ocrCheck) ocrCheck.checked = DATA.settings.ocrEnabled !== false;
+  const ocrLang = $('#ocrLangSelect');
+  if (ocrLang) ocrLang.value = DATA.settings.ocrLang || 'spa';
+  const ocrStatus = $('#ocrStatusText');
+  if (ocrStatus) ocrStatus.textContent = ocrIsAvailable()
+    ? 'Motor OCR cargado y listo (offline).'
+    : 'Motor OCR no disponible en este entorno.';
   // escala y densidad
   const uiScaleSel = $('#settingsUiScaleSelect');
   if (uiScaleSel) uiScaleSel.value = DATA.settings.uiScale || 'compact';
@@ -1656,75 +2643,225 @@ function renderSettings() {
   updateOpenRouterUI();
 }
 
-// ============ OPENROUTER OAUTH GOOGLE LOGIN & PRIVACY CONTROLS ============
+// ============ CONEXIÓN Y VERIFICACIÓN DE LA API DE MUSE AI ============
 
+const AI_PROVIDER_PRESETS = {
+  openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+  openrouter: { baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' },
+  groq: { baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile' },
+  ollama: { baseUrl: 'http://localhost:11434/v1', model: 'llama3' },
+  lmstudio: { baseUrl: 'http://localhost:1234/v1', model: 'local-model' }
+};
+
+function detectProviderPreset(baseUrl) {
+  const url = (baseUrl || '').toLowerCase();
+  if (url.includes('openrouter')) return 'openrouter';
+  if (url.includes('groq')) return 'groq';
+  if (url.includes('11434')) return 'ollama';
+  if (url.includes('1234')) return 'lmstudio';
+  if (url.includes('api.openai.com')) return 'openai';
+  return 'custom';
+}
+
+// Refleja en la UI si la IA está verificada y operativa.
 function updateOpenRouterUI() {
-  const aiSettings = (DATA && DATA.settings && DATA.settings.ai) || {};
-  const statusBadge = $('#openrouterStatusBadge');
-  const myKeysBtn = $('#openrouterMyKeysBtn');
-  const logoutBtn = $('#openrouterLogoutBtn');
-  const rememberCheck = $('#openrouterRememberCheck');
-  const museGoogleBtnRow = $('#museGoogleAuthWidgetRow');
+  const ai = (DATA && DATA.settings && DATA.settings.ai) || {};
+  const badge = $('#aiStatusBadge');
+  const hint = $('#aiStatusHint');
+  const disconnect = $('#aiDisconnectBtn');
+  const museHint = $('#museAiUnconfiguredRow');
 
-  const isConnected = aiSettings.provider === 'openrouter-google' && Boolean(aiSettings.apiKey || aiSettings.sessionKey);
+  const configured = aiIsConfigured();
+  const verified = Boolean(ai.verifiedAt) && configured;
 
-  if (rememberCheck) {
-    rememberCheck.checked = Boolean(aiSettings.rememberConnection);
+  if (badge) {
+    if (verified) {
+      badge.className = 'canon-badge canon-primary';
+      const when = new Date(ai.verifiedAt).toLocaleString('es-CL');
+      badge.textContent = `Estado: operativo · ${ai.model || 'modelo por defecto'}`;
+      if (hint) hint.textContent = `Verificado el ${when}. Muse AI puede generar capítulos.`;
+    } else if (configured) {
+      badge.className = 'canon-badge canon-derived';
+      badge.textContent = 'Estado: configurado, sin verificar';
+      if (hint) hint.textContent = 'Pulsa “Verificar y activar API” para confirmar que todo funciona.';
+    } else {
+      badge.className = 'canon-badge canon-reference';
+      badge.textContent = 'Estado: sin configurar';
+      if (hint) hint.textContent = 'Introduce la URL base y tu API Key, luego verifica.';
+    }
+  }
+  if (disconnect) disconnect.style.display = configured ? 'inline-block' : 'none';
+  if (museHint) museHint.style.display = configured ? 'none' : 'flex';
+}
+
+function renderVerifySteps(steps, running) {
+  const box = $('#aiVerifySteps');
+  if (!box) return;
+  if (!steps || !steps.length) {
+    box.innerHTML = running ? '<div class="vstep vstep-running">Verificando…</div>' : '';
+    return;
+  }
+  box.innerHTML = steps.map(st => `
+    <div class="vstep ${st.ok ? 'vstep-ok' : 'vstep-fail'}">
+      <span class="vstep-icon">${st.ok ? '✓' : '✕'}</span>
+      <span class="vstep-label">${escapeHtml(st.label)}</span>
+      <span class="vstep-detail">${escapeHtml(st.detail || '')}</span>
+    </div>
+  `).join('');
+}
+
+// Verificación completa: credencial → modelo → generación real.
+async function verifyAiConnection() {
+  const btn = $('#verifyAiBtn');
+  const resultEl = $('#aiTestResult');
+  const baseUrl = $('#aiBaseUrl').value.trim() || 'https://api.openai.com/v1';
+  const apiKey = $('#aiApiKey').value.trim();
+  const model = $('#aiModelSelect').value.trim();
+
+  // Persistimos antes de verificar para que el estado quede consistente.
+  DATA.settings.ai.baseUrl = baseUrl;
+  DATA.settings.ai.apiKey = apiKey;
+  DATA.settings.ai.model = model || 'gpt-4o-mini';
+  DATA.settings.ai.provider = detectProviderPreset(baseUrl);
+
+  btn.disabled = true;
+  const original = btn.innerHTML;
+  btn.textContent = 'Verificando…';
+  renderVerifySteps(null, true);
+  if (resultEl) resultEl.textContent = '';
+
+  let res;
+  if (window.lorevinci.aiVerify) {
+    res = await window.lorevinci.aiVerify({ baseUrl, apiKey, model });
+  } else {
+    // Entorno web: verificación directa con fetch
+    res = await verifyAiFromBrowser(baseUrl, apiKey, model);
   }
 
-  if (isConnected) {
-    if (statusBadge) {
-      statusBadge.className = 'canon-badge canon-primary';
-      statusBadge.textContent = 'Estado: Conectado vía Google (OpenRouter PKCE)';
-    }
-    if (myKeysBtn) myKeysBtn.style.display = 'inline-block';
-    if (logoutBtn) logoutBtn.style.display = 'inline-block';
-    if (museGoogleBtnRow) museGoogleBtnRow.style.display = 'none';
+  btn.disabled = false;
+  btn.innerHTML = original;
+  renderVerifySteps(res.steps, false);
+
+  DATA.settings.ai.lastVerifySteps = res.steps || null;
+  if (res.ok) {
+    DATA.settings.ai.verifiedAt = Date.now();
+    DATA.settings.ai.model = res.model || DATA.settings.ai.model;
+    if (res.models && res.models.length) populateModelSelect(res.models, DATA.settings.ai.model);
+    scheduleSave();
+    updateOpenRouterUI();
+    if (resultEl) resultEl.textContent = 'API verificada y operativa. Ya puedes generar capítulos con Muse AI.';
+    showToast('API verificada: Muse AI está operativo.');
   } else {
-    if (statusBadge) {
-      statusBadge.className = 'canon-badge canon-reference';
-      statusBadge.textContent = 'Estado: No conectado vía Google';
-    }
-    if (myKeysBtn) myKeysBtn.style.display = 'none';
-    if (logoutBtn) logoutBtn.style.display = 'none';
-    if (museGoogleBtnRow) museGoogleBtnRow.style.display = 'block';
+    DATA.settings.ai.verifiedAt = null;
+    scheduleSave();
+    updateOpenRouterUI();
+    if (resultEl) resultEl.textContent = `No se pudo activar: ${res.error || 'error desconocido'}`;
+    showToast('La verificación falló. Revisa el detalle en Ajustes.');
   }
 }
 
-function startGoogleOpenRouterAuth() {
-  // 10/10 HONESTO: no hay OAuth Google integrado. Redirige a OpenRouter para que el usuario genere su key real.
-  showConfirm({
-    title: 'Conexión OpenRouter — método honesto y seguro',
-    text: 'LoreVinci es 100% local y no tiene backend. No podemos hacer OAuth Google directo sin tu clave. Te llevaremos a openrouter.ai/keys para que generes tu key real (gratis) y luego la pegas en Ajustes > API Key Manual. ¿Abrir OpenRouter ahora?',
-    okLabel: 'Abrir OpenRouter'
-  }).then(ok => {
-    if (ok) {
-      window.lorevinci.openExternal('https://openrouter.ai/keys');
-      showToast('Abriendo OpenRouter. Genera una key y pégala en “API Key Manual”. Nunca compartimos tu Google.');
-      // Pre-rellenar baseUrl para ayudar
-      const baseInput = document.getElementById('aiBaseUrl');
-      if (baseInput && !baseInput.value.includes('openrouter')) {
-        baseInput.value = 'https://openrouter.ai/api/v1';
-      }
+// Verificación equivalente para el preview web (sin proceso principal de Electron).
+async function verifyAiFromBrowser(baseUrl, apiKey, model) {
+  const root = baseUrl.replace(/\/$/, '');
+  const steps = [];
+  const headers = { 'Content-Type': 'application/json' };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)/i.test(root);
+  if (!apiKey && !isLocal) {
+    return { ok: false, steps: [{ id: 'key', ok: false, label: 'API Key presente', detail: 'No hay API Key configurada.' }], error: 'Falta la API Key.' };
+  }
+  steps.push({ id: 'key', ok: true, label: 'API Key presente', detail: 'Clave detectada' });
+  try {
+    const r = await fetch(`${root}/models`, { headers });
+    if (!r.ok) {
+      steps.push({ id: 'auth', ok: false, label: 'Autenticación y catálogo', detail: `Error ${r.status}` });
+      return { ok: false, steps, error: `El proveedor respondió ${r.status}.` };
     }
+    const j = await r.json();
+    const models = (j.data || j.models || []).map(m => m.id || m.name || m).filter(Boolean);
+    steps.push({ id: 'auth', ok: true, label: 'Autenticación y catálogo', detail: `${models.length} modelo(s)` });
+    const chosen = model || models[0];
+    steps.push({ id: 'model', ok: true, label: 'Modelo seleccionado', detail: `"${chosen}"` });
+    const g = await fetch(`${root}/chat/completions`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ model: chosen, messages: [{ role: 'user', content: 'ping' }], max_tokens: 12 })
+    });
+    if (!g.ok) {
+      steps.push({ id: 'generate', ok: false, label: 'Generación de texto', detail: `Error ${g.status}` });
+      return { ok: false, steps, models, error: `La generación falló (${g.status}).` };
+    }
+    steps.push({ id: 'generate', ok: true, label: 'Generación de texto', detail: 'Respuesta recibida' });
+    return { ok: true, steps, models, model: chosen };
+  } catch (err) {
+    steps.push({ id: 'auth', ok: false, label: 'Conexión', detail: String(err).slice(0, 160) });
+    return { ok: false, steps, error: 'Sin conexión con el proveedor (en el navegador puede ser CORS; usa la app de escritorio).' };
+  }
+}
+
+function populateModelSelect(models, selected) {
+  const sel = $('#aiModelSelect');
+  if (!sel) return;
+  sel.innerHTML = '';
+  models.forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m; opt.textContent = m;
+    sel.appendChild(opt);
+  });
+  if (selected && models.includes(selected)) sel.value = selected;
+  else if (selected) {
+    const opt = document.createElement('option');
+    opt.value = selected; opt.textContent = `${selected} (actual)`;
+    sel.insertBefore(opt, sel.firstChild);
+    sel.value = selected;
+  }
+}
+
+const verifyAiBtn = $('#verifyAiBtn');
+if (verifyAiBtn) verifyAiBtn.addEventListener('click', verifyAiConnection);
+
+const providerPreset = $('#aiProviderPreset');
+if (providerPreset) {
+  providerPreset.addEventListener('change', () => {
+    const preset = AI_PROVIDER_PRESETS[providerPreset.value];
+    if (!preset) return;
+    $('#aiBaseUrl').value = preset.baseUrl;
+    const sel = $('#aiModelSelect');
+    if (sel && !Array.from(sel.options).some(o => o.value === preset.model)) {
+      const opt = document.createElement('option');
+      opt.value = preset.model; opt.textContent = preset.model;
+      sel.insertBefore(opt, sel.firstChild);
+    }
+    if (sel) sel.value = preset.model;
+    showToast(`Preset aplicado: ${preset.baseUrl}. Pega tu key y verifica.`);
   });
 }
 
-const googleAuthBtn = $('#googleAuthBtn');
-if (googleAuthBtn) googleAuthBtn.addEventListener('click', startGoogleOpenRouterAuth);
-const museGoogleBtn = $('#museWidgetGoogleAuthBtn');
-if (museGoogleBtn) museGoogleBtn.addEventListener('click', startGoogleOpenRouterAuth);
+const toggleKeyBtn = $('#toggleApiKeyVisibility');
+if (toggleKeyBtn) {
+  toggleKeyBtn.addEventListener('click', () => {
+    const input = $('#aiApiKey');
+    const showing = input.type === 'text';
+    input.type = showing ? 'password' : 'text';
+    toggleKeyBtn.textContent = showing ? 'Ver' : 'Ocultar';
+  });
+}
 
-const rememberCheck = $('#openrouterRememberCheck');
-if (rememberCheck) {
-  rememberCheck.addEventListener('change', (e) => {
-    if (!DATA.settings.ai) DATA.settings.ai = {};
-    DATA.settings.ai.rememberConnection = e.target.checked;
+const aiDisconnectBtn = $('#aiDisconnectBtn');
+if (aiDisconnectBtn) {
+  aiDisconnectBtn.addEventListener('click', async () => {
+    const ok = await showConfirm({
+      title: 'Desconectar la IA',
+      text: 'Se borrará la API Key almacenada en este equipo. Podrás volver a pegarla cuando quieras.',
+      okLabel: 'Desconectar'
+    });
+    if (!ok) return;
+    DATA.settings.ai.apiKey = '';
+    DATA.settings.ai.verifiedAt = null;
     scheduleSave();
-    showToast(e.target.checked
-      ? 'Modo Recordar conexión activo: La clave se almacenará cifrada en tu dispositivo.'
-      : 'Modo Solo sesión activo: La clave vivirá únicamente en memoria y se borrará al cerrar la app.'
-    );
+    $('#aiApiKey').value = '';
+    renderVerifySteps(null, false);
+    updateOpenRouterUI();
+    showToast('Clave eliminada del dispositivo.');
   });
 }
 
@@ -1735,17 +2872,28 @@ if (openRouterMyKeysBtn) {
   });
 }
 
-const openRouterLogoutBtn = $('#openrouterLogoutBtn');
-if (openRouterLogoutBtn) {
-  openRouterLogoutBtn.addEventListener('click', () => {
-    if (!DATA.settings.ai) return;
-    DATA.settings.ai.provider = 'manual';
-    DATA.settings.ai.apiKey = '';
-    delete DATA.settings.ai.sessionKey;
+const museOpenSettingsBtn = $('#museOpenSettingsBtn');
+if (museOpenSettingsBtn) {
+  museOpenSettingsBtn.addEventListener('click', () => showView('settings'));
+}
+
+const ocrEnabledCheck = $('#ocrEnabledCheck');
+if (ocrEnabledCheck) {
+  ocrEnabledCheck.addEventListener('change', () => {
+    DATA.settings.ocrEnabled = ocrEnabledCheck.checked;
     scheduleSave();
-    updateOpenRouterUI();
-    renderSettings();
-    showToast('Sesión de OpenRouter cerrada. Clave eliminada del dispositivo y de memoria.');
+    showToast(ocrEnabledCheck.checked
+      ? 'OCR automático activado para PDFs escaneados.'
+      : 'OCR automático desactivado: los PDFs escaneados se marcarán sin procesar.');
+  });
+}
+const ocrLangSelect = $('#ocrLangSelect');
+if (ocrLangSelect) {
+  ocrLangSelect.addEventListener('change', async () => {
+    DATA.settings.ocrLang = ocrLangSelect.value;
+    scheduleSave();
+    await terminateOcrWorker(); // el idioma se fija al crear el worker
+    showToast(`Idioma del OCR: ${ocrLangSelect.options[ocrLangSelect.selectedIndex].text}.`);
   });
 }
 
@@ -1758,37 +2906,53 @@ $('#fetchModelsBtn').addEventListener('click', async () => {
   const baseUrl = $('#aiBaseUrl').value.trim() || 'https://api.openai.com/v1';
   const apiKey = $('#aiApiKey').value.trim();
   const resultEl = $('#aiTestResult');
-  const selectEl = $('#aiModelSelect');
+  const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)/i.test(baseUrl);
 
-  if (!apiKey) {
-    resultEl.textContent = 'Error: Ingresa tu API Key primero en los campos de arriba.';
+  if (!apiKey && !isLocal) {
+    resultEl.textContent = 'Ingresa tu API Key primero (o usa una URL local como Ollama).';
     return;
   }
 
-  resultEl.textContent = 'Conectando y detectando modelos permitidos...';
-  const res = await window.lorevinci.aiModels({ baseUrl, apiKey });
+  resultEl.textContent = 'Conectando y detectando modelos disponibles…';
+  let res;
+  if (window.lorevinci.aiModels) {
+    res = await window.lorevinci.aiModels({ baseUrl, apiKey });
+  } else {
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+      const r = await fetch(`${baseUrl.replace(/\/$/, '')}/models`, { headers });
+      const j = await r.json();
+      res = { ok: r.ok, models: (j.data || j.models || []).map(m => m.id || m.name || m).filter(Boolean), error: r.ok ? null : `Error ${r.status}` };
+    } catch (err) { res = { ok: false, error: String(err) }; }
+  }
 
   if (res.ok && res.models && res.models.length > 0) {
-    selectEl.innerHTML = '';
-    res.models.forEach(m => {
-      const opt = document.createElement('option');
-      opt.value = m;
-      opt.textContent = m;
-      selectEl.appendChild(opt);
-    });
-    resultEl.textContent = ` Se detectaron ${res.models.length} modelos con éxito. Selecciona el deseado o el mejor para contexto.`;
+    populateModelSelect(res.models, DATA.settings.ai.model);
+    DATA.settings.ai.knownModels = res.models.slice(0, 300);
+    scheduleSave();
+    resultEl.textContent = `Se detectaron ${res.models.length} modelos. Elige uno y pulsa “Verificar y activar API”.`;
     showToast('Modelos detectados correctamente.');
   } else {
-    resultEl.textContent = ` Error detectando modelos: ${res.error || 'Respuesta vacía'}`;
+    resultEl.textContent = `Error detectando modelos: ${res.error || 'respuesta vacía'}`;
   }
 });
 
 $('#saveAiBtn').addEventListener('click', () => {
-  DATA.settings.ai.baseUrl = $('#aiBaseUrl').value.trim() || 'https://api.openai.com/v1';
-  DATA.settings.ai.model = $('#aiModelSelect').value.trim() || 'gpt-4o-mini';
-  DATA.settings.ai.apiKey = $('#aiApiKey').value.trim();
+  const newBase = $('#aiBaseUrl').value.trim() || 'https://api.openai.com/v1';
+  const newModel = $('#aiModelSelect').value.trim() || 'gpt-4o-mini';
+  const newKey = $('#aiApiKey').value.trim();
+  // Cualquier cambio invalida la verificación previa
+  if (newBase !== DATA.settings.ai.baseUrl || newModel !== DATA.settings.ai.model || newKey !== DATA.settings.ai.apiKey) {
+    DATA.settings.ai.verifiedAt = null;
+  }
+  DATA.settings.ai.baseUrl = newBase;
+  DATA.settings.ai.model = newModel;
+  DATA.settings.ai.apiKey = newKey;
+  DATA.settings.ai.provider = detectProviderPreset(newBase);
   scheduleSave();
-  showToast('Configuración de Muse AI guardada exitosamente.');
+  updateOpenRouterUI();
+  showToast('Ajustes guardados. Pulsa “Verificar y activar API” para dejarlo operativo.');
 });
 
 $('#settingsExportBtn').addEventListener('click', async () => {
@@ -1826,7 +2990,299 @@ $('#settingsResetBtn').addEventListener('click', async () => {
   }
 });
 
+// ============ CONFIGURACIÓN DEL LIBRO (parámetros iniciales, siempre editables) ============
+
+let configStoryId = null;
+let configCoverDraft = undefined; // undefined = sin cambios; null = quitar; string = nueva imagen
+
+function ensureStoryDefaults(story) {
+  if (!story) return story;
+  if (!story.style || typeof story.style !== 'object') {
+    story.style = {
+      reference: story.styleRef || '',
+      notes: '',
+      person: 'auto',
+      register: 'auto',
+      strength: 'alta',
+      sample: ''
+    };
+  }
+  if (typeof story.loreBase !== 'string') story.loreBase = '';
+  if (typeof story.chronology !== 'string') story.chronology = '';
+  if (!Array.isArray(story.attachedDocs)) story.attachedDocs = [];
+  if (!Array.isArray(story.notes)) story.notes = [];
+  return story;
+}
+
+function openStoryConfigModal(storyId, tab) {
+  const story = ensureStoryDefaults(getStory(storyId));
+  if (!story) return;
+  configStoryId = storyId;
+  configCoverDraft = undefined;
+
+  $('#storyConfigSubtitle').textContent = `“${story.title}” — ajusta los parámetros con los que se creó el libro.`;
+  $('#cfgTitle').value = story.title || '';
+  $('#cfgGenre').value = story.genre || '';
+  $('#cfgSynopsis').value = story.synopsis || '';
+  $('#cfgOutline').value = story.outline || '';
+  $('#cfgRules').value = story.rules || '';
+  $('#cfgLoreBase').value = story.loreBase || '';
+  $('#cfgChronology').value = story.chronology || '';
+  $('#cfgColor').value = story.color || '#c81e3a';
+  $('#cfgStyleRef').value = story.style.reference || '';
+  $('#cfgStyleNotes').value = story.style.notes || '';
+  $('#cfgNarrativePerson').value = story.style.person || 'auto';
+  $('#cfgToneRegister').value = story.style.register || 'auto';
+  $('#cfgStyleStrength').value = story.style.strength || 'alta';
+  $('#cfgStyleSample').value = story.style.sample || '';
+
+  renderConfigCoverPreview(story.coverImage);
+  renderConfigSources();
+  selectConfigTab(tab || 'identity');
+  $('#storyConfigModalBackdrop').classList.add('active');
+}
+
+function selectConfigTab(name) {
+  $all('.config-tab').forEach(t => t.classList.toggle('active', t.dataset.ctab === name));
+  $all('.config-pane').forEach(p => p.classList.toggle('active', p.dataset.cpane === name));
+}
+
+function renderConfigCoverPreview(src) {
+  const prev = $('#cfgCoverPreview');
+  if (!prev) return;
+  const color = $('#cfgColor') ? $('#cfgColor').value : '#c81e3a';
+  if (src) {
+    prev.style.backgroundImage = `url('${src}')`;
+    prev.style.backgroundSize = 'cover';
+    prev.style.backgroundPosition = 'center';
+    prev.innerHTML = '';
+  } else {
+    prev.style.backgroundImage = 'none';
+    prev.style.background = `linear-gradient(160deg, ${color}, #14161d)`;
+    prev.innerHTML = '<span class="cover-placeholder-text">Sin portada — se usará el color</span>';
+  }
+}
+
+function renderConfigSources() {
+  const story = getStory(configStoryId);
+  const list = $('#cfgSourcesList');
+  if (!list || !story) return;
+  list.innerHTML = '';
+  const docs = story.attachedDocs || [];
+  if (!docs.length) {
+    list.innerHTML = '<div class="empty-state" style="padding:20px 10px;"><div class="es-title" style="font-size:13px;">Sin fuentes adjuntas</div><div class="es-sub" style="font-size:11.5px;">Sube varios PDFs a la vez para alimentar el canon de esta obra.</div></div>';
+    return;
+  }
+  docs.forEach(doc => {
+    const pInfo = getPriorityInfo(doc);
+    const row = document.createElement('div');
+    row.className = 'cfg-source-row';
+    row.innerHTML = `
+      <div class="cfg-src-main">
+        <div class="source-filename" title="${escapeHtml(doc.name)}">${escapeHtml(doc.name)}</div>
+        <div class="source-meta-row">
+          <span class="canon-badge ${pInfo.badgeClass}" style="font-size:10px;">${pInfo.label}</span>
+          <span class="tag-chip tag-subtype" style="font-size:10px;">${escapeHtml(getDocSubtypeLabel(doc))}</span>
+          <span class="tag-chip tag-verse" style="font-size:10px;">${escapeHtml(getDocVerseLabel(doc))}</span>
+          <span class="muted small">${(doc.content || '').length.toLocaleString('es-CL')} car.${doc.pageCount ? ' · ' + doc.pageCount + ' pág.' : ''}</span>
+        </div>
+      </div>
+      <button class="btn-icon-subtle small" data-act="del" title="Quitar fuente">✕</button>
+    `;
+    row.querySelector('[data-act="del"]').addEventListener('click', () => {
+      story.attachedDocs = story.attachedDocs.filter(d => d.id !== doc.id);
+      scheduleSave();
+      renderConfigSources();
+      if (currentStoryId === story.id) renderStoryDocs();
+      showToast('Fuente quitada del libro.');
+    });
+    list.appendChild(row);
+  });
+}
+
+function bindStoryConfigModal() {
+  $all('.config-tab').forEach(tab => tab.addEventListener('click', () => selectConfigTab(tab.dataset.ctab)));
+
+  const close = () => { $('#storyConfigModalBackdrop').classList.remove('active'); configStoryId = null; };
+  $('#closeStoryConfigModal').addEventListener('click', close);
+  $('#cfgCancelBtn').addEventListener('click', close);
+  $('#storyConfigModalBackdrop').addEventListener('click', (e) => {
+    if (e.target.id === 'storyConfigModalBackdrop') close();
+  });
+
+  $('#cfgColor').addEventListener('input', () => {
+    const story = getStory(configStoryId);
+    const current = configCoverDraft !== undefined ? configCoverDraft : (story ? story.coverImage : null);
+    renderConfigCoverPreview(current);
+  });
+
+  $('#cfgUploadCoverBtn').addEventListener('click', () => $('#cfgCoverInput').click());
+  $('#cfgCoverInput').addEventListener('change', (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    if (file.size > 4 * 1024 * 1024) { showToast('La portada debe pesar menos de 4 MB.'); e.target.value = ''; return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      configCoverDraft = reader.result;
+      renderConfigCoverPreview(configCoverDraft);
+      showToast('Portada lista. Pulsa “Guardar configuración” para aplicarla.');
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  });
+
+  $('#cfgRemoveCoverBtn').addEventListener('click', () => {
+    configCoverDraft = null;
+    renderConfigCoverPreview(null);
+  });
+
+  $('#cfgAttachDocsBtn').addEventListener('click', () => $('#cfgDocsInput').click());
+  $('#cfgDocsInput').addEventListener('change', async (e) => {
+    const story = getStory(configStoryId);
+    const files = e.target.files;
+    if (!story || !files || !files.length) return;
+    if (!story.attachedDocs) story.attachedDocs = [];
+    const btn = $('#cfgAttachDocsBtn');
+    btn.disabled = true; btn.textContent = 'Procesando documentos…';
+    await ingestFilesIntoList(files, story.attachedDocs, {
+      targetName: story.title,
+      storyId: story.id,
+      useProgressUI: false,
+      onDone: () => {
+        renderConfigSources();
+        if (currentStoryId === story.id) renderStoryDocs();
+      }
+    });
+    btn.disabled = false; btn.textContent = 'Adjuntar varios PDFs / documentos';
+    e.target.value = '';
+  });
+
+  $('#cfgExtractStyleBtn').addEventListener('click', extractStyleFromWork);
+
+  $('#cfgOpenEditorBtn').addEventListener('click', () => {
+    const id = configStoryId;
+    saveStoryConfig({ silent: true });
+    close();
+    if (id) openStoryEditor(id);
+  });
+
+  $('#cfgSaveBtn').addEventListener('click', () => saveStoryConfig({}));
+}
+
+function saveStoryConfig({ silent = false } = {}) {
+  const story = ensureStoryDefaults(getStory(configStoryId));
+  if (!story) return;
+  story.title = $('#cfgTitle').value.trim() || 'Historia sin título';
+  story.genre = $('#cfgGenre').value.trim();
+  story.synopsis = $('#cfgSynopsis').value;
+  story.outline = $('#cfgOutline').value;
+  story.rules = $('#cfgRules').value;
+  story.loreBase = $('#cfgLoreBase').value;
+  story.chronology = $('#cfgChronology').value;
+  story.color = $('#cfgColor').value;
+  if (configCoverDraft !== undefined) story.coverImage = configCoverDraft;
+  story.style = {
+    reference: $('#cfgStyleRef').value.trim(),
+    notes: $('#cfgStyleNotes').value,
+    person: $('#cfgNarrativePerson').value,
+    register: $('#cfgToneRegister').value,
+    strength: $('#cfgStyleStrength').value,
+    sample: $('#cfgStyleSample').value
+  };
+  story.updatedAt = Date.now();
+  configCoverDraft = undefined;
+  scheduleSave();
+  renderStories();
+  renderNotebookLMStudio();
+  if (currentStoryId === story.id) {
+    $('#storyTitleInput').value = story.title;
+    $('#outlineText').value = story.outline || '';
+    $('#rulesText').value = story.rules || '';
+    $('#crumb').textContent = story.title;
+    renderStoryDocs();
+  }
+  if (!silent) showToast('Configuración del libro guardada.');
+}
+
+// Deduce la voz de la obra a partir de lo ya escrito y de las fuentes canónicas.
+async function extractStyleFromWork() {
+  const story = getStory(configStoryId);
+  if (!story) return;
+  const btn = $('#cfgExtractStyleBtn');
+  const written = (story.chapters || []).map(c => stripHtml(c.content)).join('\n\n').trim();
+  const canon = (story.attachedDocs || [])
+    .filter(d => getPriorityInfo(d).level === 'primary')
+    .map(d => (d.content || '').slice(0, 1500)).join('\n\n');
+  const corpus = (written || canon).slice(0, 6000);
+
+  if (corpus.length < 200) {
+    showToast('Necesitas más texto escrito o una fuente canónica para extraer el estilo.');
+    return;
+  }
+
+  // Análisis local siempre disponible (offline-first)
+  const localProfile = analyzeStyleLocally(corpus);
+  $('#cfgStyleSample').value = corpus.slice(0, 1200);
+  $('#cfgNarrativePerson').value = localProfile.person;
+  $('#cfgStyleNotes').value = localProfile.notes;
+
+  if (!aiIsConfigured()) {
+    showToast('Estilo extraído con el analizador local. Conecta la API en Ajustes para un análisis más fino.');
+    return;
+  }
+
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = 'Analizando estilo…';
+  const res = await window.lorevinci.aiGenerate({
+    baseUrl: DATA.settings.ai.baseUrl,
+    apiKey: DATA.settings.ai.apiKey,
+    model: DATA.settings.ai.model,
+    messages: [
+      { role: 'system', content: 'Eres un analista de estilo literario. Describe la VOZ de un texto en 4-6 líneas: persona narrativa, tiempo verbal, longitud media de frase, densidad descriptiva, humor/tono, tics de diálogo y vocabulario característico. Responde en español, sin preámbulos, en viñetas cortas.' },
+      { role: 'user', content: `Analiza el estilo de este texto:\n"""${sanitizeTextForPrompt(corpus.slice(0, 4000))}"""` }
+    ],
+    maxTokens: 320,
+    temperature: 0.3
+  });
+  btn.disabled = false;
+  btn.textContent = original;
+
+  if (res.ok && res.text.trim()) {
+    $('#cfgStyleNotes').value = res.text.trim();
+    showToast('Perfil de estilo extraído con Muse AI. Revísalo y guarda.');
+  } else {
+    showToast('Se usó el analizador local; la IA no respondió.');
+  }
+}
+
+// Analizador de estilo 100% local (sin API): métricas simples pero útiles.
+function analyzeStyleLocally(text) {
+  const sentences = text.split(/[.!?…]+\s/).filter(s => s.trim().length > 3);
+  const words = text.split(/\s+/).filter(Boolean);
+  const avgLen = sentences.length ? Math.round(words.length / sentences.length) : 0;
+  const firstPerson = (text.match(/\b(yo|mí|conmigo|mi[s]?\b)/gi) || []).length;
+  const thirdPerson = (text.match(/\b(él|ella|ellos|ellas|le[s]?)\b/gi) || []).length;
+  const person = firstPerson > thirdPerson * 1.2 ? 'first' : 'third-limited';
+  const dialogueMarks = (text.match(/[—"“]/g) || []).length;
+  const dialogueRatio = words.length ? dialogueMarks / (words.length / 100) : 0;
+  const notes = [
+    `• Persona narrativa dominante: ${person === 'first' ? 'primera persona' : 'tercera persona'}.`,
+    `• Longitud media de frase: ~${avgLen} palabras (${avgLen < 12 ? 'ritmo ágil y cortante' : avgLen < 20 ? 'ritmo equilibrado' : 'prosa larga y envolvente'}).`,
+    `• Densidad de diálogo: ${dialogueRatio > 4 ? 'alta, la escena avanza hablando' : dialogueRatio > 1.5 ? 'media, alterna narración y diálogo' : 'baja, predomina la narración'}.`,
+    `• Vocabulario base extraído de ${words.length.toLocaleString('es-CL')} palabras del propio manuscrito.`
+  ].join('\n');
+  return { person, avgLen, notes };
+}
+
 // ============ EDITOR ============
+
+const editorConfigureBtn = $('#editorConfigureBtn');
+if (editorConfigureBtn) {
+  editorConfigureBtn.addEventListener('click', () => {
+    if (currentStoryId) openStoryConfigModal(currentStoryId, 'identity');
+  });
+}
 
 function openStoryEditor(storyId) {
   currentStoryId = storyId;
@@ -1887,11 +3343,19 @@ function renderChapterList() {
     const words = wordCount(c.content);
     const item = document.createElement('div');
     item.className = 'chapter-item' + (c.id === currentChapterId ? ' active' : '');
+    const gen = c.generation;
+    const hasError = gen && (gen.truncated || (gen.issues || []).some(x => x.level === 'error'));
+    const hasWarn = gen && (gen.issues || []).some(x => x.level === 'warn');
+    const flag = hasError
+      ? `<span class="ch-flag ch-flag-error" title="${escapeHtml((gen.issues || []).map(x => x.msg).join(' · ') || 'Capítulo posiblemente incompleto')}">Revisar</span>`
+      : hasWarn
+        ? `<span class="ch-flag ch-flag-warn" title="${escapeHtml((gen.issues || []).map(x => x.msg).join(' · '))}">Avisos</span>`
+        : gen ? '<span class="ch-flag ch-flag-ok" title="Generado y verificado sin incidencias">IA ✓</span>' : '';
     item.innerHTML = `
       <button class="ch-del" title="Eliminar capítulo">✕</button>
       <div class="ch-num">Capítulo ${idx + 1} de ${story.chapters.length}</div>
       <div class="ch-title">${escapeHtml(c.title || 'Sin título')}</div>
-      <div class="ch-progress">${words} palabras · ${statusLabel(c.status)}</div>
+      <div class="ch-progress">${words} palabras · ${statusLabel(c.status)} ${flag}</div>
     `;
     item.addEventListener('click', () => {
       currentChapterId = c.id;
@@ -2074,8 +3538,34 @@ $('#openAutoBookModalBtn').addEventListener('click', () => {
     });
   }
 
+  // Filtros por sub-tipo y verso construidos desde las fuentes reales del libro
+  const docs = story.attachedDocs || [];
+  const subSel = $('#autoBookSubtypeFilter');
+  const verseSel = $('#autoBookVerseFilter');
+  if (subSel) {
+    const map = new Map();
+    docs.forEach(d => map.set(d.subtype || 'sin-clasificar', getDocSubtypeLabel(d)));
+    subSel.innerHTML = ['<option value="all">Todos los sub-tipos</option>']
+      .concat(Array.from(map.entries()).map(([id, label]) => `<option value="${escapeHtml(id)}">${escapeHtml(label)}</option>`)).join('');
+  }
+  if (verseSel) {
+    const map = new Map();
+    docs.forEach(d => map.set(d.verse || 'sin-verso', getDocVerseLabel(d)));
+    verseSel.innerHTML = ['<option value="all">Todos los versos</option>']
+      .concat(Array.from(map.entries()).map(([id, label]) => `<option value="${escapeHtml(id)}">${escapeHtml(label)}</option>`)).join('');
+  }
+
+  ensureStoryDefaults(story);
+  const styleSummary = $('#autoBookStyleSummary');
+  if (styleSummary) {
+    const st = story.style || {};
+    styleSummary.textContent = st.reference || st.notes || st.sample
+      ? `Imitando: ${st.reference || 'la voz ya establecida en la obra'} · ${PERSON_LABELS[st.person || 'auto']} · registro ${REGISTER_LABELS[st.register || 'auto']} · fidelidad ${st.strength || 'alta'}.`
+      : 'Sin estilo definido — configúralo en “Configurar → Estilo y voz” para que la IA mantenga la personalidad de la obra.';
+  }
+
   $('#autoBookSources').value = story.rules || story.synopsis || '';
-  $('#autoBookChronology').value = 'Respetar orden cronológico estricto y coherencia absoluta con el Canon Absoluto priorizado.';
+  $('#autoBookChronology').value = story.chronology || 'Respetar orden cronológico estricto y coherencia absoluta con el Canon Absoluto priorizado.';
   $('#autoBookLogs').innerHTML = '<div class="muted">Listo para iniciar la redacción estructurada con Muse AI.</div>';
   $('#autoBookModalBackdrop').classList.add('active');
 });
@@ -2122,26 +3612,31 @@ $('#startAutoBookBtn').addEventListener('click', async () => {
   if (btn.disabled) return;
 
   const priorityDocId = $('#autoBookPrioritySourceSelect').value;
-  // RAG ligero 10/10: juntar TODO el canon primario
-  let canonBlocks = [];
-  if (story.attachedDocs && story.attachedDocs.length) {
-    const primaries = story.attachedDocs.filter(d => (d.priorityLevel|| (d.isPriority?'primary':'derived')) === 'primary');
-    if (priorityDocId) {
-      const sel = story.attachedDocs.find(d=>d.id===priorityDocId);
-      if (sel) canonBlocks.push(`[CANON ABSOLUTO — ${sanitizeTextForPrompt(sel.name)}]\n${sanitizeTextForPrompt(sel.content.slice(0,4000))}`);
-      primaries.filter(d=>d.id!==priorityDocId).forEach(d=> canonBlocks.push(`[CANON ABSOLUTO EXTRA — ${sanitizeTextForPrompt(d.name)}]\n${sanitizeTextForPrompt(d.content.slice(0,2000))}`));
-    } else {
-      canonBlocks = primaries.map(d=> `[CANON ABSOLUTO — ${sanitizeTextForPrompt(d.name)}]\n${sanitizeTextForPrompt(d.content.slice(0,3000))}`);
-    }
+  ensureStoryDefaults(story);
+
+  // Filtros de la generación: solo el sub-tipo / verso elegidos entran al contexto
+  const genSubtype = ($('#autoBookSubtypeFilter') || {}).value || 'all';
+  const genVerse = ($('#autoBookVerseFilter') || {}).value || 'all';
+  const scopedDocs = (story.attachedDocs || []).filter(d => {
+    if (genSubtype !== 'all' && (d.subtype || 'sin-clasificar') !== genSubtype) return false;
+    if (genVerse !== 'all' && (d.verse || 'sin-verso') !== genVerse) return false;
+    return true;
+  });
+  const scopedStory = { ...story, attachedDocs: scopedDocs };
+  if (genSubtype !== 'all' || genVerse !== 'all') {
+    // El documento marcado como prioritario nunca se pierde por el filtro
+    const forced = (story.attachedDocs || []).find(d => d.id === priorityDocId);
+    if (forced && !scopedDocs.some(d => d.id === forced.id)) scopedDocs.unshift(forced);
   }
-  let priorityContent = canonBlocks.join("\n\n");
-  if (!priorityContent) priorityContent = "[Sin Canon Absoluto definido — usa reglas base]";
 
   const sources = sanitizeTextForPrompt($('#autoBookSources').value.trim());
   const chronology = sanitizeTextForPrompt($('#autoBookChronology').value.trim());
-  const count = Math.min(10, Math.max(1, parseInt($('#autoBookCount').value) || 3));
+  const count = Math.min(50, Math.max(1, parseInt($('#autoBookCount').value) || 3));
   const tone = $('#autoBookTone').value;
   const logsEl = $('#autoBookLogs');
+  const targetWords = Math.min(4000, Math.max(300, parseInt(($('#autoBookLength') || {}).value) || 1200));
+  const planningEnabled = ($('#autoBookPlanning') || {}).checked !== false;
+  const hasApiKeyForRun = aiIsConfigured();
 
   const addLog = (msg) => {
     const div = document.createElement('div');
@@ -2167,65 +3662,155 @@ $('#startAutoBookBtn').addEventListener('click', async () => {
     const nextNum = story.chapters.length + 1;
     addLog(`Generando Capítulo ${nextNum} (Tono: ${tone})...`);
 
-    const prevChapters = story.chapters.slice(-2).map((c, idx) => `Cap ${story.chapters.length-2+idx+1}: "${sanitizeTextForPrompt(c.title)}" — ${sanitizeTextForPrompt(stripHtml(c.content).slice(0,900))}`).join("\n---\n");
-    const memoryBlock = prevChapters ? `MEMORIA DE CAPÍTULOS PREVIOS (respeta decisiones):\n${prevChapters}\n` : "Sin capítulos previos — inicio de obra.\n";
+    // --- Presupuesto adaptativo según la ventana real del modelo ---
+    const budget = computePromptBudget(DATA.settings.ai.model);
+    if (i === 0) {
+      addLog(`Modelo "${DATA.settings.ai.model}" — ventana ~${budget.windowTokens.toLocaleString('es-CL')} tokens · entrada ${budget.inputChars.toLocaleString('es-CL')} car. · salida ${budget.outputTokens.toLocaleString('es-CL')} tokens.`);
+    }
 
-    const systemPrompt = `Eres un escritor experto de fanfics y novelas, 10/10 en coherencia. Genera el Capítulo ${nextNum} de la obra "${sanitizeTextForPrompt(story.title)}".
-Género: ${sanitizeTextForPrompt(story.genre || 'Ficción')}
-Reglas y Lore Base (INQUEBRANTABLES): "${sanitizeTextForPrompt(story.rules || story.synopsis || 'N/A')}"
-Outline: "${outlineSnippet}"
-Personajes y Personalidades (respeta 100%): 
+    const memoryBlock = `MEMORIA NARRATIVA (respeta cada decisión ya tomada):\n${buildFullMemory(story, budget.memoryChars)}`;
+
+    // Aprovechamiento máximo de las fuentes: pasajes relevantes de TODOS los documentos
+    const focusQuery = [story.outline, story.synopsis, sources, chronology, stripHtml((story.chapters.slice(-1)[0] || {}).content || '')].join(' ');
+    const digest = buildSourceDigest(scopedStory, focusQuery, budget.sourcesChars);
+    const priorityContent = digest.text;
+    if (i === 0) {
+      addLog(`Contexto construido desde ${digest.used.length} fuente(s): ${digest.used.slice(0, 6).join(', ')}${digest.used.length > 6 ? '…' : ''}`);
+    }
+    const styleDirective = buildStyleDirective(story);
+    const styleAnchors = buildStyleAnchors(story, budget.styleChars);
+
+    // --- Bloque de contexto compartido por la escaleta y la redacción ---
+    const contextBlock = `Género: ${sanitizeTextForPrompt(story.genre || 'Ficción')}
+Sinopsis: ${sanitizeTextForPrompt(story.synopsis || 'N/A')}
+Reglas inquebrantables: ${sanitizeTextForPrompt(story.rules || 'N/A')}
+Lore base del mundo: ${sanitizeTextForPrompt(story.loreBase || 'No especificado')}
+Outline general: ${outlineSnippet}
+
+PERSONAJES (respeta su personalidad y sus límites de conocimiento):
 ${chars || 'No hay personajes definidos'}
+
+FUENTES DEL LIBRO — pasajes seleccionados por relevancia y jerarquía de canon:
 ${priorityContent}
-Fuentes Derivadas / Referencia: "${sources}"
-Reglas Cronológicas: "${chronology}"
+
+Material adicional del autor: ${sources || 'N/A'}
+Reglas cronológicas: ${sanitizeTextForPrompt(story.chronology || '')} ${chronology}
+
 ${memoryBlock}
-REGISTRO DE CONOCIMIENTO POR VARIANTE (no inventes acceso):
-${buildKnowledgeLedger(story)}
-INSTRUCCIONES DE COHERENCIA 10/10:
-- Da PRIORIDAD ABSOLUTA al Canon Absoluto sobre todo lo demás.
-- Trata cada variante como una identidad distinta: nunca mezcles personajes con el mismo nombre. Usa el identificador variante/cosmología como clave canónica.
-- Ningún personaje puede saber información que no haya presenciado, deducido o recibido, salvo omnisciencia declarada.
-- No resuelvas el conflicto principal instantáneamente: introduce escalada, obstáculos, coste, decisiones y consecuencias; conserva problemas abiertos para capítulos posteriores.
-- No otorgues nuevas transformaciones, técnicas, aliados o información sin preparación narrativa y evidencia.
-- NO contradigas decisiones de capítulos previos (muertes, giros, afiliaciones).
-- Mantén tono "${tone}" y voz del autor.
-- Si falta info, NO inventes lore que contradiga canon; indica "[No especificado en canon]".
-- Cita sutilmente fuentes como [Canon: Nombre] si usas dato clave.
-Escribe un capítulo completo, narrativo, detallado, de al menos 320 palabras en español.`;
+
+REGISTRO DE CONOCIMIENTO POR VARIANTE:
+${buildKnowledgeLedger(story)}`;
 
     let temp = 0.6; if (tone==='drama') temp=0.65; if (tone==='misterio') temp=0.55;
 
-    // 10/10: si no hay API key, usar mock offline coherente para demo y tests
-    const hasKey = DATA.settings.ai && DATA.settings.ai.apiKey && DATA.settings.ai.apiKey.trim().length > 10;
+    // --- Paso 1: escaleta previa (planificar antes de escribir) ---
+    let beat = null;
+    const wantsPlan = planningEnabled && hasApiKeyForRun;
+    if (wantsPlan) {
+      addLog(`Planificando escaleta del Capítulo ${nextNum}…`);
+      const planRes = await planChapterBeat(story, nextNum, tone, contextBlock, autoBookAbort.signal);
+      if (planRes.ok) {
+        beat = planRes.beat;
+        addLog(`Escaleta lista: "${String(beat.titulo || 'sin título').slice(0, 60)}" · ${(beat.escenas || []).length} escena(s).`);
+      } else {
+        addLog(`⚠ No se pudo planificar (${String(planRes.error).slice(0, 70)}…). Se escribe sin escaleta.`);
+      }
+    }
+    const beatBlock = beat ? `\n\n${formatBeatForPrompt(beat)}` : '';
+
+    // --- Paso 2: redacción ---
+    const systemPrompt = `Eres un novelista profesional que escribe en español. Tu trabajo es redactar el Capítulo ${nextNum} de la obra "${sanitizeTextForPrompt(story.title)}" respetando su canon y su voz.
+
+${contextBlock}
+
+${styleDirective}${styleAnchors ? '\n\n' + styleAnchors : ''}
+
+CÓMO ESCRIBIR ESTE CAPÍTULO:
+- El Canon Absoluto manda sobre cualquier otra fuente; el material derivado solo lo complementa.
+- Trata cada variante de personaje como una identidad separada, identificada por su cosmología.
+- Limita lo que sabe cada personaje a lo que ha presenciado, deducido o le han contado.
+- Haz avanzar el conflicto mediante obstáculos, decisiones y consecuencias, dejando hilos abiertos.
+- Justifica con antelación cualquier poder, aliado o información nueva.
+- Mantén intactas las decisiones de los capítulos previos: muertes, giros y afiliaciones.
+- Escribe con la voz descrita arriba; el enfoque "${tone}" matiza el contenido, nunca el estilo.
+- Integra datos concretos de las fuentes (nombres, lugares, objetos, reglas) reescritos con tu prosa.
+- Si el canon no cubre algo, resuélvelo con recursos narrativos que no lo contradigan.
+- Entrega únicamente la prosa del capítulo: sin título, sin encabezados, sin comentarios ni markdown.`;
+
+    const userPrompt = `Escribe ahora el Capítulo ${nextNum} completo de "${sanitizeTextForPrompt(story.title)}".${beatBlock}
+
+Requisitos de entrega:
+- Extensión: entre ${targetWords} y ${targetWords + 500} palabras.
+- Prosa continua en párrafos, con diálogo donde la escena lo pida.
+- Cierra el capítulo con el gancho planificado, en una frase completa.
+- Responde solo con el texto del capítulo.`;
+
+
+
+    // Sin API key usamos el generador local para que la demo siga funcionando.
     let generatedText = "";
     let usedMock = false;
+    let truncatedRun = false;
     try {
-      if (!hasKey) {
+      if (!hasApiKeyForRun) {
         usedMock = true;
-        addLog(` Sin API key — usando generador local coherente 10/10 (respeta canon y memoria) para demo.`);
+        addLog(`Sin API key — usando el generador local coherente (respeta canon y memoria).`);
         await new Promise(r=>setTimeout(r, 700)); // simula latencia
-        generatedText = mockGenerateChapterOffline(story, nextNum, tone, memoryBlock, priorityContent);
-        generatedText = sanitizeHtml(generatedText);
+        generatedText = sanitizeHtml(mockGenerateChapterOffline(story, nextNum, tone, memoryBlock, priorityContent));
       } else {
-        const res = await window.lorevinci.aiGenerate({
+        let res = await window.lorevinci.aiGenerate({
           baseUrl: DATA.settings.ai.baseUrl,
           apiKey: DATA.settings.ai.apiKey,
           model: DATA.settings.ai.model,
           messages: [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: `Escribe el Capítulo ${nextNum} completo. Respeta memoria y canon. Termina con gancho.` }
+            { role: 'user', content: userPrompt }
           ],
-          maxTokens: 1400,
+          maxTokens: budget.outputTokens,
           temperature: temp,
           signal: autoBookAbort.signal
         });
+
+        if (res.ok && res.usage && res.usage.totalTokens) {
+          addLog(`Tokens usados: ${res.usage.promptTokens || '?'} entrada + ${res.usage.completionTokens || '?'} salida.`);
+        }
+
+        // El modelo se quedó sin presupuesto a mitad de frase: continuamos el texto
+        // en lugar de guardar un capítulo cortado haciéndolo pasar por completo.
+        if (res.ok && res.truncated) {
+          addLog(`⚠ Capítulo ${nextNum} truncado por límite de tokens — solicitando continuación…`);
+          const partial = res.text.trim();
+          const contRes = await window.lorevinci.aiGenerate({
+            baseUrl: DATA.settings.ai.baseUrl,
+            apiKey: DATA.settings.ai.apiKey,
+            model: DATA.settings.ai.model,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+              { role: 'assistant', content: partial },
+              { role: 'user', content: 'Continúa exactamente desde donde quedó el texto, sin repetir nada de lo ya escrito y sin resumir. Cierra el capítulo con el gancho previsto en una frase completa.' }
+            ],
+            maxTokens: budget.outputTokens,
+            temperature: temp,
+            signal: autoBookAbort.signal
+          });
+          if (contRes.ok && contRes.text.trim()) {
+            const joiner = /[.!?…"»)\]]$/.test(partial.slice(-1)) ? '\n\n' : ' ';
+            res = { ok: true, text: partial + joiner + contRes.text.trim(), truncated: contRes.truncated };
+            addLog(contRes.truncated
+              ? `⚠ La continuación también se truncó; el capítulo puede quedar abierto.`
+              : `Continuación recibida: capítulo completado.`);
+            truncatedRun = Boolean(contRes.truncated);
+          } else {
+            truncatedRun = true;
+            addLog(`⚠ No se pudo continuar el capítulo truncado.`);
+          }
+        }
+
         if (!res.ok) {
-          if (res.error && res.error.toLowerCase().includes('abort')) { addLog(" Generación abortada."); break; }
-          // Fallback mock si falla API (ej: key inválida en demo)
-          addLog(`⚠ API falló (${res.error.slice(0,80)}…) → fallback mock local coherente.`);
-          generatedText = mockGenerateChapterOffline(story, nextNum, tone, memoryBlock, priorityContent);
-          generatedText = sanitizeHtml(generatedText);
+          if (res.error && res.error.toLowerCase().includes('abort')) { addLog("Generación abortada."); break; }
+          addLog(`⚠ La API falló (${String(res.error).slice(0,80)}…) → se usa el generador local.`);
+          generatedText = sanitizeHtml(mockGenerateChapterOffline(story, nextNum, tone, memoryBlock, priorityContent));
           usedMock = true;
         } else {
           generatedText = sanitizeHtml(res.text.trim());
@@ -2233,18 +3818,38 @@ Escribe un capítulo completo, narrativo, detallado, de al menos 320 palabras en
       }
 
       if (!generatedText || generatedText.length < 80) { addLog(`⚠ Capítulo ${nextNum} demasiado corto, descartado.`); continue; }
+
+      // --- Paso 3: auditoría del capítulo generado ---
+      const audit = auditChapterLocally(generatedText, story, beat);
+      audit.issues.forEach(issue => addLog(`${issue.level === 'error' ? '✕' : '⚠'} Revisión: ${issue.msg}`));
+      if (!audit.issues.length) addLog(`✓ Revisión sin incidencias (${audit.words} palabras).`);
+
+      // El título lo propone la escaleta; si no hay, se numera como antes.
+      const beatTitle = beat && beat.titulo ? String(beat.titulo).replace(/^cap[íi]tulo\s*\d+\s*[:\-–]?\s*/i, '').trim() : '';
+      const chapterTitle = beatTitle
+        ? `Capítulo ${nextNum}: ${beatTitle}`
+        : `Capítulo ${nextNum}${usedMock ? ' • Demo Local' : ''}`;
+
       const newCh = {
         id: uid('ch'),
-        title: `Capítulo ${nextNum}: Automático${usedMock ? ' • Demo Local' : ''}`,
-        content: `<p>${generatedText.replace(/\n\n/g, '</p><p>')}</p>`,
-        status: 'done'
+        title: chapterTitle,
+        content: sanitizeHtml(`<p>${generatedText.replace(/\n\n/g, '</p><p>')}</p>`),
+        status: 'done',
+        generation: {
+          model: usedMock ? 'local-mock' : DATA.settings.ai.model,
+          words: audit.words,
+          truncated: truncatedRun,
+          issues: audit.issues,
+          beat: beat || null,
+          sourcesUsed: digest.used,
+          generatedAt: Date.now()
+        }
       };
-      newCh.content = sanitizeHtml(newCh.content);
       story.chapters.push(newCh);
       story.updatedAt = Date.now();
       scheduleSave();
       renderChapterList();
-      addLog(` Capítulo ${nextNum} generado (${generatedText.length} chars) ${usedMock ? '[MOCK LOCAL 10/10]' : ''} — coherencia con memoria verificada.`);
+      addLog(`Capítulo ${nextNum} generado: ${audit.words} palabras${usedMock ? ' [local]' : ''}${truncatedRun ? ' ⚠ posiblemente incompleto' : ''}.`);
     } catch (err) {
       if (err && err.name === 'AbortError') { addLog(" Abortado."); break; }
       addLog(`Excepción: ${String(err).slice(0,200)}`);
@@ -2423,12 +4028,13 @@ Texto reciente:
       { role: 'system', content: systemPrompt },
       { role: 'user', content: promptText }
     ],
-    maxTokens: 600
+    maxTokens: Math.min(4000, Math.max(600, Math.floor(computePromptBudget(DATA.settings.ai.model).outputTokens / 2)))
   });
 
   if (res.ok) {
-    addMuseMessage('assistant', res.text.trim(), true);
-    $('#museStatus').textContent = 'Listo para tu próxima idea.';
+    const reply = res.text.trim() + (res.truncated ? '\n\n[Respuesta cortada por límite de tokens — pide "continúa" para el resto.]' : '');
+    addMuseMessage('assistant', reply, true);
+    $('#museStatus').textContent = res.truncated ? 'Respuesta truncada: pide continuar.' : 'Listo para tu próxima idea.';
   } else {
     addMuseMessage('assistant', `Aviso de conexión: ${res.error}`, false);
     $('#museStatus').textContent = 'Hubo un problema. Revisa tu configuración en Ajustes.';
@@ -3323,7 +4929,9 @@ async function initApp() {
     }
   }, 1400);
 
+  bindStoryConfigModal();
   applyProfileAndTheme();
+  renderSettings();
   updateOpenRouterUI();
   showView('home');
   setSaveStatus('saved');

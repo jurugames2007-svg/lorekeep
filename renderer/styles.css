@@ -1515,3 +1515,203 @@ body.has-wallpaper.wallpaper-no-overlay::before { background-image:var(--wallpap
   z-index: 30000 !important;
   background: var(--panel) !important;
 }
+
+/* ========================================================================
+   MULTI-CARGA DE PDFs, FILTROS DE FUENTES, CONFIGURACIÓN DE LIBRO Y API
+   ======================================================================== */
+
+/* ---- Zona de arrastre para múltiples PDFs ---- */
+.dropzone {
+  display: flex; align-items: center; gap: 10px;
+  border: 1.5px dashed var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 12.3px;
+  line-height: 1.45;
+  cursor: pointer;
+  background: var(--panel-2);
+  transition: border-color .15s ease, background .15s ease, color .15s ease;
+}
+.dropzone:hover { border-color: var(--accent); color: var(--text); }
+.dropzone.dz-active {
+  border-color: var(--accent);
+  background: rgba(129,140,248,0.10);
+  color: var(--text);
+}
+.dropzone svg { flex-shrink: 0; color: var(--accent); }
+.dropzone b { color: var(--text); }
+
+/* ---- Barra de progreso de carga por lotes ---- */
+.upload-progress {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.upload-progress .up-head {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 7px;
+}
+.upload-progress .up-track {
+  height: 6px; border-radius: 4px; background: var(--bg); overflow: hidden;
+}
+.upload-progress .up-fill {
+  height: 100%; width: 0%;
+  background: linear-gradient(90deg, var(--accent), #00f2fe);
+  transition: width .25s ease;
+}
+.upload-progress .up-log {
+  max-height: 132px; overflow-y: auto; margin-top: 8px;
+  font-family: ui-monospace, "Fira Code", monospace; font-size: 10.8px; line-height: 1.6;
+}
+.up-line { padding: 1px 0; }
+.up-ok { color: var(--success, #35d07f); }
+.up-warn { color: #ffb43c; }
+.up-error { color: var(--danger, #ff3b5c); }
+.up-info { color: var(--muted); }
+
+/* ---- Barra de filtros de fuentes ---- */
+.source-filter-bar {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 10px; margin-bottom: 8px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2);
+}
+.source-filter-bar input[type="search"] {
+  flex: 2 1 220px; margin: 0; min-width: 180px;
+}
+.source-filter-bar select { flex: 1 1 150px; margin: 0; min-width: 140px; font-size: 12px; }
+.source-filter-bar button { flex: 0 0 auto; }
+
+/* ---- Chips de clasificación (sub-tipo / verso) ---- */
+.tag-chip {
+  display: inline-flex; align-items: center;
+  font-size: 10.5px; font-weight: 600; letter-spacing: .2px;
+  padding: 2px 7px; border-radius: 20px; white-space: nowrap;
+  border: 1px solid transparent;
+}
+.tag-subtype {
+  background: rgba(0, 242, 254, 0.12);
+  color: #46d9ec;
+  border-color: rgba(0, 242, 254, 0.28);
+}
+.tag-verse {
+  background: rgba(186, 130, 255, 0.12);
+  color: #c19cff;
+  border-color: rgba(186, 130, 255, 0.28);
+}
+
+/* ---- Editor de clasificación dentro de la tarjeta de fuente ---- */
+.classify-box {
+  display: flex; gap: 10px; flex-wrap: wrap;
+  padding: 9px 10px; margin: 8px 0;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+}
+.classify-field { flex: 1 1 180px; display: flex; flex-direction: column; }
+.classify-field label {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .4px; color: var(--muted); margin-bottom: 4px;
+}
+.classify-field select,
+.classify-field input { margin: 0; font-size: 12px; padding: 5px 8px; }
+
+/* ---- Modal de configuración del libro ---- */
+.story-config-modal { width: 720px; max-width: 95vw; }
+.config-tabs {
+  display: flex; gap: 4px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--border); margin-bottom: 14px; padding-bottom: 2px;
+}
+.config-tab {
+  background: none; border: none; cursor: pointer;
+  padding: 8px 12px; font-size: 12.5px; font-weight: 600;
+  color: var(--muted); border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0; transition: color .13s ease, border-color .13s ease;
+}
+.config-tab:hover { color: var(--text); background: var(--panel-2); }
+.config-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.config-pane { display: none; max-height: 56vh; overflow-y: auto; padding-right: 4px; }
+.config-pane.active { display: block; }
+
+.cfg-cover-row { display: flex; gap: 16px; flex-wrap: wrap; }
+.cfg-cover-preview {
+  width: 168px; height: 240px; flex-shrink: 0;
+  border-radius: 10px; border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  text-align: center; color: var(--muted); font-size: 11.5px; padding: 10px;
+  box-shadow: var(--shadow-sm);
+}
+.cfg-cover-actions { flex: 1; min-width: 200px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.cfg-cover-actions button { width: auto; }
+
+.cfg-source-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 11px; margin-bottom: 7px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2);
+}
+.cfg-src-main { flex: 1; min-width: 0; }
+.cfg-source-row .source-filename {
+  font-size: 12.5px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ---- Panel de estado y verificación de la API ---- */
+.ai-status-panel {
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--panel-2); padding: 12px 14px;
+}
+.ai-status-head {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.ai-verify-steps { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.vstep {
+  display: grid; grid-template-columns: 18px 170px 1fr; gap: 8px; align-items: baseline;
+  font-size: 11.8px; padding: 6px 8px; border-radius: 7px; background: var(--bg);
+  border-left: 3px solid var(--border);
+}
+.vstep-ok { border-left-color: var(--success, #35d07f); }
+.vstep-fail { border-left-color: var(--danger, #ff3b5c); }
+.vstep-running { color: var(--muted); grid-template-columns: 1fr; }
+.vstep-icon { font-weight: 800; }
+.vstep-ok .vstep-icon { color: var(--success, #35d07f); }
+.vstep-fail .vstep-icon { color: var(--danger, #ff3b5c); }
+.vstep-label { font-weight: 700; color: var(--text); }
+.vstep-detail { color: var(--muted); word-break: break-word; }
+
+.input-with-action { display: flex; gap: 8px; align-items: center; }
+.input-with-action input { flex: 1; margin: 0; }
+.input-with-action button { flex: 0 0 auto; }
+
+.ai-privacy-note {
+  margin-top: 14px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); font-size: 11.8px; color: var(--muted); line-height: 1.55;
+}
+.ai-privacy-note b { color: var(--text); }
+.ai-privacy-note .link-btn { margin-left: 6px; }
+
+/* ---- Aviso ligero en el widget de Muse AI (sustituye al botón de auth) ---- */
+.muse-config-hint {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 6px 9px; margin-bottom: 6px;
+  border: 1px dashed var(--border); border-radius: 7px;
+  font-size: 11.5px; color: var(--muted); background: var(--panel-2);
+}
+.muse-config-hint .link-btn { font-size: 11.5px; white-space: nowrap; }
+
+@media (max-width: 860px) {
+  .vstep { grid-template-columns: 18px 1fr; }
+  .vstep-detail { grid-column: 2; }
+  .cfg-cover-preview { width: 130px; height: 186px; }
+}
+
+/* ---- Indicadores de auditoría de capítulos generados por IA ---- */
+.ch-flag {
+  display: inline-block; margin-left: 6px;
+  font-size: 9.5px; font-weight: 700; letter-spacing: .3px;
+  padding: 1px 6px; border-radius: 20px; vertical-align: 1px;
+}
+.ch-flag-ok { background: rgba(53,208,127,0.15); color: #35d07f; }
+.ch-flag-warn { background: rgba(255,180,60,0.16); color: #ffb43c; }
+.ch-flag-error { background: rgba(255,59,92,0.16); color: #ff3b5c; }

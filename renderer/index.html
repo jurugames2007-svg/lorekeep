@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.openai.com https://openrouter.ai https://*.openrouter.ai; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'none';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.openai.com https://openrouter.ai https://*.openrouter.ai; img-src 'self' data: blob:; script-src 'self' blob: 'wasm-unsafe-eval'; worker-src 'self' blob:; child-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'none';">
 <title>LoreVinci</title>
 <link rel="stylesheet" href="styles.css" />
 </head>
@@ -196,13 +196,48 @@
             <!-- Action buttons for active book -->
             <div class="nblm-action-bar" style="margin-bottom:16px;">
               <button class="btn-primary" id="addBookSourceBtn">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align:-2px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>Adjuntar PDF/Artículo a este Libro
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align:-2px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>Subir varios PDFs / artículos a este libro
               </button>
               <button class="btn-secondary" id="linkUniversalSourceBtn">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align:-2px;"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>Vincular del Repositorio Universal
               </button>
-              <input type="file" id="bookDocFileInput" accept=".pdf,.txt,.md,.json" style="display:none;" />
+              <input type="file" id="bookDocFileInput" accept=".pdf,.txt,.md,.json" multiple style="display:none;" />
             </div>
+
+            <!-- Barra de carga múltiple con progreso -->
+            <div id="uploadProgressBar" class="upload-progress" style="display:none;">
+              <div class="up-head"><span id="uploadProgressLabel">Procesando documentos…</span><span id="uploadProgressCount">0/0</span></div>
+              <div class="up-track"><div class="up-fill" id="uploadProgressFill"></div></div>
+              <div class="up-log" id="uploadProgressLog"></div>
+            </div>
+
+            <!-- Zona de arrastre para múltiples PDFs -->
+            <div class="dropzone" id="studioDropzone">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+              <span>Arrastra aquí <b>varios PDFs a la vez</b> — se extrae el texto real de cada uno y se deduplican automáticamente.</span>
+            </div>
+
+            <!-- Filtros de fuentes por historia, tipo y verso -->
+            <div class="source-filter-bar" id="sourceFilterBar">
+              <input type="search" id="srcFilterSearch" placeholder="Buscar en nombre o contenido de las fuentes..." />
+              <select id="srcFilterStory" title="Filtrar por historia a la que pertenece la fuente">
+                <option value="all">Todas las historias</option>
+              </select>
+              <select id="srcFilterSubtype" title="Filtrar por sub-tipo de historia">
+                <option value="all">Todos los sub-tipos</option>
+              </select>
+              <select id="srcFilterVerse" title="Filtrar por verso / cosmología / línea temporal">
+                <option value="all">Todos los versos</option>
+              </select>
+              <select id="srcFilterCanon" title="Filtrar por jerarquía de canon">
+                <option value="all">Toda la jerarquía</option>
+                <option value="primary">1. Canon Absoluto</option>
+                <option value="derived">2. Canon Derivado</option>
+                <option value="reference">3. Referencia Auxiliar</option>
+              </select>
+              <button class="btn-icon-subtle small" id="srcFilterReset" title="Limpiar filtros">Limpiar</button>
+            </div>
+            <div class="muted small" id="srcFilterSummary" style="margin-bottom:10px;"></div>
 
             <!-- Attached sources list for selected book -->
             <div id="nblmSourcesList" class="sources-list-container">
@@ -353,68 +388,78 @@
           </div>
         </div>
         <div class="card settings-card">
-          <h3>Muse AI (Asistente de Escritura & Conexión OpenRouter)</h3>
-          <p class="muted small" style="margin-bottom:14px;">LoreVinci es offline-first y no incluye servidores de IA de fábrica. Elige cómo deseas conectar tu motor creativo:</p>
+          <h3>Muse AI — Conexión y Verificación de la API</h3>
+          <p class="muted small" style="margin-bottom:14px;">LoreVinci es offline-first: la IA es tuya. Conecta cualquier proveedor compatible con OpenAI (OpenAI, OpenRouter, Groq, Ollama / LM Studio) y verifica que quede <b>operativo</b> aquí mismo.</p>
 
-          <!-- OPCIÓN A: INICIAR SESIÓN CON GOOGLE (OPENROUTER OAUTH PKCE) -->
-          <div class="openrouter-oauth-box" style="background:var(--bg-alt); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:18px;">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
-              <div>
-                <b style="font-size:14px; color:var(--text); display:block; margin-bottom:3px;">Opción 1: Conexión Rápida y Segura vía OpenRouter</b>
-                <span class="muted small">El acceso con Google requiere configurar un Client ID OAuth de Google para esta instalación. El inicio de sesión no sustituye la API key de OpenRouter.</span>
-              </div>
-              <button class="btn-google-auth" id="googleAuthBtn" title="Configurar Google OAuth / API key de OpenRouter">
-                <svg width="18" height="18" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"></path>
-                  <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.73-2.46 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.15C3.32 21.44 7.37 24 12 24Z"></path>
-                  <path fill="#FBBC05" d="M5.28 14.24A7.19 7.19 0 0 1 4.9 12c0-.78.13-1.54.38-2.24V6.61H1.29A11.96 11.96 0 0 0 0 12c0 2.93 1.1 5.6 2.92 7.64l3.88-3.15-.52-2.25Z"></path>
-                  <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.37 0 3.32 2.56 1.29 6.61l3.99 3.15c.95-2.85 3.6-4.96 6.72-4.96Z"></path>
-                </svg>
-                <span>Abrir OpenRouter</span>
-              </button>
+          <!-- ESTADO GLOBAL DE LA CONEXIÓN -->
+          <div class="ai-status-panel" id="aiStatusPanel">
+            <div class="ai-status-head">
+              <span id="aiStatusBadge" class="canon-badge canon-reference">Estado: sin verificar</span>
+              <span class="muted small" id="aiStatusHint">Introduce tus datos y pulsa “Verificar y activar API”.</span>
             </div>
-
-            <!-- Privacidad y Almacenamiento -->
-            <div style="background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:12px; font-size:12px;">
-              <div style="font-weight:700; color:var(--accent); margin-bottom:4px;">Garantía de Privacidad (Cero Servidores Intermedios):</div>
-              <ul style="margin:0 0 8px 18px; padding:0; color:var(--muted); line-height:1.5;">
-                <li>La clave <b>NUNCA se guarda en servidores de LoreVinci</b> ni se comparte con terceros. Viaja directo desde tu equipo a OpenRouter.</li>
-                <li><b>Modo por defecto "Solo sesión":</b> la clave vive en memoria temporal y se elimina automáticamente al cerrar la app.</li>
-              </ul>
-              <div style="display:flex; align-items:center; gap:8px; margin-top:6px;">
-                <input type="checkbox" id="openrouterRememberCheck" style="width:auto; margin:0;" />
-                <label for="openrouterRememberCheck" style="color:var(--text); font-weight:600; cursor:pointer;">Recordar conexión (guardar clave cifrada en mi dispositivo local)</label>
-              </div>
-            </div>
-
-            <!-- Estado de la Conexión y Botones de Revocación -->
-            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-              <span id="openrouterStatusBadge" class="canon-badge canon-reference">Estado: API key no configurada</span>
-              <div class="row-gap" style="margin:0; gap:8px;">
-                <button class="btn-secondary small" id="openrouterMyKeysBtn" style="display:none;">Mis claves en OpenRouter ↗</button>
-                <button class="btn-danger small" id="openrouterLogoutBtn" style="display:none;">Cerrar sesión / Desactivar IA</button>
-              </div>
-            </div>
+            <div id="aiVerifySteps" class="ai-verify-steps"></div>
           </div>
 
-          <!-- OPCIÓN B: API KEY PROPIA O SERVIDOR LOCAL (OPENAI, GROQ, OLLAMA...) -->
-          <div style="border-top:1px solid var(--border); padding-top:14px;">
-            <b style="font-size:13.5px; color:var(--text); display:block; margin-bottom:6px;">Opción 2: API Key Manual o Servidor Local (OpenAI, Groq, Ollama / LM Studio)</b>
+          <div style="border-top:1px solid var(--border); padding-top:14px; margin-top:14px;">
+            <label>Proveedor (rellena la URL base por ti)</label>
+            <select id="aiProviderPreset">
+              <option value="custom">Personalizado / Otro</option>
+              <option value="openai">OpenAI — https://api.openai.com/v1</option>
+              <option value="openrouter">OpenRouter — https://openrouter.ai/api/v1</option>
+              <option value="groq">Groq — https://api.groq.com/openai/v1</option>
+              <option value="ollama">Ollama local — http://localhost:11434/v1</option>
+              <option value="lmstudio">LM Studio local — http://localhost:1234/v1</option>
+            </select>
+
             <label>URL Base de la API</label>
             <input type="text" id="aiBaseUrl" placeholder="https://api.openai.com/v1 o http://localhost:11434/v1" />
-            <label>API Key (Se almacena únicamente de forma local)</label>
-            <input type="password" id="aiApiKey" placeholder="sk-..." />
-            <div class="row-gap" style="margin-top:10px;">
-              <button class="btn-primary" id="fetchModelsBtn">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align:-2px;"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>Detectar Modelos Disponibles
-              </button>
-              <button class="btn-secondary" id="saveAiBtn">Guardar Ajustes Manuales</button>
+
+            <label>API Key (se almacena únicamente en tu equipo)</label>
+            <div class="input-with-action">
+              <input type="password" id="aiApiKey" placeholder="sk-..." />
+              <button class="btn-icon-subtle" id="toggleApiKeyVisibility" type="button" title="Mostrar / ocultar la clave">Ver</button>
             </div>
-            <label style="margin-top:14px;">Modelo Seleccionado (Optimizado automáticamente para contexto y lore)</label>
+
+            <label style="margin-top:14px;">Modelo seleccionado</label>
             <select id="aiModelSelect">
               <option value="gpt-4o-mini">gpt-4o-mini (Default)</option>
             </select>
-            <div id="aiTestResult" class="muted" style="margin-top:8px;"></div>
+
+            <div class="row-gap" style="margin-top:12px; flex-wrap:wrap;">
+              <button class="btn-primary" id="verifyAiBtn" title="Comprueba credencial, modelo y generación real de texto">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align:-2px;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>Verificar y activar API
+              </button>
+              <button class="btn-secondary" id="fetchModelsBtn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align:-2px;"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>Detectar modelos
+              </button>
+              <button class="btn-secondary" id="saveAiBtn">Guardar ajustes</button>
+              <button class="btn-danger small" id="aiDisconnectBtn" style="display:none;">Desconectar y borrar clave</button>
+            </div>
+            <div id="aiTestResult" class="muted small" style="margin-top:10px;"></div>
+
+            <div class="ai-privacy-note">
+              <b>Privacidad:</b> la clave nunca sale de tu equipo salvo hacia el proveedor que tú elijas. No hay servidores intermedios de LoreVinci.
+              <button class="link-btn" id="openrouterMyKeysBtn" type="button">Obtener una API key en OpenRouter ↗</button>
+            </div>
+          </div>
+        </div>
+        <div class="card settings-card">
+          <h3>OCR local para PDFs escaneados</h3>
+          <p class="muted small" style="margin-bottom:12px;">Cuando un PDF no tiene capa de texto, LoreVinci lo rasteriza y lo lee con Tesseract incluido en la app. No se envía nada a internet.</p>
+          <div class="row-gap" style="gap:12px; flex-wrap:wrap; align-items:flex-end;">
+            <label style="display:flex; align-items:center; gap:8px; font-weight:600; color:var(--text); cursor:pointer; margin:0;">
+              <input type="checkbox" id="ocrEnabledCheck" checked style="width:auto; margin:0;" />
+              Aplicar OCR automáticamente al subir
+            </label>
+            <div style="min-width:190px;">
+              <label>Idioma del OCR</label>
+              <select id="ocrLangSelect">
+                <option value="spa">Español</option>
+                <option value="eng">Inglés</option>
+                <option value="spa+eng">Español + Inglés</option>
+              </select>
+            </div>
+            <span class="muted small" id="ocrStatusText" style="max-width:260px; line-height:1.4;"></span>
           </div>
         </div>
         <div class="card settings-card">
@@ -440,6 +485,9 @@
             <div id="chapterList" class="chapter-list"></div>
             <button class="btn-secondary small" id="openAutoBookModalBtn" style="margin-top:10px; width:100%; display:inline-flex; align-items:center; justify-content:center; gap:6px;">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>Crear libro automático
+            </button>
+            <button class="btn-secondary small" id="editorConfigureBtn" style="margin-top:8px; width:100%; display:inline-flex; align-items:center; justify-content:center; gap:6px;" title="Editar título, portada, sinopsis, reglas, lore base y estilo">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>Configurar libro
             </button>
             <button class="link-btn back-link" data-view="stories">← Volver a Mis Historias</button>
           </div>
@@ -515,9 +563,9 @@
               </div>
               <div class="upload-action-bar">
                 <button class="btn-primary small w-100" id="triggerAttachDocBtn">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align:-2px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>Adjuntar PDF o Artículo
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align:-2px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>Subir varios PDFs o artículos
                 </button>
-                <input type="file" id="attachDocFile" accept=".pdf,.txt,.md,.json" style="display:none;" />
+                <input type="file" id="attachDocFile" accept=".pdf,.txt,.md,.json" multiple style="display:none;" />
               </div>
               <div id="storyDocsList" class="sources-list-container"></div>
             </div>
@@ -544,16 +592,9 @@
           <div class="muse-body" id="museBody">
             <div class="muse-status muted" id="museStatus">Listo. Pídeme que sugiera una acción, describa una escena o continúe el capítulo.</div>
             <div id="museMessages" class="muse-messages"></div>
-            <div id="museGoogleAuthWidgetRow" style="margin-bottom:4px;">
-              <button class="btn-google-auth" id="museWidgetGoogleAuthBtn" style="width:100%; justify-content:center; font-size:12px; padding:6px 10px;">
-                <svg width="15" height="15" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"></path>
-                  <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.73-2.46 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.15C3.32 21.44 7.37 24 12 24Z"></path>
-                  <path fill="#FBBC05" d="M5.28 14.24A7.19 7.19 0 0 1 4.9 12c0-.78.13-1.54.38-2.24V6.61H1.29A11.96 11.96 0 0 0 0 12c0 2.93 1.1 5.6 2.92 7.64l3.88-3.15-.52-2.25Z"></path>
-                  <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.37 0 3.32 2.56 1.29 6.61l3.99 3.15c.95-2.85 3.6-4.96 6.72-4.96Z"></path>
-                </svg>
-                <span>Configurar Google OAuth / API key de OpenRouter</span>
-              </button>
+            <div id="museAiUnconfiguredRow" class="muse-config-hint" style="display:none;">
+              <span>Muse AI no está conectado todavía.</span>
+              <button class="link-btn" id="museOpenSettingsBtn">Configurar en Ajustes →</button>
             </div>
             <div class="muse-quick">
               <button data-prompt="Sugiere la próxima acción de un personaje en esta escena.">Sugerir acción de personaje</button>
@@ -593,16 +634,36 @@
             <option value="">Usar reglas base y sinopsis general</option>
           </select>
 
+          <div style="display:flex; gap:10px;">
+            <div style="flex:1;">
+              <label>Filtrar fuentes por sub-tipo</label>
+              <select id="autoBookSubtypeFilter"><option value="all">Todos los sub-tipos</option></select>
+            </div>
+            <div style="flex:1;">
+              <label>Filtrar fuentes por verso</label>
+              <select id="autoBookVerseFilter"><option value="all">Todos los versos</option></select>
+            </div>
+          </div>
+
+          <div class="side-panel-info-box" style="margin:10px 0;">
+            <span class="info-label">Voz de la obra aplicada</span>
+            <p class="muted small" style="margin:4px 0 0 0;" id="autoBookStyleSummary">Sin estilo definido — configúralo en “Configurar → Estilo y voz”.</p>
+          </div>
+
           <label>Material de referencia adicional (Derivados)</label>
           <textarea id="autoBookSources" rows="3" placeholder="Pega aquí resúmenes, fragmentos de fuentes o lore complementario..."></textarea>
           
           <label>Reglas cronológicas y de continuidad</label>
           <textarea id="autoBookChronology" rows="2" placeholder="Ej: Mantener orden cronológico estricto, respetar nivel de poder, no contradecir fuentes..."></textarea>
           
-          <div style="display:flex; gap:10px;">
-            <div style="flex:1;">
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:120px;">
               <label>Capítulos a generar</label>
-              <input type="number" id="autoBookCount" value="3" min="1" max="10" />
+              <input type="number" id="autoBookCount" value="3" min="1" max="50" />
+            </div>
+            <div style="flex:1; min-width:140px;">
+              <label>Palabras por capítulo</label>
+              <input type="number" id="autoBookLength" value="1200" min="300" max="4000" step="100" />
             </div>
             <div style="flex:1;">
               <label>Enfoque narrativo</label>
@@ -614,6 +675,11 @@
               </select>
             </div>
           </div>
+
+          <label class="autobook-check" style="display:flex; align-items:center; gap:8px; margin-top:10px; font-weight:600; color:var(--text); cursor:pointer;">
+            <input type="checkbox" id="autoBookPlanning" checked style="width:auto; margin:0;" />
+            Planificar una escaleta antes de escribir (más coherente, usa una llamada extra)
+          </label>
 
           <div id="autoBookLogs" class="notes-list" style="margin-top:12px; max-height:140px; background:var(--bg); padding:8px; border-radius:8px; font-family:monospace; font-size:11px;">
             <div class="muted">Esperando inicio de generación automática...</div>
@@ -672,12 +738,134 @@
           <textarea id="newStorySynopsis" rows="3" placeholder="De qué trata tu historia..."></textarea>
           <label>Reglas y Lore Base</label>
           <textarea id="newStoryRules" rows="2" placeholder="Leyes del universo, restricciones del fanfic..."></textarea>
+          <label>Obra o autor cuyo estilo se debe imitar</label>
+          <input type="text" id="newStoryStyleRef" placeholder="Ej: Dragon Ball (Toriyama), Brandon Sanderson, One Piece..." />
+          <label>Notas de voz y personalidad de la escritura</label>
+          <textarea id="newStyleNotes" rows="2" placeholder="Ej: narración en 3ª persona limitada, humor seco, frases cortas en la acción..."></textarea>
           <label>Imagen de portada (Archivo de imagen)</label>
           <input type="file" id="newStoryCoverFile" accept="image/*" />
           <label>Color de respaldo (si no hay imagen)</label>
           <input type="color" id="newStoryColor" value="#c81e3a" />
           <div class="row-gap" style="margin-top:14px;">
             <button class="btn-primary" id="createStoryBtn">Crear historia</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- STORY CONFIGURATION MODAL (parámetros iniciales del libro, editables siempre) -->
+      <div class="modal-backdrop" id="storyConfigModalBackdrop" role="dialog" aria-modal="true" aria-label="Configurar libro">
+        <div class="modal story-config-modal">
+          <div class="modal-head">
+            <div>
+              <h3 style="margin-bottom:3px;">Configurar libro</h3>
+              <span class="muted small" id="storyConfigSubtitle">Ajusta los parámetros con los que creaste la obra.</span>
+            </div>
+            <button class="icon-btn" id="closeStoryConfigModal" title="Cerrar">✕</button>
+          </div>
+
+          <div class="config-tabs" id="storyConfigTabs">
+            <button class="config-tab active" data-ctab="identity">Identidad</button>
+            <button class="config-tab" data-ctab="cover">Portada</button>
+            <button class="config-tab" data-ctab="lore">Lore y reglas</button>
+            <button class="config-tab" data-ctab="style">Estilo y voz</button>
+            <button class="config-tab" data-ctab="sources">Fuentes</button>
+          </div>
+
+          <div class="config-pane active" data-cpane="identity">
+            <label>Título</label>
+            <input type="text" id="cfgTitle" placeholder="Título de la obra" />
+            <label>Género</label>
+            <input type="text" id="cfgGenre" placeholder="Fantasía, Ciencia ficción, Shonen..." />
+            <label>Sinopsis</label>
+            <textarea id="cfgSynopsis" rows="4" placeholder="De qué trata tu historia..."></textarea>
+            <label>Outline / Esquema general</label>
+            <textarea id="cfgOutline" rows="4" placeholder="Cap 1 ... Cap 2 ... arco general"></textarea>
+          </div>
+
+          <div class="config-pane" data-cpane="cover">
+            <div class="cfg-cover-row">
+              <div class="cfg-cover-preview" id="cfgCoverPreview"><span class="cover-placeholder-text">Sin portada</span></div>
+              <div class="cfg-cover-actions">
+                <button class="btn-secondary small" id="cfgUploadCoverBtn">Subir imagen de portada</button>
+                <button class="btn-icon-subtle small" id="cfgRemoveCoverBtn">Quitar portada</button>
+                <input type="file" id="cfgCoverInput" accept="image/*" style="display:none;" />
+                <label style="margin-top:12px;">Color de respaldo</label>
+                <input type="color" id="cfgColor" value="#c81e3a" />
+                <p class="muted small" style="margin-top:10px;">La portada se usa en la biblioteca, en el Studio de fuentes y en la exportación del libro.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="config-pane" data-cpane="lore">
+            <label>Reglas y Lore Base (inquebrantables)</label>
+            <textarea id="cfgRules" rows="5" placeholder="Leyes del universo, límites de poder, restricciones..."></textarea>
+            <label>Lore base extendido (contexto del mundo)</label>
+            <textarea id="cfgLoreBase" rows="5" placeholder="Geografía, facciones, historia previa, tecnología, magia..."></textarea>
+            <label>Reglas cronológicas y de continuidad</label>
+            <textarea id="cfgChronology" rows="3" placeholder="Ej: orden cronológico estricto, no contradecir el canon absoluto..."></textarea>
+          </div>
+
+          <div class="config-pane" data-cpane="style">
+            <div class="side-panel-info-box" style="margin-bottom:12px;">
+              <span class="info-label">Personalidad y escritura de la obra</span>
+              <p class="muted small" style="margin:4px 0 0 0;">Muse AI imitará esta voz en cada capítulo generado, además de respetar el canon.</p>
+            </div>
+            <label>Obra o autor de referencia a imitar</label>
+            <input type="text" id="cfgStyleRef" placeholder="Ej: Dragon Ball (Akira Toriyama), Sanderson, Ursula K. Le Guin..." />
+            <label>Notas de voz narrativa</label>
+            <textarea id="cfgStyleNotes" rows="4" placeholder="Persona narrativa, ritmo, humor, densidad descriptiva, tics de diálogo..."></textarea>
+            <div class="row-gap" style="gap:12px; flex-wrap:wrap;">
+              <div style="flex:1; min-width:170px;">
+                <label>Persona narrativa</label>
+                <select id="cfgNarrativePerson">
+                  <option value="auto">Automática (según la obra)</option>
+                  <option value="first">Primera persona</option>
+                  <option value="third-limited">Tercera limitada</option>
+                  <option value="third-omniscient">Tercera omnisciente</option>
+                </select>
+              </div>
+              <div style="flex:1; min-width:170px;">
+                <label>Registro / tono base</label>
+                <select id="cfgToneRegister">
+                  <option value="auto">Automático</option>
+                  <option value="literario">Literario y descriptivo</option>
+                  <option value="agil">Ágil y directo</option>
+                  <option value="humoristico">Humorístico</option>
+                  <option value="oscuro">Oscuro y crudo</option>
+                  <option value="epico">Épico y solemne</option>
+                </select>
+              </div>
+              <div style="flex:1; min-width:170px;">
+                <label>Fidelidad al estilo</label>
+                <select id="cfgStyleStrength">
+                  <option value="alta">Alta — imitar de cerca</option>
+                  <option value="media">Media — inspirarse</option>
+                  <option value="baja">Baja — voz propia</option>
+                </select>
+              </div>
+            </div>
+            <div class="row-gap" style="margin-top:12px;">
+              <button class="btn-secondary small" id="cfgExtractStyleBtn" title="Analiza los capítulos escritos y las fuentes para deducir la voz de la obra">Extraer estilo de lo ya escrito</button>
+            </div>
+            <label style="margin-top:14px;">Muestra de estilo (fragmento canónico que define la voz)</label>
+            <textarea id="cfgStyleSample" rows="5" placeholder="Pega aquí un fragmento representativo de la obra original: Muse AI lo usará como patrón de voz."></textarea>
+          </div>
+
+          <div class="config-pane" data-cpane="sources">
+            <p class="muted small">Fuentes adjuntas a este libro. Súbelas también desde el Studio de Fuentes o el panel del editor.</p>
+            <div class="upload-action-bar" style="margin-bottom:12px;">
+              <button class="btn-primary small" id="cfgAttachDocsBtn">Adjuntar varios PDFs / documentos</button>
+              <input type="file" id="cfgDocsInput" accept=".pdf,.txt,.md,.json" multiple style="display:none;" />
+            </div>
+            <div id="cfgSourcesList" class="sources-list-container"></div>
+          </div>
+
+          <div class="row-gap" style="justify-content:space-between; margin-top:16px; border-top:1px solid var(--border); padding-top:14px;">
+            <button class="btn-secondary" id="cfgOpenEditorBtn">Abrir en el editor</button>
+            <div class="row-gap" style="margin:0; gap:8px;">
+              <button class="btn-secondary" id="cfgCancelBtn">Cerrar</button>
+              <button class="btn-primary" id="cfgSaveBtn">Guardar configuración</button>
+            </div>
           </div>
         </div>
       </div>
@@ -976,6 +1164,8 @@
     </div>
   </div>
 
+  <script src="vendor/pdfjs/pdf.min.js"></script>
+  <script src="vendor/tesseract/tesseract.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
