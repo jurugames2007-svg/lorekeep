@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('lorevinci', {
   aiGenerate: invokeAiGenerate,
   aiModels: (payload) => ipcRenderer.invoke('ai:models', payload),
   aiVerify: (payload) => ipcRenderer.invoke('ai:verify', payload),
+  omniRouteStatus: (payload) => ipcRenderer.invoke('ai:omnirouteStatus', payload),
   webSearch: (payload) => ipcRenderer.invoke('web:search', payload),
   webFetch: (payload) => ipcRenderer.invoke('web:fetch', payload),
   isDesktop: true

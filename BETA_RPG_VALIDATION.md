@@ -8,7 +8,7 @@
 
 **APROBADO para los fallos reproducibles informados por el beta tester.**
 
-La validación automatizada completa ejecuta **378 comprobaciones en 12 suites**. La batería adversarial específica reproduce las frases y situaciones del reporte, usa fuentes hostiles, respuestas corruptas y sesiones largas. El resultado actual es **70/70** en esa batería y **378/378** en el conjunto total.
+La validación automatizada completa ejecuta **409 comprobaciones en 14 suites**. La batería adversarial específica reproduce las frases y situaciones del reporte, usa fuentes hostiles, respuestas corruptas y sesiones largas. El resultado actual es **70/70** en esa batería y **409/409** en el conjunto total.
 
 Esto no significa que cualquier modelo externo sea infalible. Significa que una respuesta defectuosa ya no debe llegar sin control al manuscrito o a la partida: se valida, se intenta reparar una vez y, si sigue siendo insegura, se descarta y se reemplaza por una resolución local trazable.
 
@@ -44,6 +44,7 @@ Esto no significa que cualquier modelo externo sea infalible. Significa que una 
 | BETA-26 | Sugerencias en inglés/no insertables | Idioma por obra y campaña; filtro meta independiente del idioma; párrafo final insertable por defecto | Suite `language` 14/14 | ✅ |
 | BETA-27 | Principiante sin saber escribir o dirigir | Sesión cero guiada, roles Jugador/Director, Mentor y panel de facciones, misiones, inventario, relojes, relaciones, pistas y heridas | Suite `campaign-systems` 21/21 | ✅ |
 | BETA-28 | Controles ocultos o layout roto | Modales flexibles, cabecera responsive, dashboard 4/2/1 columnas, nombres accesibles y reducción de movimiento | Suite `visual` 14/14 | ✅ |
+| BETA-29 | Un solo proveedor o cuota bloquea Muse | OmniRoute opcional con `auto/*`, perfiles por tarea, fallback externo y telemetría de proveedor/modelo/coste | Suite `omniroute` 16/16 | ✅ |
 
 ## Cobertura mecánica del reglamento entregado
 
@@ -128,7 +129,8 @@ core                    49/49
  language                14/14
  campaign-systems        21/21
  visual                  14/14
- TOTAL                  392/392
+ omniroute               17/17
+ TOTAL                  409/409
 ```
 
 También se comprueba:

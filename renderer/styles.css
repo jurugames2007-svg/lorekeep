@@ -1870,3 +1870,18 @@ body.has-wallpaper.wallpaper-no-overlay::before { background-image:var(--wallpap
 .world-command-help code { color:#7dd3fc; }
 @media(max-width:900px){.world-dashboard-grid{grid-template-columns:repeat(2,1fr)}.world-tool-form{grid-template-columns:1fr 1fr}.world-tool-form button{grid-column:1/-1}}
 @media(max-width:560px){.world-dashboard-grid{grid-template-columns:1fr}.world-tool-form{grid-template-columns:1fr}.world-tool-form button{grid-column:auto}.session-zero-progress{grid-template-columns:repeat(2,1fr)}}
+
+/* ========== OMNIROUTE ROUTER ========== */
+.omniroute-panel { margin-top:14px; padding:13px; border:1px solid rgba(96,165,250,.28); border-radius:11px; background:linear-gradient(145deg,rgba(37,99,235,.08),rgba(139,92,246,.055)); }
+.omniroute-head { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:7px; }
+.omniroute-head>div { display:flex; align-items:center; gap:8px; }
+.omniroute-mark { width:25px;height:25px;display:grid;place-items:center;border-radius:8px;background:linear-gradient(145deg,#2563eb,#8b5cf6);color:#fff;font-weight:900;box-shadow:0 4px 14px rgba(37,99,235,.28); }
+.omniroute-panel code { color:#93c5fd; }
+.omniroute-status { margin:9px 0; padding:7px 8px; border-radius:7px; background:var(--bg); border:1px solid var(--border); }
+.omniroute-routing-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; margin-top:8px; }
+.omniroute-routing-grid label { margin:0; padding:7px; border:1px solid var(--border); border-radius:7px; background:rgba(10,12,17,.42); }
+.omniroute-routing-grid select { margin:4px 0 0; padding:5px 7px; font-size:11px; }
+.omniroute-route { margin-top:8px; color:var(--text-soft); font-size:10.8px; line-height:1.45; }
+.omniroute-warning { margin-top:8px; color:#d6b780; font-size:10.3px; line-height:1.45; }
+@media(max-width:800px){.omniroute-routing-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:520px){.omniroute-routing-grid{grid-template-columns:1fr}.omniroute-head{align-items:flex-start}.omniroute-head>div{flex-wrap:wrap}}

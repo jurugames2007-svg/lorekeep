@@ -58,6 +58,7 @@ if (!window.lorevinci) {
     },
     openExternal: async (url) => { window.open(url, '_blank'); },
     aiGenerate: async () => ({ ok: false, error: 'IA solo disponible en la app de escritorio (o configura CORS en web)' }),
+    omniRouteStatus: async () => ({ ok:false, error:'La detección de OmniRoute requiere la aplicación de escritorio.' }),
     webSearch: async ({ query }) => {
       try {
         const res = await fetch(`https://es.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*&srlimit=10`);
@@ -1160,7 +1161,7 @@ Devuelve exactamente este JSON:
   "continuidad": ["decisión previa que este capítulo respeta", "..."]
 }`;
 
-  const res = await window.lorevinci.aiGenerate({
+  const res = await generateWithRouting('planning', {
     baseUrl: DATA.settings.ai.baseUrl,
     apiKey: DATA.settings.ai.apiKey,
     model: DATA.settings.ai.model,
@@ -2522,7 +2523,7 @@ if (triggerNblmSummaryBtn) {
     summaryEl.textContent = 'Muse AI está analizando y resumiendo la fuente...';
 
     const systemPrompt = `Eres un investigador literario experto estilo NotebookLM en LoreVinci. Sintetiza los puntos clave, reglas del lore y personajes importantes de la fuente adjunta por el autor en 3 o 4 viñetas concisas en español.`;
-    const res = await window.lorevinci.aiGenerate({
+    const res = await generateWithRouting('research', {
       baseUrl: DATA.settings.ai.baseUrl,
       apiKey: DATA.settings.ai.apiKey,
       model: DATA.settings.ai.model,
@@ -2669,7 +2670,39 @@ $('#attachDocFile').addEventListener('change', async (e) => {
 });
 
 
+function ensureOmniRouteSettings() {
+  const ai = DATA.settings.ai = DATA.settings.ai || {};
+  ai.omniroute = ai.omniroute && typeof ai.omniroute === 'object' ? ai.omniroute : {};
+  ai.omniroute.enabled = Boolean(ai.omniroute.enabled || detectProviderPreset(ai.baseUrl) === 'omniroute');
+  ai.omniroute.baseUrl = ai.omniroute.baseUrl || 'http://localhost:20128/v1';
+  ai.omniroute.compression = ['off','default','engine:rtk'].includes(ai.omniroute.compression) ? ai.omniroute.compression : 'off';
+  ai.omniroute.routes = { rpg:'auto/smart', writing:'auto/smart', muse:'auto/fast', planning:'auto', research:'auto/cheap', repair:'auto/fast', ...(ai.omniroute.routes || {}) };
+  return ai.omniroute;
+}
+
+function renderOmniRouteSettings() {
+  const omni = ensureOmniRouteSettings();
+  $('#omniRouteRpg').value = omni.routes.rpg;
+  $('#omniRouteWriting').value = omni.routes.writing;
+  $('#omniRouteMuse').value = omni.routes.muse;
+  $('#omniRoutePlanning').value = omni.routes.planning;
+  $('#omniRouteResearch').value = omni.routes.research;
+  $('#omniCompression').value = omni.compression;
+  const status = omni.lastStatus;
+  const badge = $('#omnirouteStatusBadge');
+  if (status?.ok) {
+    badge.className = 'canon-badge canon-primary'; badge.textContent = `Operativo${status.version ? ' · v'+status.version : ''}`;
+    $('#omnirouteStatusText').textContent = `${status.modelCount} modelos detectados · ${status.latencyMs} ms · endpoint ${omni.baseUrl}`;
+  } else {
+    badge.className = 'canon-badge canon-reference'; badge.textContent = omni.enabled ? 'Configurado, no detectado' : 'No detectado';
+    $('#omnirouteStatusText').textContent = status?.error || `Esperando detección en ${omni.baseUrl}.`;
+  }
+  const route = aiRouteSummary(DATA.settings.ai.lastRoute);
+  $('#omnirouteLastRoute').textContent = route || 'Sin rutas registradas todavía.';
+}
+
 function renderSettings() {
+  ensureOmniRouteSettings();
   $('#authorNameInput').value = DATA.settings.authorName || '';
   $('#aiBaseUrl').value = DATA.settings.ai.baseUrl || '';
   $('#aiApiKey').value = DATA.settings.ai.apiKey || '';
@@ -2696,11 +2729,13 @@ function renderSettings() {
   applyUiScale();
   applyDensity();
   updateOpenRouterUI();
+  renderOmniRouteSettings();
 }
 
 // ============ CONEXIÓN Y VERIFICACIÓN DE LA API DE MUSE AI ============
 
 const AI_PROVIDER_PRESETS = {
+  omniroute: { baseUrl: 'http://localhost:20128/v1', model: 'auto' },
   openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
   openrouter: { baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' },
   groq: { baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile' },
@@ -2710,12 +2745,42 @@ const AI_PROVIDER_PRESETS = {
 
 function detectProviderPreset(baseUrl) {
   const url = (baseUrl || '').toLowerCase();
+  if (url.includes('20128') || url.includes('omniroute')) return 'omniroute';
   if (url.includes('openrouter')) return 'openrouter';
   if (url.includes('groq')) return 'groq';
   if (url.includes('11434')) return 'ollama';
   if (url.includes('1234')) return 'lmstudio';
   if (url.includes('api.openai.com')) return 'openai';
   return 'custom';
+}
+
+function isOmniRouteActive() {
+  const ai = DATA?.settings?.ai || {};
+  return detectProviderPreset(ai.baseUrl) === 'omniroute' && ensureOmniRouteSettings().enabled;
+}
+function aiRouteSummary(route) {
+  if (!route) return '';
+  const parts = [route.task && `tarea ${route.task}`, route.provider && `proveedor ${route.provider}`, route.model && `modelo ${route.model}`, route.latencyMs && `${route.latencyMs} ms`, route.fallbackAttempts ? `${route.fallbackAttempts} fallback(s)` : '', route.cacheHit && `caché ${route.cacheHit}`, route.responseCost && `$${route.responseCost}`, route.decision].filter(Boolean);
+  return parts.join(' · ');
+}
+async function generateWithRouting(task, payload) {
+  const ai = DATA.settings.ai;
+  const omni = ensureOmniRouteSettings();
+  const routed = isOmniRouteActive();
+  const routeKey = ['rpg','writing','muse','planning','research','repair'].includes(task) ? task : 'muse';
+  const request = {
+    ...payload,
+    model:routed ? (omni.routes[routeKey] || 'auto') : payload.model,
+    task:routeKey,
+    compression:routed ? omni.compression : undefined,
+    sessionId:routed ? `lorevinci-${currentStoryId || 'global'}` : undefined
+  };
+  const res = await window.lorevinci.aiGenerate(request);
+  if (res?.route) {
+    ai.lastRoute = { ...res.route, task:routeKey, requestedModel:request.model, at:Date.now() };
+    const box=$('#omnirouteLastRoute'); if(box) box.textContent=aiRouteSummary(ai.lastRoute);
+  }
+  return res;
 }
 
 // Refleja en la UI si la IA está verificada y operativa.
@@ -2887,9 +2952,36 @@ if (providerPreset) {
       sel.insertBefore(opt, sel.firstChild);
     }
     if (sel) sel.value = preset.model;
-    showToast(`Preset aplicado: ${preset.baseUrl}. Pega tu key y verifica.`);
+    const omni=ensureOmniRouteSettings(); omni.enabled=providerPreset.value==='omniroute'; if(omni.enabled)omni.baseUrl=preset.baseUrl;
+    renderOmniRouteSettings();
+    showToast(providerPreset.value==='omniroute' ? 'Preset OmniRoute aplicado. Detecta el gateway y luego verifica.' : `Preset aplicado: ${preset.baseUrl}. Pega tu key y verifica.`);
   });
 }
+
+async function detectAndUseOmniRoute() {
+  const btn=$('#connectOmniRouteBtn'); btn.disabled=true; btn.textContent='Detectando…';
+  const ai=DATA.settings.ai, omni=ensureOmniRouteSettings();
+  const baseUrl='http://localhost:20128/v1';
+  const apiKey=$('#aiApiKey').value.trim() || ai.apiKey || '';
+  const res=await window.lorevinci.omniRouteStatus({baseUrl,apiKey});
+  btn.disabled=false; btn.textContent='Detectar y usar OmniRoute';
+  omni.lastStatus={...res,checkedAt:Date.now()}; omni.baseUrl=baseUrl;
+  if(res.ok){
+    omni.enabled=true; ai.provider='omniroute'; ai.baseUrl=baseUrl; ai.apiKey=apiKey; ai.model='auto'; ai.verifiedAt=null;
+    const models=Array.from(new Set(['auto','auto/smart','auto/fast','auto/cheap','auto/offline',...(res.models||[])])); ai.knownModels=models;
+    $('#aiProviderPreset').value='omniroute'; $('#aiBaseUrl').value=baseUrl; populateModelSelect(models,'auto');
+    showToast('OmniRoute detectado. Pulsa “Verificar y activar API” para probar una generación real.');
+  } else {
+    showToast('OmniRoute no está disponible. Instálalo/inícialo o revisa su API key.');
+  }
+  scheduleSave(); renderOmniRouteSettings(); updateOpenRouterUI();
+}
+$('#connectOmniRouteBtn').addEventListener('click',detectAndUseOmniRoute);
+$('#openOmniRouteDashboardBtn').addEventListener('click',()=>window.lorevinci.openExternal('http://localhost:20128'));
+$('#openOmniRouteDocsBtn').addEventListener('click',()=>window.lorevinci.openExternal('https://github.com/diegosouzapw/OmniRoute/blob/release/v3.8.50/docs/getting-started/QUICK-START.md'));
+$('#copyOmniRouteInstallBtn').addEventListener('click',async()=>{const command='npm install -g omniroute';try{await navigator.clipboard.writeText(command);showToast('Comando copiado: '+command);}catch{$('#omnirouteStatusText').textContent='Copia y ejecuta en una terminal: '+command;}});
+[['omniRouteRpg','rpg'],['omniRouteWriting','writing'],['omniRouteMuse','muse'],['omniRoutePlanning','planning'],['omniRouteResearch','research']].forEach(([id,key])=>$('#'+id).addEventListener('change',()=>{ensureOmniRouteSettings().routes[key]=$('#'+id).value;scheduleSave();}));
+$('#omniCompression').addEventListener('change',()=>{ensureOmniRouteSettings().compression=$('#omniCompression').value;scheduleSave();});
 
 const toggleKeyBtn = $('#toggleApiKeyVisibility');
 if (toggleKeyBtn) {
@@ -3005,8 +3097,10 @@ $('#saveAiBtn').addEventListener('click', () => {
   DATA.settings.ai.model = newModel;
   DATA.settings.ai.apiKey = newKey;
   DATA.settings.ai.provider = detectProviderPreset(newBase);
+  const omni=ensureOmniRouteSettings(); omni.enabled=DATA.settings.ai.provider==='omniroute'; if(omni.enabled)omni.baseUrl=newBase;
   scheduleSave();
   updateOpenRouterUI();
+  renderOmniRouteSettings();
   showToast('Ajustes guardados. Pulsa “Verificar y activar API” para dejarlo operativo.');
 });
 
@@ -3507,7 +3601,7 @@ async function extractStyleFromWork() {
   btn.disabled = true;
   const original = btn.textContent;
   btn.textContent = 'Analizando estilo…';
-  const res = await window.lorevinci.aiGenerate({
+  const res = await generateWithRouting('research', {
     baseUrl: DATA.settings.ai.baseUrl,
     apiKey: DATA.settings.ai.apiKey,
     model: DATA.settings.ai.model,
@@ -4284,7 +4378,7 @@ async function requestSafeRpgNarration(story, parsed, resolution, signal = null)
   const prompt = buildRpgPrompt(story, parsed, resolution);
   let res;
   try {
-    res = await window.lorevinci.aiGenerate({
+    res = await generateWithRouting('rpg', {
       baseUrl: DATA.settings.ai.baseUrl,
       apiKey: DATA.settings.ai.apiKey,
       model: DATA.settings.ai.model,
@@ -4305,7 +4399,7 @@ async function requestSafeRpgNarration(story, parsed, resolution, signal = null)
     // Una única reparación aislada: el borrador se trata como datos y nunca se muestra.
     let repair;
     try {
-      repair = await window.lorevinci.aiGenerate({
+      repair = await generateWithRouting('repair', {
         baseUrl: DATA.settings.ai.baseUrl,
         apiKey: DATA.settings.ai.apiKey,
         model: DATA.settings.ai.model,
@@ -4533,7 +4627,7 @@ async function captureRpgChapter() {
         { role:'user', content:`Título: ${sanitizeTextForPrompt(title)}\nConvierte esta transcripción cerrada en un capítulo de 900 a 1.600 palabras:\n"""${sanitizeTextForPrompt(transcript,50000)}"""` }
       ],
       maxTokens:5000, temperature:.5
-    }, { kind:'el capítulo narrativo final', maxRepairTokens:5000, language:language.code });
+    }, { kind:'el capítulo narrativo final', maxRepairTokens:5000, language:language.code, task:'writing' });
     if (result.ok && result.text.trim()) {
       content = sanitizeHtml(`<p>${escapeHtml(result.text.trim()).replace(/\n\n+/g,'</p><p>').replace(/\n/g,'<br>')}</p>`);
       actualMode = 'prose';
@@ -4912,7 +5006,7 @@ Requisitos de entrega:
         await new Promise(r=>setTimeout(r, 700)); // simula latencia
         generatedText = sanitizeHtml(mockGenerateChapterOffline(story, nextNum, tone, memoryBlock, priorityContent));
       } else {
-        let res = await window.lorevinci.aiGenerate({
+        let res = await generateWithRouting('writing', {
           baseUrl: DATA.settings.ai.baseUrl,
           apiKey: DATA.settings.ai.apiKey,
           model: DATA.settings.ai.model,
@@ -4934,7 +5028,7 @@ Requisitos de entrega:
         if (res.ok && res.truncated) {
           addLog(`⚠ Capítulo ${nextNum} truncado por límite de tokens — solicitando continuación…`);
           const partial = res.text.trim();
-          const contRes = await window.lorevinci.aiGenerate({
+          const contRes = await generateWithRouting('writing', {
             baseUrl: DATA.settings.ai.baseUrl,
             apiKey: DATA.settings.ai.apiKey,
             model: DATA.settings.ai.model,
@@ -5026,10 +5120,10 @@ Requisitos de entrega:
 });
 
 // ============ SALIDA VISIBLE SEGURA (IDIOMA ELEGIDO, SIN RAZONAMIENTO INTERNO) ============
-async function requestSafeSpanishText(payload, { kind = 'texto creativo', maxRepairTokens = 1200, language = 'es' } = {}) {
+async function requestSafeSpanishText(payload, { kind = 'texto creativo', maxRepairTokens = 1200, language = 'es', task = 'muse' } = {}) {
   const languageProfile = getLanguageProfile(language);
   let first;
-  try { first = await window.lorevinci.aiGenerate(payload); }
+  try { first = await generateWithRouting(task, payload); }
   catch (err) { return { ok:false, error:`La conexión con la IA falló: ${String(err).slice(0,160)}` }; }
   if (!first.ok) return first;
   const audit = window.LoreRpgEngine ? window.LoreRpgEngine.auditModelOutput(first.text, { language:languageProfile.code }) : { ok:true };
@@ -5037,7 +5131,7 @@ async function requestSafeSpanishText(payload, { kind = 'texto creativo', maxRep
 
   let repair;
   try {
-    repair = await window.lorevinci.aiGenerate({
+    repair = await generateWithRouting('repair', {
       baseUrl: DATA.settings.ai.baseUrl,
       apiKey: DATA.settings.ai.apiKey,
       model: DATA.settings.ai.model,

@@ -223,6 +223,13 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
+function isOmniRouteUrl(baseUrl) {
+  try {
+    const url = new URL(String(baseUrl || ''));
+    return url.port === '20128' || /omniroute/i.test(url.hostname);
+  } catch { return false; }
+}
+
 ipcMain.handle('ai:models', async (_evt, payload) => {
   const { baseUrl, apiKey } = payload || {};
   const root = (baseUrl || 'https://api.openai.com/v1').replace(/\/$/, '');
@@ -247,6 +254,32 @@ ipcMain.handle('ai:models', async (_evt, payload) => {
     return { ok: true, models };
   } catch (err) {
     return { ok: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('ai:omnirouteStatus', async (_evt, payload) => {
+  const baseUrl = String(payload?.baseUrl || 'http://localhost:20128/v1').replace(/\/$/, '');
+  const apiKey = String(payload?.apiKey || '');
+  if (!isOmniRouteUrl(baseUrl)) return { ok:false, error:'La URL no parece una instancia OmniRoute (puerto esperado 20128).' };
+  const headers = { Accept:'application/json' };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  try {
+    const started = Date.now();
+    const res = await fetchWithTimeout(`${baseUrl}/models`, { method:'GET', headers }, 12000);
+    if (!res.ok) {
+      const detail = (await res.text()).slice(0,240);
+      return { ok:false, status:res.status, error:res.status === 401 || res.status === 403 ? 'OmniRoute responde, pero requiere una API key creada en Dashboard → API Keys.' : `OmniRoute respondió HTTP ${res.status}: ${detail}` };
+    }
+    const json = await res.json();
+    const models = (json.data || json.models || []).map(m => m.id || m.name || m).filter(Boolean);
+    const dashboardUrl = baseUrl.replace(/\/v1$/i, '');
+    return {
+      ok:true, baseUrl, dashboardUrl, latencyMs:Date.now()-started, modelCount:models.length,
+      models:models.slice(0,500), autoAvailable:true, // `auto` es un modelo virtual y puede no aparecer en /v1/models
+      version:res.headers.get('x-omniroute-version') || null
+    };
+  } catch (err) {
+    return { ok:false, error:`No se detectó OmniRoute en ${baseUrl}: ${String(err.message || err).slice(0,180)}` };
   }
 });
 
@@ -299,7 +332,7 @@ ipcMain.handle('ai:verify', async (_evt, payload) => {
 
   // Paso 2: el modelo elegido existe en el catálogo
   const chosen = model || models[0] || 'gpt-4o-mini';
-  const modelExists = models.length === 0 || models.includes(chosen);
+  const modelExists = (isOmniRouteUrl(root) && /^auto(?:\/|$)/i.test(chosen)) || models.length === 0 || models.includes(chosen);
   steps.push({
     id: 'model',
     ok: modelExists,
@@ -475,7 +508,7 @@ if (typeof ipcMain.on === 'function') {
 }
 
 ipcMain.handle('ai:generate', async (_evt, payload) => {
-  const { provider, baseUrl, apiKey, model, messages, maxTokens, temperature, requestId } = payload || {};
+  const { provider, baseUrl, apiKey, model, messages, maxTokens, temperature, requestId, task, compression, sessionId } = payload || {};
   const root = (baseUrl || 'https://api.openai.com/v1').replace(/\/$/, '');
   const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d+)?(?:\/|$)/i.test(root);
 
@@ -501,6 +534,12 @@ ipcMain.handle('ai:generate', async (_evt, payload) => {
     if (baseUrl && baseUrl.includes('openrouter.ai')) {
       headers['HTTP-Referer'] = 'https://lorevinci.app';
       headers['X-Title'] = 'LoreVinci Desktop';
+    }
+    if (isOmniRouteUrl(root)) {
+      headers['X-Request-Id'] = key || `lorevinci-${Date.now()}`;
+      if (sessionId) headers['X-OmniRoute-Session-Id'] = String(sessionId).slice(0,128);
+      if (compression && ['off','default','engine:rtk'].includes(compression)) headers['X-OmniRoute-Compression'] = compression;
+      if (task) headers['X-LoreVinci-Task'] = String(task).slice(0,40);
     }
 
     const fetchOpts = {
@@ -530,9 +569,22 @@ ipcMain.handle('ai:generate', async (_evt, payload) => {
     // haciéndolos pasar por completos.
     const finishReason = choice?.finish_reason || choice?.native_finish_reason || null;
     const usage = json?.usage || null;
+    const route = isOmniRouteUrl(root) ? {
+      decision:res.headers.get('x-omniroute-decision'),
+      provider:res.headers.get('x-omniroute-provider'),
+      model:res.headers.get('x-omniroute-model') || json?.model || null,
+      latencyMs:Number(res.headers.get('x-omniroute-latency-ms')) || null,
+      responseCost:res.headers.get('x-omniroute-response-cost'),
+      cacheHit:res.headers.get('x-omniroute-cache-hit') || res.headers.get('x-omniroute-cache'),
+      fallbackAttempts:Number(res.headers.get('x-omniroute-fallback-attempts')) || 0,
+      compression:res.headers.get('x-omniroute-compression'),
+      version:res.headers.get('x-omniroute-version'),
+      requestId:res.headers.get('x-omniroute-request-id')
+    } : null;
     return {
       ok: true,
       text,
+      route,
       finishReason,
       truncated: finishReason === 'length',
       usage: usage ? {

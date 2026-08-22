@@ -216,6 +216,20 @@ Al generar capítulos, LoreVinci ya no manda solo un documento recortado:
 - Cada pasaje va etiquetado con su documento, sub-tipo y verso para que la IA sepa de
   dónde sale cada dato.
 
+## OmniRoute: enrutamiento opcional para Muse
+
+LoreVinci integra **OmniRoute** como gateway local OpenAI-compatible, sin incluirlo ni instalarlo silenciosamente. La integración fue validada contra OmniRoute 3.8.50 (MIT):
+
+1. Instala por tu cuenta: `npm install -g omniroute`.
+2. Inicia el gateway: `omniroute` (dashboard en `http://localhost:20128`).
+3. En LoreVinci abre **Ajustes → Muse AI → Detectar y usar OmniRoute**.
+4. Si tu instancia exige una key de acceso local, créala en el dashboard de OmniRoute y pégala en LoreVinci.
+5. Pulsa **Verificar y activar API** para realizar una generación real.
+
+El router permite perfiles independientes: RPG y capítulos usan por defecto `auto/smart`, Muse `auto/fast`, planificación `auto` e investigación `auto/cheap`. Puedes cambiarlos y elegir compresión desactivada, perfil del gateway o RTK. LoreVinci muestra, cuando OmniRoute envía sus headers, proveedor/modelo real, latencia, fallback, caché, coste, compresión, decisión y versión.
+
+La conexión directa con OpenAI, OpenRouter, Groq, Ollama o LM Studio sigue disponible. LoreVinci nunca importa credenciales de OmniRoute; solo llama al endpoint que el usuario configura. Los conectores gratuitos/no oficiales y sus términos son responsabilidad de OmniRoute y del usuario.
+
 ## Configurar y verificar Muse AI
 
 Ve a **Ajustes → Muse AI** e ingresa:
@@ -253,13 +267,14 @@ npm install
 npm test
 ```
 
-Trece suites, 392 comprobaciones: núcleo y seguridad, ingesta multi-PDF con extracción
+Catorce suites, 409 comprobaciones: núcleo y seguridad, ingesta multi-PDF con extracción
 real, motor de generación, handlers del proceso principal, OCR, Mesa RPG, una batería
 adversarial basada en la retroalimentación beta, investigación web segura y un **maratón
 de 30 capítulos** contra un modelo simulado adverso (que trunca, devuelve JSON roto,
 falla la red y filtra texto del asistente). Las suites RPG verifican reglamentos de 100
 puntos, fórmulas, D20 animado, registro incremental, fuentes seleccionadas, reparación
-de salidas inglesas y que el chat nunca cree capítulos por accidente.
+de salidas inglesas y que el chat nunca cree capítulos por accidente. La suite OmniRoute
+verifica detección, modelos `auto/*`, perfiles por tarea, fallback/directo y telemetría.
 
 ## Dónde se guardan tus datos
 

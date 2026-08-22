@@ -403,10 +403,36 @@
             <div id="aiVerifySteps" class="ai-verify-steps"></div>
           </div>
 
+          <div class="omniroute-panel" id="omniroutePanel">
+            <div class="omniroute-head">
+              <div><span class="omniroute-mark">O</span><b>OmniRoute</b><span class="muted small">Gateway local opcional · MIT</span></div>
+              <span class="canon-badge canon-reference" id="omnirouteStatusBadge">No detectado</span>
+            </div>
+            <p class="muted small">Una sola URL para múltiples proveedores, modelos <code>auto/*</code>, fallback por cuota/salud y telemetría de ruta. LoreVinci no instala OmniRoute ni importa sus credenciales: se conecta al proceso local que tú administras.</p>
+            <div class="row-gap" style="flex-wrap:wrap;">
+              <button class="btn-primary small" id="connectOmniRouteBtn" type="button">Detectar y usar OmniRoute</button>
+              <button class="btn-secondary small" id="openOmniRouteDashboardBtn" type="button">Abrir dashboard</button>
+              <button class="btn-secondary small" id="copyOmniRouteInstallBtn" type="button">Copiar instalación</button>
+              <button class="link-btn" id="openOmniRouteDocsBtn" type="button">Documentación ↗</button>
+            </div>
+            <div class="omniroute-status muted small" id="omnirouteStatusText">Esperando detección en http://localhost:20128.</div>
+            <div class="omniroute-routing-grid" id="omnirouteRoutingGrid">
+              <label>Partida RPG<select id="omniRouteRpg"><option value="auto/smart">auto/smart</option><option value="auto">auto</option><option value="auto/fast">auto/fast</option><option value="auto/cheap">auto/cheap</option><option value="auto/offline">auto/offline</option></select></label>
+              <label>Capítulos<select id="omniRouteWriting"><option value="auto/smart">auto/smart</option><option value="auto">auto</option><option value="auto/fast">auto/fast</option><option value="auto/cheap">auto/cheap</option></select></label>
+              <label>Muse / sugerencias<select id="omniRouteMuse"><option value="auto/fast">auto/fast</option><option value="auto">auto</option><option value="auto/smart">auto/smart</option><option value="auto/cheap">auto/cheap</option></select></label>
+              <label>Planificación<select id="omniRoutePlanning"><option value="auto">auto</option><option value="auto/smart">auto/smart</option><option value="auto/fast">auto/fast</option><option value="auto/cheap">auto/cheap</option></select></label>
+              <label>Investigación<select id="omniRouteResearch"><option value="auto/cheap">auto/cheap</option><option value="auto/fast">auto/fast</option><option value="auto">auto</option><option value="auto/smart">auto/smart</option></select></label>
+              <label>Compresión<select id="omniCompression"><option value="off">Desactivada — máxima fidelidad</option><option value="default">Perfil de OmniRoute</option><option value="engine:rtk">RTK</option></select></label>
+            </div>
+            <div class="omniroute-route" id="omnirouteLastRoute">Sin rutas registradas todavía.</div>
+            <div class="omniroute-warning">Los tiers gratuitos, OAuth, cookies web y conectores no oficiales dependen de OmniRoute y de los términos de cada proveedor. Revisa su dashboard antes de habilitarlos.</div>
+          </div>
+
           <div style="border-top:1px solid var(--border); padding-top:14px; margin-top:14px;">
             <label>Proveedor (rellena la URL base por ti)</label>
             <select id="aiProviderPreset">
               <option value="custom">Personalizado / Otro</option>
+              <option value="omniroute">OmniRoute local — auto-routing y fallback (localhost:20128)</option>
               <option value="openai">OpenAI — https://api.openai.com/v1</option>
               <option value="openrouter">OpenRouter — https://openrouter.ai/api/v1</option>
               <option value="groq">Groq — https://api.groq.com/openai/v1</option>

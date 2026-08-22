@@ -2,7 +2,7 @@
 // Ejecuta todas las suites y resume el resultado.
 const { execFileSync } = require('child_process');
 const path = require('path');
-const suites = ['core.test.js','ingest.test.js','generation.test.js','api.test.js','marathon.test.js','ocr.test.js','rpg.test.js','rpg-adversarial.test.js','rpg-loop.test.js','web.test.js','language.test.js','campaign-systems.test.js','visual.test.js'];
+const suites = ['core.test.js','ingest.test.js','generation.test.js','api.test.js','marathon.test.js','ocr.test.js','rpg.test.js','rpg-adversarial.test.js','rpg-loop.test.js','web.test.js','language.test.js','campaign-systems.test.js','visual.test.js','omniroute.test.js'];
 let total = 0, passed = 0, failedSuites = [];
 for (const s of suites) {
   process.stdout.write(s.replace('.test.js','').padEnd(22));

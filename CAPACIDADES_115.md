@@ -110,8 +110,8 @@ Esta matriz evita declarar como “terminada” una función que solo existe en 
 |91|Reparación automática|✅|
 |92|Indicadores de incertidumbre|🟡|
 |93|Preguntas aclaratorias|🟡|
-|94|Router de modelos|⬜|
-|95|Coste/tokens visibles|🟡|
+|94|Router de modelos|✅|
+|95|Coste/tokens visibles|✅|
 |96|Streaming validado|⬜|
 |97|Versionado de prompts|✅|
 |98|Pruebas doradas|✅|
