@@ -1,8 +1,104 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const dns = require('dns').promises;
+const net = require('net');
 
 const isDev = !app.isPackaged;
+const aiAbortControllers = new Map();
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 45000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error('Tiempo de espera agotado')), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function decodeWebEntities(value) {
+  const named = { amp:'&', lt:'<', gt:'>', quot:'"', apos:"'", nbsp:' ' };
+  return String(value || '').replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (_m, key) => {
+    if (key[0] === '#') {
+      const hex = key[1].toLowerCase() === 'x';
+      const number = parseInt(key.slice(hex ? 2 : 1), hex ? 16 : 10);
+      return Number.isFinite(number) ? String.fromCodePoint(number) : '';
+    }
+    return named[key.toLowerCase()] || '';
+  });
+}
+
+function stripWebHtml(value) {
+  return decodeWebEntities(String(value || '')
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<[^>]+>/g, ' '))
+    .replace(/\s+/g, ' ').trim();
+}
+
+function isPrivateIp(address) {
+  const ip = String(address || '').toLowerCase();
+  if (!net.isIP(ip)) return true;
+  if (net.isIPv6(ip)) return ip === '::1' || ip.startsWith('fc') || ip.startsWith('fd') || ip.startsWith('fe80:') || ip === '::';
+  const parts = ip.split('.').map(Number);
+  return parts[0] === 10 || parts[0] === 127 || parts[0] === 0 ||
+    (parts[0] === 169 && parts[1] === 254) || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+    (parts[0] === 192 && parts[1] === 168) || (parts[0] >= 224);
+}
+
+async function assertPublicWebUrl(rawUrl) {
+  const parsed = new URL(String(rawUrl || ''));
+  if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Solo se permiten URLs http/https.');
+  if (/^(localhost|.+\.localhost)$/i.test(parsed.hostname)) throw new Error('No se permiten direcciones locales.');
+  const records = await dns.lookup(parsed.hostname, { all:true, verbatim:true });
+  if (!records.length || records.some(r => isPrivateIp(r.address))) throw new Error('La URL resuelve a una red privada o no permitida.');
+  return parsed;
+}
+
+async function fetchPublicWebPage(rawUrl, maxBytes = 30 * 1024 * 1024) {
+  let current = await assertPublicWebUrl(rawUrl);
+  for (let redirects = 0; redirects <= 4; redirects++) {
+    const res = await fetchWithTimeout(current.toString(), {
+      method:'GET', redirect:'manual',
+      headers:{ 'User-Agent':'LoreVinci/1.0 Research (+https://lorevinci.app)', Accept:'text/html,text/plain,application/xhtml+xml;q=0.9,*/*;q=0.2' }
+    }, 30000);
+    if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
+      current = await assertPublicWebUrl(new URL(res.headers.get('location'), current).toString());
+      continue;
+    }
+    if (!res.ok) throw new Error(`La fuente respondió HTTP ${res.status}.`);
+    const length = Number(res.headers.get('content-length') || 0);
+    if (length > maxBytes) throw new Error('La página supera el límite de 30 MB.');
+    const type = (res.headers.get('content-type') || '').toLowerCase();
+    if (/application\/pdf|application\/octet-stream/.test(type)) throw new Error('La URL apunta a un archivo binario/PDF. Descárgalo y súbelo desde Fuentes para extraerlo con seguridad.');
+    const reader = res.body && res.body.getReader ? res.body.getReader() : null;
+    let buffer;
+    if (reader) {
+      const chunks = []; let total = 0;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > maxBytes) { try { await reader.cancel(); } catch {} throw new Error('La página supera el límite de 30 MB.'); }
+        chunks.push(Buffer.from(value));
+      }
+      buffer = Buffer.concat(chunks, total);
+    } else {
+      buffer = Buffer.from(await res.arrayBuffer());
+      if (buffer.length > maxBytes) throw new Error('La página supera el límite de 30 MB.');
+    }
+    const html = buffer.toString('utf8');
+    const title = stripWebHtml((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [,''])[1]).slice(0, 240);
+    const description = stripWebHtml((html.match(/<meta[^>]+(?:name|property)=["'](?:description|og:description)["'][^>]+content=["']([^"']*)/i) || html.match(/<meta[^>]+content=["']([^"']*)["'][^>]+(?:name|property)=["'](?:description|og:description)["']/i) || [,''])[1]).slice(0, 600);
+    const content = (type.includes('text/plain') ? html : stripWebHtml(html)).slice(0, 60000);
+    if (content.length < 80) throw new Error('La página no contiene texto legible suficiente.');
+    return { url:current.toString(), title:title || current.hostname, description, content, contentType:type || 'text/html', fetchedAt:Date.now() };
+  }
+  throw new Error('Demasiadas redirecciones.');
+}
 
 function getDataPath() {
   return path.join(app.getPath('userData'), 'lorevinci-data.json');
@@ -128,19 +224,19 @@ app.on('window-all-closed', () => {
 });
 
 ipcMain.handle('ai:models', async (_evt, payload) => {
-  const { baseUrl, apiKey } = payload;
-  if (!apiKey) return { ok: false, error: 'Falta la API Key.' };
+  const { baseUrl, apiKey } = payload || {};
+  const root = (baseUrl || 'https://api.openai.com/v1').replace(/\/$/, '');
+  const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d+)?(?:\/|$)/i.test(root);
+  if (!apiKey && !isLocal) return { ok: false, error: 'Falta la API Key.' };
   try {
-    const url = `${(baseUrl || 'https://api.openai.com/v1').replace(/\/$/, '')}/models`;
-    const headers = {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`
-    };
+    const url = `${root}/models`;
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
     if (baseUrl && baseUrl.includes('openrouter.ai')) {
       headers['HTTP-Referer'] = 'https://lorevinci.app';
       headers['X-Title'] = 'LoreVinci Desktop';
     }
-    const res = await fetch(url, { method: 'GET', headers });
+    const res = await fetchWithTimeout(url, { method: 'GET', headers });
     if (!res.ok) {
       const errText = await res.text();
       return { ok: false, error: `Error ${res.status}: ${errText.slice(0, 300)}` };
@@ -182,7 +278,7 @@ ipcMain.handle('ai:verify', async (_evt, payload) => {
   let models = [];
   // Paso 1: credencial + catálogo de modelos
   try {
-    const res = await fetch(`${root}/models`, { method: 'GET', headers });
+    const res = await fetchWithTimeout(`${root}/models`, { method: 'GET', headers });
     if (!res.ok) {
       const errText = (await res.text()).slice(0, 300);
       let hint = `Error ${res.status}.`;
@@ -213,7 +309,7 @@ ipcMain.handle('ai:verify', async (_evt, payload) => {
 
   // Paso 3: generación real (prueba de extremo a extremo)
   try {
-    const res = await fetch(`${root}/chat/completions`, {
+    const res = await fetchWithTimeout(`${root}/chat/completions`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -276,7 +372,7 @@ ipcMain.handle('data:importFile', async () => {
     const stat = fs.statSync(filePaths[0]);
     if (stat.size > 8*1024*1024) return { ok: false, error: 'Archivo demasiado grande (límite 8MB).' };
     const raw = fs.readFileSync(filePaths[0], 'utf-8');
-    if (raw.length > 8*1024*1024) return { ok: false, error: 'JSON demasiado grande.' };
+    if (raw.length > 30*1024*1024) return { ok: false, error: 'JSON demasiado grande (límite 30 MB).' };
     const parsed = JSON.parse(raw);
     // validación rápida
     if (parsed.stories && !Array.isArray(parsed.stories)) return { ok: false, error: 'Formato inválido: stories no es array.' };
@@ -284,6 +380,81 @@ ipcMain.handle('data:importFile', async () => {
     return { ok: true, data: parsed };
   } catch (err) {
     return { ok: false, error: String(err) };
+  }
+});
+
+ipcMain.handle('web:search', async (_evt, payload) => {
+  const query = String(payload && payload.query || '').trim().slice(0, 240);
+  const provider = String(payload && payload.provider || 'all');
+  if (query.length < 2) return { ok:false, error:'Escribe al menos 2 caracteres para buscar.' };
+  const results = [];
+  const push = item => {
+    if (!item || !item.url || results.some(r => r.url === item.url)) return;
+    results.push({ title:String(item.title || item.url).slice(0,240), url:String(item.url), snippet:String(item.snippet || '').slice(0,700), provider:item.provider || 'web' });
+  };
+  const headers = { 'User-Agent':'LoreVinci/1.0 Research (+https://lorevinci.app)', Accept:'application/json,text/html;q=0.9' };
+  const errors = [];
+
+  if (provider === 'all' || provider === 'wikipedia') {
+    try {
+      const url = `https://es.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&utf8=1&format=json&origin=*&srlimit=6`;
+      const res = await fetchWithTimeout(url, { headers }, 20000);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      (json?.query?.search || []).forEach(row => push({
+        title:row.title, url:`https://es.wikipedia.org/wiki/${encodeURIComponent(String(row.title).replace(/ /g,'_'))}`,
+        snippet:stripWebHtml(row.snippet), provider:'Wikipedia'
+      }));
+    } catch (err) { errors.push(`Wikipedia: ${String(err.message || err)}`); }
+  }
+
+  if (provider === 'all' || provider === 'books') {
+    try {
+      const url = `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=6&fields=key,title,author_name,first_publish_year,subject`;
+      const res = await fetchWithTimeout(url, { headers }, 20000);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      (json?.docs || []).forEach(row => push({
+        title:row.title, url:`https://openlibrary.org${row.key}`,
+        snippet:[(row.author_name || []).slice(0,3).join(', '), row.first_publish_year, (row.subject || []).slice(0,5).join(' · ')].filter(Boolean).join(' — '), provider:'Open Library'
+      }));
+    } catch (err) { errors.push(`Open Library: ${String(err.message || err)}`); }
+  }
+
+  if (provider === 'all' || provider === 'web') {
+    try {
+      const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+      const res = await fetchWithTimeout(url, { headers:{ ...headers, Accept:'text/html' } }, 20000);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const html = await res.text();
+      const linkRx = /<a[^>]+class=["'][^"']*result__a[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+      let match;
+      while ((match = linkRx.exec(html)) && results.length < 18) {
+        let target = decodeWebEntities(match[1]);
+        try {
+          const parsed = new URL(target, 'https://duckduckgo.com');
+          target = parsed.searchParams.get('uddg') || parsed.toString();
+          const targetUrl = new URL(target);
+          if (!['http:','https:'].includes(targetUrl.protocol) || /duckduckgo\.com$/i.test(targetUrl.hostname)) continue;
+          const tail = html.slice(linkRx.lastIndex, linkRx.lastIndex + 1600);
+          const snippet = stripWebHtml((tail.match(/class=["'][^"']*result__snippet[^"']*["'][^>]*>([\s\S]*?)<\/(?:a|div)>/i) || [,''])[1]);
+          push({ title:stripWebHtml(match[2]), url:targetUrl.toString(), snippet, provider:'Web' });
+        } catch {}
+      }
+    } catch (err) { errors.push(`Web: ${String(err.message || err)}`); }
+  }
+
+  return results.length
+    ? { ok:true, results:results.slice(0,18), warnings:errors }
+    : { ok:false, results:[], error:errors.join(' · ') || 'No se encontraron resultados.' };
+});
+
+ipcMain.handle('web:fetch', async (_evt, payload) => {
+  try {
+    const page = await fetchPublicWebPage(payload && payload.url);
+    return { ok:true, page };
+  } catch (err) {
+    return { ok:false, error:String(err.message || err).slice(0,400) };
   }
 });
 
@@ -296,10 +467,19 @@ ipcMain.handle('shell:openExternal', async (_evt, url) => {
   } catch { return { ok: false, error: 'URL inválida.' }; }
 });
 
-ipcMain.handle('ai:generate', async (_evt, payload) => {
-  const { provider, baseUrl, apiKey, model, messages, maxTokens, temperature, signal } = payload;
+if (typeof ipcMain.on === 'function') {
+  ipcMain.on('ai:cancel', (_evt, requestId) => {
+    const controller = aiAbortControllers.get(String(requestId || ''));
+    if (controller) controller.abort(new Error('Generación cancelada por el usuario'));
+  });
+}
 
-  if (!apiKey) {
+ipcMain.handle('ai:generate', async (_evt, payload) => {
+  const { provider, baseUrl, apiKey, model, messages, maxTokens, temperature, requestId } = payload || {};
+  const root = (baseUrl || 'https://api.openai.com/v1').replace(/\/$/, '');
+  const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d+)?(?:\/|$)/i.test(root);
+
+  if (!apiKey && !isLocal) {
     return { ok: false, error: 'Falta configurar tu API Key en Ajustes > Muse AI.' };
   }
   // Validación de mensajes para evitar prompt injection extremo: limitar tamaño
@@ -308,12 +488,15 @@ ipcMain.handle('ai:generate', async (_evt, payload) => {
     if (totalChars > 120000) return { ok: false, error: 'Prompt demasiado largo (límite 120k chars). Reduce fuentes o reglas.' };
   } catch {}
 
+  const controller = new AbortController();
+  const key = String(requestId || '');
+  const timeout = setTimeout(() => controller.abort(new Error('La IA superó 90 segundos de espera')), 90000);
+  if (key) aiAbortControllers.set(key, controller);
+
   try {
-    const url = `${(baseUrl || 'https://api.openai.com/v1').replace(/\/$/, '')}/chat/completions`;
-    const headers = {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`
-    };
+    const url = `${root}/chat/completions`;
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
     if (baseUrl && baseUrl.includes('openrouter.ai')) {
       headers['HTTP-Referer'] = 'https://lorevinci.app';
@@ -330,11 +513,7 @@ ipcMain.handle('ai:generate', async (_evt, payload) => {
         temperature: typeof temperature === 'number' ? Math.max(0, Math.min(1.2, temperature)) : 0.65
       })
     };
-    // Soporte AbortSignal si se pasa desde renderer (Electron 28+ soporta)
-    if (signal) {
-      // signal es objeto transferido, intentar usarlo
-      try { fetchOpts.signal = signal; } catch {}
-    }
+    fetchOpts.signal = controller.signal;
 
     const res = await fetch(url, fetchOpts);
 
@@ -363,6 +542,10 @@ ipcMain.handle('ai:generate', async (_evt, payload) => {
       } : null
     };
   } catch (err) {
-    return { ok: false, error: `No se pudo conectar con el proveedor de IA: ${String(err)}` };
+    const cancelled = controller.signal.aborted;
+    return { ok: false, error: cancelled ? `Generación cancelada o expirada: ${String(controller.signal.reason || err)}` : `No se pudo conectar con el proveedor de IA: ${String(err)}` };
+  } finally {
+    clearTimeout(timeout);
+    if (key) aiAbortControllers.delete(key);
   }
 });

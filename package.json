@@ -1,7 +1,7 @@
 {
   "name": "lorevinci-desktop",
   "version": "1.0.0",
-  "description": "LoreVinci - Escritorio de escritura creativa con asistente de IA (Muse AI)",
+  "description": "LoreVinci - Escritura creativa y partidas RPG con reglas ejecutables y Muse AI",
   "main": "main.js",
   "author": "LoreVinci",
   "license": "MIT",
@@ -13,7 +13,10 @@
   },
   "devDependencies": {
     "electron": "^31.0.0",
-    "electron-builder": "^24.13.3"
+    "electron-builder": "^24.13.3",
+    "jsdom": "^26.1.0",
+    "pdfjs-dist": "3.11.174",
+    "tesseract.js": "5.1.1"
   },
   "build": {
     "appId": "com.lorevinci.app",
