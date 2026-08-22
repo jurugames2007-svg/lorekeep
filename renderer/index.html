@@ -841,11 +841,11 @@
           <div class="modal-head"><div><h3>Sistemas del mundo</h3><span class="muted small" id="worldDashboardSubtitle">Estado persistente de campaña</span></div><button class="icon-btn" id="closeWorldDashboardBtn">✕</button></div>
           <div class="world-dashboard-grid" id="worldDashboardGrid"></div>
           <div class="world-tool-form" id="worldToolForm">
-            <select id="worldToolType"><option value="factions">Facción</option><option value="quests">Misión</option><option value="inventory">Objeto</option><option value="clocks">Reloj de peligro</option><option value="clues">Pista</option><option value="wounds">Herida</option><option value="locations">Lugar</option><option value="rumors">Rumor</option><option value="relationships">Relación</option></select>
-            <input id="worldToolName" type="text" placeholder="Nombre" />
-            <input id="worldToolDetail" type="text" placeholder="Objetivo, detalle o descripción" />
-            <input id="worldToolValue" type="number" value="0" title="Progreso, cantidad o relación" />
-            <button class="btn-primary" id="addWorldToolBtn">Añadir</button>
+            <select id="worldToolType" aria-label="Tipo de elemento del mundo"><option value="factions">Facción</option><option value="quests">Misión</option><option value="inventory">Objeto</option><option value="clocks">Reloj de peligro</option><option value="clues">Pista</option><option value="wounds">Herida</option><option value="locations">Lugar</option><option value="rumors">Rumor</option><option value="relationships">Relación</option></select>
+            <input id="worldToolName" type="text" placeholder="Nombre" aria-label="Nombre del elemento" />
+            <input id="worldToolDetail" type="text" placeholder="Objetivo, detalle o descripción" aria-label="Detalle del elemento" />
+            <input id="worldToolValue" type="number" value="0" title="Progreso, cantidad o relación" aria-label="Valor, progreso o cantidad" />
+            <button class="btn-primary" id="addWorldToolBtn" type="button">Añadir</button>
           </div>
           <div class="world-command-help"><b>Comandos rápidos:</b> <code>/estado</code> <code>/reloj Alarma 0/6</code> <code>/faccion Gremio | Controlar el puerto</code> <code>/mision Rescatar al guía</code> <code>/relacion Iria +2</code>. Los cambios directos requieren modo Director.</div>
         </div>

@@ -43,6 +43,7 @@ Esto no significa que cualquier modelo externo sea infalible. Significa que una 
 | BETA-25 | PNJ cambian de carácter u obtienen omnisciencia | Ficha, personalidad, conocimiento inicial y memoria por PNJ entran al prompt y se validan por identidad | Ledger epistémico persistente | ✅ |
 | BETA-26 | Sugerencias en inglés/no insertables | Idioma por obra y campaña; filtro meta independiente del idioma; párrafo final insertable por defecto | Suite `language` 14/14 | ✅ |
 | BETA-27 | Principiante sin saber escribir o dirigir | Sesión cero guiada, roles Jugador/Director, Mentor y panel de facciones, misiones, inventario, relojes, relaciones, pistas y heridas | Suite `campaign-systems` 21/21 | ✅ |
+| BETA-28 | Controles ocultos o layout roto | Modales flexibles, cabecera responsive, dashboard 4/2/1 columnas, nombres accesibles y reducción de movimiento | Suite `visual` 14/14 | ✅ |
 
 ## Cobertura mecánica del reglamento entregado
 
@@ -126,7 +127,8 @@ core                    49/49
  web                     16/16
  language                14/14
  campaign-systems        21/21
- TOTAL                  378/378
+ visual                  14/14
+ TOTAL                  392/392
 ```
 
 También se comprueba:
@@ -147,6 +149,8 @@ npm audit --omit=dev
 - Las reglas narrativas (tono, secretos, consecuencias, arbitraje) se validan como política de turno y contexto; no todas tienen una operación numérica.
 - Sacrificio Permanente permanece manual por diseño y debe ser confirmado por el narrador.
 - LoreVinci sigue siendo local y no implementa sincronización multijugador en tiempo real.
+- La prueba de empaquetado `npm run dist -- --dir` cargó correctamente la configuración y comenzó a empaquetar Linux, pero este sandbox devolvió `EOF` al descargar el binario oficial de Electron desde GitHub Releases. Es una limitación de red del entorno; el instalador final debe repetirse en CI o en una máquina con acceso a Releases.
+- El entorno no dispone de Chromium/Firefox para captura automatizada por píxeles. La aceptación visual se cubre con 14 regresiones estructurales/responsive y una vista previa viva; sigue siendo recomendable una inspección humana final en Windows/macOS/Linux.
 
 ## Criterio para repetir la beta humana
 

@@ -253,7 +253,7 @@ npm install
 npm test
 ```
 
-Doce suites, 378 comprobaciones: núcleo y seguridad, ingesta multi-PDF con extracción
+Trece suites, 392 comprobaciones: núcleo y seguridad, ingesta multi-PDF con extracción
 real, motor de generación, handlers del proceso principal, OCR, Mesa RPG, una batería
 adversarial basada en la retroalimentación beta, investigación web segura y un **maratón
 de 30 capítulos** contra un modelo simulado adverso (que trunca, devuelve JSON roto,
