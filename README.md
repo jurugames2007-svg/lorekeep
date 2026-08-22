@@ -71,7 +71,10 @@ La sintaxis es opcional; también se acepta lenguaje natural:
 - Cada obra puede elegir **Español, English, Português, Français, Deutsch o Italiano**; el GM, Muse, sugerencias insertables, capítulos RPG y audiolibro usan ese idioma. El filtro de razonamiento interno sigue activo incluso cuando se elige inglés.
 - El asistente en tiempo real entrega por defecto **un párrafo final listo para insertar**, no una lista de ideas. El comentario editorial permanece como modo opcional.
 - Cada tirada muestra un **D20 animado** antes de revelar el natural, modificador, CD, ventaja/desventaja o crítico. Respeta `prefers-reduced-motion`.
-- Al entrar al modo RPG eliges **obra/universo, autor o creador, punto de entrada y relación con el canon**: mundo abierto, canon estricto o línea alternativa.
+- Al entrar al modo RPG eliges **Jugador** (vivir el mundo mediante tu personaje) o **Director** (controlar escenas, PNJ y sistemas con Muse como copiloto).
+- La **Sesión cero guiada** pregunta experiencia, obra/universo, autor o creador, punto de entrada, tono, dificultad, letalidad, límites y relación con el canon; un principiante puede empezar sin conocer reglas previas.
+- El panel **Sistemas del mundo** gestiona facciones, misiones, inventario, relojes de peligro, pistas, heridas, lugares, rumores y relaciones. En modo Director también admite comandos como `/estado`, `/reloj`, `/faccion` o `/mision`.
+- Al entrar eliges **obra/universo, autor o creador, punto de entrada y relación con el canon**: mundo abierto, canon estricto o línea alternativa.
 - El GM permite profundidad equilibrada, cinematográfica o épica. El prompt exige atmósfera, consecuencias, PNJ con subtexto, complicaciones y posición espacial clara, sin decidir por el jugador.
 - El mundo conserva ubicación, reloj, hechos y consecuencias. Cada PNJ recibe personalidad, deseos, conocimiento inicial y memoria propia; solo aprende lo que presencia o se le comunica y nunca obtiene omnisciencia por leer el prompt.
 - Cada turno tiene cancelación visible, timeout de 45 segundos y cierre transaccional: un comando cancelado no aplica recursos ni consecuencias y nunca deja bloqueados los siguientes comandos.
@@ -250,7 +253,7 @@ npm install
 npm test
 ```
 
-Once suites, 357 comprobaciones: núcleo y seguridad, ingesta multi-PDF con extracción
+Doce suites, 378 comprobaciones: núcleo y seguridad, ingesta multi-PDF con extracción
 real, motor de generación, handlers del proceso principal, OCR, Mesa RPG, una batería
 adversarial basada en la retroalimentación beta, investigación web segura y un **maratón
 de 30 capítulos** contra un modelo simulado adverso (que trunca, devuelve JSON roto,

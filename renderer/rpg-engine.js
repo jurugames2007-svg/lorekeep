@@ -34,11 +34,18 @@
     rpg.strictTurns = rpg.strictTurns !== false;
     rpg.syntaxEnabled = rpg.syntaxEnabled !== false;
     rpg.gmDetail = ['balanced','cinematic','epic'].includes(rpg.gmDetail) ? rpg.gmDetail : 'cinematic';
+    rpg.role = ['player','director'].includes(rpg.role) ? rpg.role : 'player';
+    rpg.experience = ['beginner','intermediate','advanced'].includes(rpg.experience) ? rpg.experience : 'beginner';
+    rpg.mentorMode = rpg.mentorMode !== false;
     rpg.campaign = rpg.campaign && typeof rpg.campaign === 'object' ? rpg.campaign : {};
     rpg.campaign.referenceWork = String(rpg.campaign.referenceWork || story.title || 'Mundo original');
     rpg.campaign.referenceAuthor = String(rpg.campaign.referenceAuthor || 'No especificado');
     rpg.campaign.entryPoint = String(rpg.campaign.entryPoint || story.synopsis || 'Inicio por definir');
     rpg.campaign.freedom = ['open','canon','alternate'].includes(rpg.campaign.freedom) ? rpg.campaign.freedom : 'open';
+    rpg.campaign.tone = String(rpg.campaign.tone || story.genre || 'Aventura y descubrimiento');
+    rpg.campaign.difficulty = ['story','balanced','challenging','brutal'].includes(rpg.campaign.difficulty) ? rpg.campaign.difficulty : 'balanced';
+    rpg.campaign.lethality = ['safe','heroic','dangerous','lethal'].includes(rpg.campaign.lethality) ? rpg.campaign.lethality : 'dangerous';
+    rpg.campaign.limits = Array.isArray(rpg.campaign.limits) ? rpg.campaign.limits : [];
     rpg.worldState = rpg.worldState && typeof rpg.worldState === 'object' ? rpg.worldState : {};
     rpg.worldState.location = String(rpg.worldState.location || 'Escena inicial por establecer');
     rpg.worldState.clock = String(rpg.worldState.clock || 'Inicio de campaña');
@@ -46,6 +53,10 @@
     rpg.worldState.facts = Array.isArray(rpg.worldState.facts) ? rpg.worldState.facts : [];
     rpg.worldState.events = Array.isArray(rpg.worldState.events) ? rpg.worldState.events : [];
     rpg.worldState.npcKnowledge = rpg.worldState.npcKnowledge && typeof rpg.worldState.npcKnowledge === 'object' ? rpg.worldState.npcKnowledge : {};
+    ['factions','quests','inventory','wounds','clues','clocks','locations','rumors'].forEach(key => {
+      rpg.worldState[key] = Array.isArray(rpg.worldState[key]) ? rpg.worldState[key] : [];
+    });
+    rpg.worldState.relationships = rpg.worldState.relationships && typeof rpg.worldState.relationships === 'object' ? rpg.worldState.relationships : {};
     rpg.player = { ...defaultPlayer(), ...(rpg.player || {}) };
     rpg.player.attributes = { ...defaultPlayer().attributes, ...((rpg.player || {}).attributes || {}) };
     rpg.player.resources = { ...defaultPlayer().resources, ...((rpg.player || {}).resources || {}) };
@@ -620,6 +631,82 @@
     return lines.join('\n');
   }
 
+  function campaignId(prefix) {
+    return `${prefix}_${now()}_${Math.random().toString(36).slice(2,7)}`;
+  }
+
+  function parseCampaignCommand(raw) {
+    const input = String(raw || '').trim();
+    if (!input.startsWith('/') || input.startsWith('//')) return { handled:false };
+    const match = input.match(/^\/(\S+)(?:\s+([\s\S]*))?$/);
+    if (!match) return { handled:true, ok:false, command:'', args:'', error:'Comando inválido.' };
+    return { handled:true, command:normalize(match[1]), args:String(match[2] || '').trim() };
+  }
+
+  function campaignStatus(story) {
+    ensureStory(story);
+    const s = story.rpg.worldState;
+    return `Mundo: ${story.rpg.campaign.referenceWork}\nUbicación: ${s.location}\nReloj: ${s.clock}\nMisiones: ${s.quests.filter(q=>q.status !== 'completed' && q.status !== 'failed').length} activas\nFacciones: ${s.factions.length}\nInventario: ${s.inventory.length} objetos\nPistas: ${s.clues.length}\nHeridas: ${s.wounds.filter(w=>w.status !== 'healed').length}\nConsecuencias: ${s.consequences.length}`;
+  }
+
+  function executeCampaignCommand(story, raw) {
+    const parsed = parseCampaignCommand(raw);
+    if (!parsed.handled) return parsed;
+    ensureStory(story);
+    const s = story.rpg.worldState;
+    const text = parsed.args;
+    const add = (collection, item) => { s[collection].push({ id:campaignId(collection.slice(0,-1)), createdAt:now(), ...item }); };
+    const directorOnly = () => story.rpg.role === 'director' ? null : { handled:true, ok:false, command:parsed.command, message:'Este cambio directo del mundo requiere modo Director. En modo Jugador, decláralo como acción para que el GM resuelva sus consecuencias.' };
+    switch (parsed.command) {
+      case 'ayuda': case 'help': return { handled:true, ok:true, command:parsed.command, message:'Comandos: /estado, /reloj, /inventario, /mision, /faccion, /relacion, /pista, /herida, /rumor, /tiempo. Usa “+ texto” para añadir y “- texto” para retirar cuando corresponda.' };
+      case 'estado': case 'status': return { handled:true, ok:true, command:parsed.command, message:campaignStatus(story) };
+      case 'reloj': {
+        if (!text) return { handled:true, ok:true, command:'reloj', message:s.clocks.length ? s.clocks.map(c=>`${c.name}: ${c.value}/${c.max}`).join('\n') : 'No hay relojes activos.' };
+        const tick = text.match(/^(.+?)\s+([+-]\d+)$/);
+        if (tick) {
+          const guard=directorOnly(); if(guard)return guard;
+          const clock=s.clocks.find(c=>normalize(c.name)===normalize(tick[1])); if(!clock)return{handled:true,ok:false,command:'reloj',message:'No existe ese reloj.'};
+          clock.value=clamp(clock.value+Number(tick[2]),0,clock.max); clock.updatedAt=now();
+          return {handled:true,ok:true,changed:true,command:'reloj',message:`${clock.name}: ${clock.value}/${clock.max}`};
+        }
+        const create=text.match(/^\+?\s*(.+?)(?:\s+(\d+)\/(\d+))?$/); const guard=directorOnly(); if(guard)return guard;
+        add('clocks',{name:create[1].trim(),value:Number(create[2])||0,max:Number(create[3])||6});
+        return {handled:true,ok:true,changed:true,command:'reloj',message:`Reloj creado: ${create[1].trim()}.`};
+      }
+      case 'inventario': {
+        if (!text) return {handled:true,ok:true,command:'inventario',message:s.inventory.length?s.inventory.map(i=>`${i.quantity||1}× ${i.name}`).join('\n'):'Inventario vacío.'};
+        const guard=directorOnly(); if(guard)return guard;
+        if (/^-\s*/.test(text)) { const name=text.replace(/^-\s*/,''); const i=s.inventory.findIndex(x=>normalize(x.name)===normalize(name)); if(i<0)return{handled:true,ok:false,command:'inventario',message:'Objeto no encontrado.'}; s.inventory.splice(i,1); return{handled:true,ok:true,changed:true,command:'inventario',message:`Retirado: ${name}.`}; }
+        const name=text.replace(/^\+\s*/,''); add('inventory',{name,quantity:1,owner:story.rpg.player.name||'grupo'}); return{handled:true,ok:true,changed:true,command:'inventario',message:`Añadido al inventario: ${name}.`};
+      }
+      case 'mision': case 'misión': {
+        if (!text) return {handled:true,ok:true,command:'mision',message:s.quests.length?s.quests.map(q=>`[${q.status}] ${q.title}`).join('\n'):'No hay misiones.'};
+        const guard=directorOnly(); if(guard)return guard;
+        const done=text.match(/^(?:completar|complete)\s+(.+)$/i); if(done){const q=s.quests.find(x=>normalize(x.id)===normalize(done[1])||normalize(x.title)===normalize(done[1]));if(!q)return{handled:true,ok:false,command:'mision',message:'Misión no encontrada.'};q.status='completed';q.updatedAt=now();return{handled:true,ok:true,changed:true,command:'mision',message:`Misión completada: ${q.title}.`};}
+        const title=text.replace(/^\+\s*/,''); add('quests',{title,status:'active',objective:title}); return{handled:true,ok:true,changed:true,command:'mision',message:`Misión registrada: ${title}.`};
+      }
+      case 'faccion': case 'facción': {
+        if (!text) return {handled:true,ok:true,command:'faccion',message:s.factions.length?s.factions.map(f=>`${f.name}: ${f.goal} (${f.progress||0}%)`).join('\n'):'No hay facciones.'};
+        const guard=directorOnly(); if(guard)return guard;
+        const [name,goal='Objetivo por definir']=text.replace(/^\+\s*/,'').split('|').map(x=>x.trim()); add('factions',{name,goal,progress:0,attitude:0,resources:'No especificados'}); return{handled:true,ok:true,changed:true,command:'faccion',message:`Facción creada: ${name}.`};
+      }
+      case 'relacion': case 'relación': {
+        if (!text) return {handled:true,ok:true,command:'relacion',message:Object.keys(s.relationships).length?Object.entries(s.relationships).map(([n,v])=>`${n}: ${v}`).join('\n'):'No hay relaciones registradas.'};
+        const guard=directorOnly(); if(guard)return guard;
+        const m=text.match(/^(.+?)\s+([+-]\d+)$/); if(!m)return{handled:true,ok:false,command:'relacion',message:'Usa /relacion Nombre +2 o -1.'}; const key=m[1].trim();s.relationships[key]=clamp((Number(s.relationships[key])||0)+Number(m[2]),-100,100);return{handled:true,ok:true,changed:true,command:'relacion',message:`Relación con ${key}: ${s.relationships[key]}.`};
+      }
+      case 'pista': case 'herida': case 'rumor': {
+        const guard=directorOnly(); if(guard)return guard;
+        const map={pista:'clues',herida:'wounds',rumor:'rumors'}; const collection=map[parsed.command]; const value=text.replace(/^\+\s*/,''); if(!value)return{handled:true,ok:false,command:parsed.command,message:'Escribe el contenido a registrar.'}; add(collection,collection==='wounds'?{name:value,status:'active',severity:'moderate'}:{text:value,status:'active'});return{handled:true,ok:true,changed:true,command:parsed.command,message:`${parsed.command} registrada: ${value}.`};
+      }
+      case 'tiempo': {
+        const guard=directorOnly(); if(guard)return guard;
+        if(!text)return{handled:true,ok:true,command:'tiempo',message:s.clock}; s.clock=text;return{handled:true,ok:true,changed:true,command:'tiempo',message:`Tiempo actualizado: ${text}.`};
+      }
+      default:return{handled:true,ok:false,command:parsed.command,message:`Comando desconocido: /${parsed.command}. Usa /ayuda.`};
+    }
+  }
+
   function auditModelOutput(text, options = {}) {
     const raw = String(text || '').trim();
     const language = options.language || 'es';
@@ -700,6 +787,7 @@
     defaultPlayer, ensureStory, effectiveAttributes, derivedStats, syncResourceBounds,
     compileRules, splitRulesAndFormulas, hashText, evaluateFormula, evaluateFormulas, safeMath,
     parseInput, secureD20, resolveAction, applyResolution, describeResolution,
+    parseCampaignCommand, executeCampaignCommand, campaignStatus,
     auditModelOutput, auditGmOutput, normalizeGmOutput, relevantRuleNumbers, normalize
   };
 })(window);

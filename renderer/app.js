@@ -683,8 +683,8 @@ $('#createStoryBtn').addEventListener('click', () => {
     $('#storyModalBackdrop').classList.remove('active');
     openStoryEditor(story.id);
     if (projectMode === 'rpg') {
-      openStoryConfigModal(story.id, 'rpg');
-      showToast('Completa la identidad y ficha inicial antes de comenzar la partida.');
+      openSessionZero(story.id);
+      showToast('La sesión cero te guiará para entrar al mundo sin conocimientos previos.');
     }
   };
 
@@ -3925,6 +3925,82 @@ function renderRpgRulesAudit(story) {
     ${(compiled.sourceNames || []).length ? `<div class="muted small" title="${escapeHtml(compiled.sourceNames.join(', '))}">Fuentes leídas: ${compiled.sourceNames.length}</div>` : ''}`;
 }
 
+let sessionZeroStoryId = null;
+function openSessionZero(storyId) {
+  const story = getStory(storyId); if (!story) return;
+  window.LoreRpgEngine.ensureStory(story); sessionZeroStoryId = story.id;
+  $('#szRole').value = story.rpg.role;
+  $('#szExperience').value = story.rpg.experience;
+  $('#szWork').value = story.rpg.campaign.referenceWork || story.title;
+  $('#szAuthor').value = story.rpg.campaign.referenceAuthor === 'No especificado' ? '' : story.rpg.campaign.referenceAuthor;
+  $('#szEntry').value = story.rpg.campaign.entryPoint || story.synopsis;
+  $('#szTone').value = story.rpg.campaign.tone || story.genre;
+  $('#szDifficulty').value = story.rpg.campaign.difficulty;
+  $('#szLethality').value = story.rpg.campaign.lethality;
+  $('#szFreedom').value = story.rpg.campaign.freedom;
+  $('#szLimits').value = (story.rpg.campaign.limits || []).join(', ');
+  $('#szMentor').checked = story.rpg.mentorMode;
+  $('#szSummary').textContent = story.rpg.role === 'director' ? 'Dirigirás escenas, PNJ y sistemas; Muse preparará consecuencias, continuidad y material listo para narrar.' : 'Vivirás el mundo mediante tu personaje; LoreVinci dirigirá reglas, PNJ, consecuencias y memoria.';
+  $('#sessionZeroBackdrop').classList.add('active');
+}
+function saveSessionZero() {
+  const story=getStory(sessionZeroStoryId); if(!story)return;
+  story.projectMode='rpg'; story.rpg.role=$('#szRole').value; story.rpg.experience=$('#szExperience').value; story.rpg.mentorMode=$('#szMentor').checked;
+  story.rpg.campaign.referenceWork=$('#szWork').value.trim()||story.title;
+  story.rpg.campaign.referenceAuthor=$('#szAuthor').value.trim()||'No especificado';
+  story.rpg.campaign.entryPoint=$('#szEntry').value.trim()||story.synopsis||'Inicio por definir';
+  story.rpg.campaign.tone=$('#szTone').value.trim()||story.genre||'Aventura';
+  story.rpg.campaign.difficulty=$('#szDifficulty').value; story.rpg.campaign.lethality=$('#szLethality').value; story.rpg.campaign.freedom=$('#szFreedom').value;
+  story.rpg.campaign.limits=$('#szLimits').value.split(',').map(x=>x.trim()).filter(Boolean).slice(0,30);
+  story.updatedAt=Date.now(); scheduleSave(); $('#sessionZeroBackdrop').classList.remove('active'); currentStoryId=story.id; renderRpgTable(); openRpgTable();
+  showToast(story.rpg.role==='director'?'Modo Director listo. Usa Mundo o /ayuda.':'Modo Jugador listo. Declara cualquier acción; Mentor te acompañará.');
+}
+const closeSessionZero=()=>$('#sessionZeroBackdrop').classList.remove('active');
+$('#saveSessionZeroBtn').addEventListener('click',saveSessionZero);
+$('#closeSessionZeroBtn').addEventListener('click',closeSessionZero);
+$('#cancelSessionZeroBtn').addEventListener('click',closeSessionZero);
+$('#sessionZeroBackdrop').addEventListener('click',e=>{if(e.target.id==='sessionZeroBackdrop')closeSessionZero();});
+$('#szRole').addEventListener('change',()=>{$('#szSummary').textContent=$('#szRole').value==='director'?'Dirigirás escenas, PNJ y sistemas; Muse preparará consecuencias, continuidad y material listo para narrar.':'Vivirás el mundo mediante tu personaje; LoreVinci dirigirá reglas, PNJ, consecuencias y memoria.';});
+
+const WORLD_SYSTEM_LABELS={factions:'Facciones',quests:'Misiones',inventory:'Inventario',clocks:'Relojes',clues:'Pistas',wounds:'Heridas',locations:'Lugares',rumors:'Rumores',relationships:'Relaciones'};
+function worldItemText(type,item){
+  if(type==='factions')return `${item.name} — ${item.goal||'sin objetivo'} · ${item.progress||0}%`;
+  if(type==='quests')return `[${item.status||'active'}] ${item.title}`;
+  if(type==='inventory')return `${item.quantity||1}× ${item.name}`;
+  if(type==='clocks')return `${item.name}: ${item.value||0}/${item.max||6}`;
+  if(type==='wounds')return `${item.name} [${item.status||'active'}]`;
+  if(type==='relationships')return `${item.name}: ${item.value}`;
+  return item.name||item.text||item.title||'Sin nombre';
+}
+function renderWorldDashboard(story){
+  const state=story.rpg.worldState,grid=$('#worldDashboardGrid'); grid.innerHTML='';
+  $('#worldDashboardSubtitle').textContent=`${story.rpg.campaign.referenceWork} · ${story.rpg.role==='director'?'Director':'Jugador'} · ${state.location}`;
+  Object.keys(WORLD_SYSTEM_LABELS).forEach(type=>{
+    const values=type==='relationships'?Object.entries(state.relationships).map(([name,value])=>({name,value})):state[type];
+    const card=document.createElement('div');card.className='world-system-card';
+    card.innerHTML=`<h4><span>${WORLD_SYSTEM_LABELS[type]}</span><span>${values.length}</span></h4>`;
+    if(!values.length){const e=document.createElement('div');e.className='empty';e.textContent='Sin registros';card.appendChild(e);}else{const ul=document.createElement('ul');values.slice(-8).forEach(v=>{const li=document.createElement('li');li.textContent=worldItemText(type,v);ul.appendChild(li);});card.appendChild(ul);}grid.appendChild(card);
+  });
+  const director=story.rpg.role==='director'; $('#worldToolForm').style.display=director?'grid':'none';
+}
+function openWorldDashboard(){const story=getStory(currentStoryId);if(!story)return;renderWorldDashboard(story);$('#worldDashboardBackdrop').classList.add('active');}
+function addWorldTool(){
+  const story=getStory(currentStoryId);if(!story||story.rpg.role!=='director'){showToast('Cambia a modo Director para editar el mundo directamente.');return;}
+  const type=$('#worldToolType').value,name=$('#worldToolName').value.trim(),detail=$('#worldToolDetail').value.trim(),value=Number($('#worldToolValue').value)||0,state=story.rpg.worldState;
+  if(!name){showToast('Escribe un nombre.');return;} const id=uid(type.slice(0,-1));
+  if(type==='relationships')state.relationships[name]=Math.max(-100,Math.min(100,value));
+  else if(type==='factions')state.factions.push({id,name,goal:detail||'Objetivo por definir',progress:value,attitude:0,createdAt:Date.now()});
+  else if(type==='quests')state.quests.push({id,title:name,objective:detail||name,status:'active',progress:value,createdAt:Date.now()});
+  else if(type==='inventory')state.inventory.push({id,name,description:detail,quantity:Math.max(1,value||1),owner:story.rpg.player.name||'grupo',createdAt:Date.now()});
+  else if(type==='clocks')state.clocks.push({id,name,description:detail,value:0,max:Math.max(2,value||6),createdAt:Date.now()});
+  else if(type==='wounds')state.wounds.push({id,name,description:detail,severity:value>=3?'severe':'moderate',status:'active',createdAt:Date.now()});
+  else state[type].push({id,name,text:detail||name,status:'active',createdAt:Date.now()});
+  $('#worldToolName').value='';$('#worldToolDetail').value='';$('#worldToolValue').value='0';story.updatedAt=Date.now();scheduleSave();renderWorldDashboard(story);renderRpgWorldLedger(story);showToast(`${WORLD_SYSTEM_LABELS[type]} actualizado.`);
+}
+$('#addWorldToolBtn').addEventListener('click',addWorldTool);
+$('#closeWorldDashboardBtn').addEventListener('click',()=>$('#worldDashboardBackdrop').classList.remove('active'));
+$('#worldDashboardBackdrop').addEventListener('click',e=>{if(e.target.id==='worldDashboardBackdrop')e.currentTarget.classList.remove('active');});
+
 function renderRpgWorldLedger(story) {
   const state = story.rpg.worldState;
   $('#rpgWorldClock').textContent = state.clock || 'Inicio';
@@ -4002,6 +4078,7 @@ function renderRpgTable() {
   window.LoreRpgEngine.ensureStory(story);
   $('#rpgTableStoryTitle').textContent = story.title;
   $('#rpgSessionMeta').textContent = `${story.rpg.session.title} · ronda ${story.rpg.session.round} · ${story.rpg.session.turns.filter(t => t.role === 'player').length} turno(s) del jugador`;
+  $('#rpgRoleSelect').value = story.rpg.role || 'player';
   $('#rpgLanguageSelect').value = getStoryLanguage(story);
   $('#rpgGmDetailSelect').value = story.rpg.gmDetail || 'cinematic';
   renderRpgTurnLog(story);
@@ -4115,6 +4192,9 @@ CAMPAÑA ELEGIDA AL ENTRAR AL MODO RPG:
 - Autor/creador de referencia: ${sanitizeTextForPrompt(campaign.referenceAuthor,1000)}. Usa únicamente rasgos generales de construcción, tono y ritmo; no copies texto ni suplantes literalmente su voz.
 - Punto de entrada: ${sanitizeTextForPrompt(campaign.entryPoint,5000)}
 - Política de canon: ${campaign.freedom === 'canon' ? 'canon estricto; cualquier divergencia exige causa y coste' : campaign.freedom === 'alternate' ? 'línea alternativa; cada divergencia queda persistida' : 'mundo abierto; canon como base y consecuencias libres pero coherentes'}.
+- Dificultad: ${campaign.difficulty}; letalidad: ${campaign.lethality}; límites: ${(campaign.limits||[]).join(', ')||'ninguno declarado'}.
+- Rol del usuario: ${story.rpg.role === 'director' ? 'DIRECTOR. El usuario decide mundo, encuadre y PNJ; tú eres copiloto de dirección. Devuelve narración lista para usar, consecuencias, continuidad y herramientas, pero no contradigas sus decisiones de dirección.' : 'JUGADOR. El usuario controla solo su personaje; tú diriges mundo y PNJ sin elegir por él.'}
+- Nivel de experiencia: ${story.rpg.experience}. ${story.rpg.mentorMode ? 'Incluye orientación breve y concreta solo cuando evite un error de reglas o ayude a aprender; mantenla fuera de la narración.' : 'No añadas orientación didáctica.'}
 
 PROFUNDIDAD NARRATIVA ${gmProfile.label.toUpperCase()}:
 - Extensión objetivo: ${gmProfile.paragraphs} párrafos sustanciales (${gmProfile.words} palabras), sin rellenar ni repetir la tirada.
@@ -4125,7 +4205,7 @@ PROFUNDIDAD NARRATIVA ${gmProfile.label.toUpperCase()}:
 - La última línea es una sola pregunta abierta al jugador. No ofrezcas un menú rígido salvo que la escena lo exija.
 
 Devuelve SOLO JSON válido, sin markdown:
-{"narracion":"${gmProfile.paragraphs} párrafos complejos, inmersivos y coherentes en ${language.label}; no controles al jugador","pregunta":"${language.question}","consecuencias":["cambio causal concreto que persistirá"],"mundo":{"ubicacion":"solo si cambió","reloj":"avance temporal","hechos":["hecho público nuevo"]},"conocimiento":[{"personaje":"PNJ exacto","aprende":"solo lo que presenció o le comunicaron"}]}
+{"narracion":"${gmProfile.paragraphs} párrafos complejos, inmersivos y coherentes en ${language.label}; no controles al jugador","pregunta":"${language.question}","consecuencias":["cambio causal concreto que persistirá"],"mundo":{"ubicacion":"solo si cambió","reloj":"avance temporal","hechos":["hecho público nuevo"]},"conocimiento":[{"personaje":"PNJ exacto","aprende":"solo lo que presenció o le comunicaron"}],"sistemas":{"relojes":[{"nombre":"Peligro","delta":1,"max":6}],"inventario":{"agregar":[],"retirar":[]},"misiones":[{"titulo":"","estado":"active"}],"relaciones":[{"personaje":"","delta":0}],"heridas":[],"pistas":[],"facciones":[{"nombre":"","progreso":0}]},"mentor":"consejo opcional fuera de personaje o vacío"}
 
 FICHA Y ESTADO ACTUAL:
 ${sanitizeTextForPrompt(JSON.stringify(sheet), 12000)}
@@ -4140,7 +4220,7 @@ FUENTES CONSULTADAS (${sourceDigest.used.join(', ') || 'ninguna'}):
 ${sanitizeTextForPrompt(sourceDigest.text, sourceBudget)}
 
 ESTADO PERSISTENTE DEL MUNDO (solo añade cambios causados por la ficción):
-${sanitizeTextForPrompt(JSON.stringify({ubicacion:worldState.location,reloj:worldState.clock,consecuencias:worldState.consequences.slice(-12),hechos:worldState.facts.slice(-20)}),16000)}
+${sanitizeTextForPrompt(JSON.stringify({ubicacion:worldState.location,reloj:worldState.clock,consecuencias:worldState.consequences.slice(-12),hechos:worldState.facts.slice(-20),facciones:worldState.factions.slice(-12),misiones:worldState.quests.slice(-12),inventario:worldState.inventory.slice(-20),heridas:worldState.wounds.slice(-10),pistas:worldState.clues.slice(-20),relojes:worldState.clocks.slice(-12),relaciones:worldState.relationships,rumores:worldState.rumors.slice(-12)}),30000)}
 
 PNJ Y LÍMITES EPISTÉMICOS:
 ${sanitizeTextForPrompt(JSON.stringify(npcs),20000)}
@@ -4307,6 +4387,15 @@ function applyRpgWorldUpdate(story, parsed, resolution, payload) {
     if (!ledger.includes(learned)) ledger.push(learned);
     state.npcKnowledge[npc.id] = ledger.slice(-40);
   });
+  const systems=payload?.sistemas&&typeof payload.sistemas==='object'?payload.sistemas:{};
+  (Array.isArray(systems.relojes)?systems.relojes:[]).slice(0,6).forEach(change=>{const name=clean(change.nombre);if(!name)return;let clock=state.clocks.find(c=>window.LoreRpgEngine.normalize(c.name)===window.LoreRpgEngine.normalize(name));if(!clock){clock={id:uid('clock'),name,value:0,max:Math.max(2,Number(change.max)||6),createdAt:Date.now()};state.clocks.push(clock);}clock.value=Math.max(0,Math.min(clock.max,clock.value+(Number(change.delta)||0)));});
+  const inventory=systems.inventario||{};(Array.isArray(inventory.agregar)?inventory.agregar:[]).slice(0,8).forEach(v=>{const name=clean(typeof v==='string'?v:v.name);if(name&&!state.inventory.some(i=>i.name===name))state.inventory.push({id:uid('item'),name,quantity:1,owner:story.rpg.player.name||'grupo',createdAt:Date.now()});});
+  (Array.isArray(inventory.retirar)?inventory.retirar:[]).slice(0,8).forEach(v=>{const name=clean(typeof v==='string'?v:v.name);const i=state.inventory.findIndex(x=>x.name===name);if(i>=0)state.inventory.splice(i,1);});
+  (Array.isArray(systems.misiones)?systems.misiones:[]).slice(0,6).forEach(change=>{const title=clean(change.titulo);if(!title)return;let q=state.quests.find(x=>x.title===title);if(!q){q={id:uid('quest'),title,objective:title,status:'active',createdAt:Date.now()};state.quests.push(q);}if(['active','blocked','failed','completed'].includes(change.estado))q.status=change.estado;});
+  (Array.isArray(systems.relaciones)?systems.relaciones:[]).slice(0,8).forEach(change=>{const name=clean(change.personaje);if(name)state.relationships[name]=Math.max(-100,Math.min(100,(Number(state.relationships[name])||0)+(Number(change.delta)||0)));});
+  (Array.isArray(systems.heridas)?systems.heridas:[]).slice(0,5).forEach(v=>{const name=clean(typeof v==='string'?v:v.nombre);if(name&&!state.wounds.some(w=>w.name===name))state.wounds.push({id:uid('wound'),name,status:'active',severity:'moderate',createdAt:Date.now()});});
+  (Array.isArray(systems.pistas)?systems.pistas:[]).slice(0,8).forEach(v=>{const text=clean(typeof v==='string'?v:v.texto);if(text&&!state.clues.some(c=>c.text===text))state.clues.push({id:uid('clue'),text,status:'active',createdAt:Date.now()});});
+  (Array.isArray(systems.facciones)?systems.facciones:[]).slice(0,6).forEach(change=>{const name=clean(change.nombre);if(!name)return;let f=state.factions.find(x=>x.name===name);if(!f){f={id:uid('faction'),name,goal:'No revelado',progress:0,attitude:0,createdAt:Date.now()};state.factions.push(f);}f.progress=Math.max(0,Math.min(100,f.progress+(Number(change.progreso)||0)));});
   state.events = state.events.slice(-200); state.consequences = state.consequences.slice(-100); state.facts = state.facts.slice(-120);
 }
 
@@ -4319,6 +4408,12 @@ async function submitRpgTurn() {
   if (!story || story.projectMode !== 'rpg' || !input) return;
   const raw = input.value.trim();
   if (!raw) return;
+  const campaignCommand = window.LoreRpgEngine.executeCampaignCommand(story, raw);
+  if (campaignCommand.handled) {
+    const at=Date.now();story.rpg.session.turns.push({id:uid('turn'),role:'player',type:'command',text:raw,at});
+    story.rpg.session.turns.push({id:uid('turn'),role:'system',type:'command-result',text:campaignCommand.message||campaignCommand.error||'Comando procesado.',at:Date.now()});
+    input.value='';if(campaignCommand.changed)story.updatedAt=Date.now();scheduleSave();renderRpgTable();return;
+  }
   const check = validateRpgSheet(story);
   if (!check.ok) {
     showToast(`Completa la ficha: ${check.errors[0]}`);
@@ -4360,6 +4455,8 @@ async function submitRpgTurn() {
       id:uid('turn'), role:'gm', type:'narration', text:narration.text, at:Date.now(),
       local:narration.local, repaired:narration.repaired, sourcesUsed:narration.sourcesUsed || [], worldUpdate:narration.worldUpdate || null
     });
+    const mentor=story.rpg.mentorMode?String(narration.worldUpdate?.mentor||'').trim():'';
+    if(mentor)session.turns.push({id:uid('turn'),role:'system',type:'mentor',text:`Mentor: ${mentor.slice(0,600)}`,at:Date.now()});
     if (narration.warning) session.turns.push({ id:uid('turn'), role:'system', type:'warning', text:narration.warning, at:Date.now() });
     session.round += resolution.updates.combatTurnsDelta ? 1 : 0;
     story.updatedAt = Date.now();
@@ -4464,6 +4561,9 @@ const closeRpgCapture = () => { if (!$('#confirmRpgCaptureBtn').disabled) { rpgC
 $('#closeRpgCaptureBtn').addEventListener('click', closeRpgCapture);
 $('#cancelRpgCaptureBtn').addEventListener('click', closeRpgCapture);
 $('#rpgChapterCaptureBackdrop').addEventListener('click', e => { if (e.target.id === 'rpgChapterCaptureBackdrop') closeRpgCapture(); });
+$('#rpgSessionZeroBtn').addEventListener('click',()=>openSessionZero(currentStoryId));
+$('#rpgWorldDashboardBtn').addEventListener('click',openWorldDashboard);
+$('#rpgRoleSelect').addEventListener('change',()=>{const story=getStory(currentStoryId);if(!story||rpgRequestInFlight)return;story.rpg.role=$('#rpgRoleSelect').value;scheduleSave();renderRpgTable();showToast(story.rpg.role==='director'?'Modo Director: control directo del mundo habilitado.':'Modo Jugador: vivirás el mundo mediante tu personaje.');});
 $('#rpgLanguageSelect').addEventListener('change', () => {
   const story = getStory(currentStoryId); if (!story || rpgRequestInFlight) return;
   story.outputLanguage = $('#rpgLanguageSelect').value;

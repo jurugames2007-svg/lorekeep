@@ -719,6 +719,9 @@
               <div class="muted small" id="rpgSessionMeta">Sesión persistente</div>
             </div>
             <div class="row-gap rpg-head-actions" style="margin:0;">
+              <label class="rpg-detail-label">Rol
+                <select id="rpgRoleSelect" title="Juega como personaje o dirige el mundo"><option value="player">Jugador</option><option value="director">Director</option></select>
+              </label>
               <label class="rpg-detail-label">Idioma
                 <select id="rpgLanguageSelect" title="Idioma visible de la campaña"><option value="es">ES</option><option value="en">EN</option><option value="pt">PT</option><option value="fr">FR</option><option value="de">DE</option><option value="it">IT</option></select>
               </label>
@@ -729,6 +732,8 @@
                   <option value="epic">Épico / profundo</option>
                 </select>
               </label>
+              <button class="btn-secondary small" id="rpgWorldDashboardBtn" type="button">Mundo</button>
+              <button class="btn-secondary small" id="rpgSessionZeroBtn" type="button">Sesión cero</button>
               <button class="btn-secondary small" id="rpgOpenChaptersBtn" type="button">Capítulos</button>
               <button class="btn-secondary small" id="rpgNewSessionBtn" type="button">Nueva sesión</button>
               <button class="icon-btn" id="closeRpgTableBtn" title="Cerrar mesa">✕</button>
@@ -802,6 +807,47 @@
           <div class="rpg-capture-preview" id="rpgCapturePreview"></div>
           <div class="side-panel-info-box"><span class="info-label">Sin duplicados</span><p class="muted small" style="margin:4px 0 0;">Solo se registran los turnos posteriores al último capítulo capturado. La partida original permanece intacta.</p></div>
           <div class="row-gap" style="justify-content:flex-end"><button class="btn-secondary" id="cancelRpgCaptureBtn">Cancelar</button><button class="btn-primary" id="confirmRpgCaptureBtn">Crear capítulo</button></div>
+        </div>
+      </div>
+
+      <!-- SESIÓN CERO GUIADA PARA PRINCIPIANTES -->
+      <div class="modal-backdrop" id="sessionZeroBackdrop" role="dialog" aria-modal="true" aria-label="Sesión cero guiada">
+        <div class="modal session-zero-modal">
+          <div class="modal-head"><div><h3>Sesión cero guiada</h3><span class="muted small">No necesitas experiencia previa: define cómo quieres vivir o dirigir este mundo.</span></div><button class="icon-btn" id="closeSessionZeroBtn">✕</button></div>
+          <div class="session-zero-progress"><span class="active">1 · Rol</span><span>2 · Mundo</span><span>3 · Riesgo</span><span>4 · Comenzar</span></div>
+          <div class="rpg-form-grid">
+            <div><label>Quiero participar como</label><select id="szRole"><option value="player">Jugador — vivo el mundo con mi personaje</option><option value="director">Director — controlo mundo, escenas y PNJ con ayuda de Muse</option></select></div>
+            <div><label>Mi experiencia</label><select id="szExperience"><option value="beginner">Principiante — explícame lo necesario</option><option value="intermediate">Intermedia — ayudas puntuales</option><option value="advanced">Avanzada — interfaz directa</option></select></div>
+            <div><label>Obra / universo</label><input id="szWork" type="text" placeholder="Mundo original o referencia" /></div>
+            <div><label>Autor/a o creador/a</label><input id="szAuthor" type="text" placeholder="Referencia general, sin copia literal" /></div>
+          </div>
+          <label>Punto de entrada</label><textarea id="szEntry" rows="3" placeholder="¿Dónde empieza la aventura y qué está a punto de cambiar?"></textarea>
+          <div class="rpg-form-grid">
+            <div><label>Tono</label><input id="szTone" type="text" placeholder="Aventura, misterio, tragedia, humor…" /></div>
+            <div><label>Dificultad</label><select id="szDifficulty"><option value="story">Narrativa</option><option value="balanced">Equilibrada</option><option value="challenging">Desafiante</option><option value="brutal">Brutal</option></select></div>
+            <div><label>Letalidad</label><select id="szLethality"><option value="safe">Segura</option><option value="heroic">Heroica</option><option value="dangerous">Peligrosa</option><option value="lethal">Letal</option></select></div>
+            <div><label>Relación con canon</label><select id="szFreedom"><option value="open">Mundo abierto</option><option value="canon">Canon estricto</option><option value="alternate">Línea alternativa</option></select></div>
+          </div>
+          <label>Límites y temas que no deben aparecer</label><textarea id="szLimits" rows="2" placeholder="Separa con comas. Puedes dejarlo vacío."></textarea>
+          <label class="session-zero-mentor"><input type="checkbox" id="szMentor" checked /> Activar Mentor para explicar reglas, escritura y roleplay sin romper la inmersión</label>
+          <div class="session-zero-summary" id="szSummary">LoreVinci preparará la ficha, el mundo persistente y una guía contextual.</div>
+          <div class="row-gap" style="justify-content:flex-end"><button class="btn-secondary" id="cancelSessionZeroBtn">Cancelar</button><button class="btn-primary" id="saveSessionZeroBtn">Entrar al mundo</button></div>
+        </div>
+      </div>
+
+      <!-- PANEL DE SISTEMAS DEL MUNDO -->
+      <div class="modal-backdrop" id="worldDashboardBackdrop" role="dialog" aria-modal="true" aria-label="Sistemas del mundo">
+        <div class="modal world-dashboard-modal">
+          <div class="modal-head"><div><h3>Sistemas del mundo</h3><span class="muted small" id="worldDashboardSubtitle">Estado persistente de campaña</span></div><button class="icon-btn" id="closeWorldDashboardBtn">✕</button></div>
+          <div class="world-dashboard-grid" id="worldDashboardGrid"></div>
+          <div class="world-tool-form" id="worldToolForm">
+            <select id="worldToolType"><option value="factions">Facción</option><option value="quests">Misión</option><option value="inventory">Objeto</option><option value="clocks">Reloj de peligro</option><option value="clues">Pista</option><option value="wounds">Herida</option><option value="locations">Lugar</option><option value="rumors">Rumor</option><option value="relationships">Relación</option></select>
+            <input id="worldToolName" type="text" placeholder="Nombre" />
+            <input id="worldToolDetail" type="text" placeholder="Objetivo, detalle o descripción" />
+            <input id="worldToolValue" type="number" value="0" title="Progreso, cantidad o relación" />
+            <button class="btn-primary" id="addWorldToolBtn">Añadir</button>
+          </div>
+          <div class="world-command-help"><b>Comandos rápidos:</b> <code>/estado</code> <code>/reloj Alarma 0/6</code> <code>/faccion Gremio | Controlar el puerto</code> <code>/mision Rescatar al guía</code> <code>/relacion Iria +2</code>. Los cambios directos requieren modo Director.</div>
         </div>
       </div>
 
