@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.openai.com https://openrouter.ai https://*.openrouter.ai; img-src 'self' data: blob:; script-src 'self' blob: 'wasm-unsafe-eval'; worker-src 'self' blob:; child-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'none';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.openai.com https://openrouter.ai https://*.openrouter.ai https://es.wikipedia.org https://openlibrary.org https://html.duckduckgo.com; img-src 'self' data: blob:; script-src 'self' blob: 'wasm-unsafe-eval'; worker-src 'self' blob:; child-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'none';">
 <title>LoreVinci</title>
 <link rel="stylesheet" href="styles.css" />
 </head>
@@ -56,6 +56,9 @@
         </button>
         <button class="nav-item" data-view="stories" title="Ver y crear tus historias">
           <span class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></span>Mis Historias
+        </button>
+        <button class="nav-item" id="quickRpgNavBtn" title="Abrir directamente tu última Mesa RPG">
+          <span class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7l8-4 8 4-2 10-6 4-6-4z"></path><path d="M12 3v18M4 7l8 5 8-5"></path></svg></span>Mesa RPG
         </button>
       <!-- SOURCES / LIBRARY VIEW -->
       <button class="nav-item" data-view="sources" title="Gestionar fuentes globales, PDFs y Canon">
@@ -400,10 +403,36 @@
             <div id="aiVerifySteps" class="ai-verify-steps"></div>
           </div>
 
+          <div class="omniroute-panel" id="omniroutePanel">
+            <div class="omniroute-head">
+              <div><span class="omniroute-mark">O</span><b>OmniRoute</b><span class="muted small">Gateway local opcional · MIT</span></div>
+              <span class="canon-badge canon-reference" id="omnirouteStatusBadge">No detectado</span>
+            </div>
+            <p class="muted small">Una sola URL para múltiples proveedores, modelos <code>auto/*</code>, fallback por cuota/salud y telemetría de ruta. LoreVinci no instala OmniRoute ni importa sus credenciales: se conecta al proceso local que tú administras.</p>
+            <div class="row-gap" style="flex-wrap:wrap;">
+              <button class="btn-primary small" id="connectOmniRouteBtn" type="button">Detectar y usar OmniRoute</button>
+              <button class="btn-secondary small" id="openOmniRouteDashboardBtn" type="button">Abrir dashboard</button>
+              <button class="btn-secondary small" id="copyOmniRouteInstallBtn" type="button">Copiar instalación</button>
+              <button class="link-btn" id="openOmniRouteDocsBtn" type="button">Documentación ↗</button>
+            </div>
+            <div class="omniroute-status muted small" id="omnirouteStatusText">Esperando detección en http://localhost:20128.</div>
+            <div class="omniroute-routing-grid" id="omnirouteRoutingGrid">
+              <label>Partida RPG<select id="omniRouteRpg"><option value="auto/smart">auto/smart</option><option value="auto">auto</option><option value="auto/fast">auto/fast</option><option value="auto/cheap">auto/cheap</option><option value="auto/offline">auto/offline</option></select></label>
+              <label>Capítulos<select id="omniRouteWriting"><option value="auto/smart">auto/smart</option><option value="auto">auto</option><option value="auto/fast">auto/fast</option><option value="auto/cheap">auto/cheap</option></select></label>
+              <label>Muse / sugerencias<select id="omniRouteMuse"><option value="auto/fast">auto/fast</option><option value="auto">auto</option><option value="auto/smart">auto/smart</option><option value="auto/cheap">auto/cheap</option></select></label>
+              <label>Planificación<select id="omniRoutePlanning"><option value="auto">auto</option><option value="auto/smart">auto/smart</option><option value="auto/fast">auto/fast</option><option value="auto/cheap">auto/cheap</option></select></label>
+              <label>Investigación<select id="omniRouteResearch"><option value="auto/cheap">auto/cheap</option><option value="auto/fast">auto/fast</option><option value="auto">auto</option><option value="auto/smart">auto/smart</option></select></label>
+              <label>Compresión<select id="omniCompression"><option value="off">Desactivada — máxima fidelidad</option><option value="default">Perfil de OmniRoute</option><option value="engine:rtk">RTK</option></select></label>
+            </div>
+            <div class="omniroute-route" id="omnirouteLastRoute">Sin rutas registradas todavía.</div>
+            <div class="omniroute-warning">Los tiers gratuitos, OAuth, cookies web y conectores no oficiales dependen de OmniRoute y de los términos de cada proveedor. Revisa su dashboard antes de habilitarlos.</div>
+          </div>
+
           <div style="border-top:1px solid var(--border); padding-top:14px; margin-top:14px;">
             <label>Proveedor (rellena la URL base por ti)</label>
             <select id="aiProviderPreset">
               <option value="custom">Personalizado / Otro</option>
+              <option value="omniroute">OmniRoute local — auto-routing y fallback (localhost:20128)</option>
               <option value="openai">OpenAI — https://api.openai.com/v1</option>
               <option value="openrouter">OpenRouter — https://openrouter.ai/api/v1</option>
               <option value="groq">Groq — https://api.groq.com/openai/v1</option>
@@ -513,6 +542,7 @@
                 <button id="realtimeAssistantToggle" class="btn-secondary small" title="Activar/Desactivar sugerencias de estilo en tiempo real al escribir" style="display:inline-flex; align-items:center; gap:6px;">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>Asistente de estilo: <span id="assistantStatusText">OFF</span>
                 </button>
+                <select id="realtimeSuggestionMode" class="toolbar-select" title="Elige si el asistente entrega texto final insertable o una observación editorial"><option value="insert">Texto para insertar</option><option value="editorial">Comentario editorial</option></select>
                 <button id="zenModeBtn" title="Modo Zen — solo escritura (Cmd+Shift+F)" aria-label="Modo Zen" style="display:inline-flex; align-items:center; gap:6px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>Zen</button>
                 <button id="toggleLeftPanelBtn" title="Colapsar/Expandir panel izquierdo">◀ Panel</button>
                 <button id="readerModeBtn" title="Entrar en Modo Lectura Inmersivo" style="display:inline-flex; align-items:center; gap:6px;">
@@ -530,12 +560,12 @@
                 <div id="chapterEditor" class="chapter-editor size-standard font-sans" contenteditable="true" spellcheck="true" placeholder="Comienza a escribir tu obra..."></div>
                 <div id="realtimeSuggestionBox" class="realtime-suggestion-box" style="display:none;">
                   <div class="rsb-head">
-                    <span style="display:inline-flex; align-items:center; gap:5px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>Sugerencia de redacción en tiempo real</span>
+                    <span style="display:inline-flex; align-items:center; gap:5px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg><span id="rsbTitle">Texto listo para insertar</span></span>
                     <button class="icon-btn small" id="closeRsbBtn">✕</button>
                   </div>
                   <div class="rsb-body" id="rsbContent">Analizando coherencia y estilo...</div>
                   <div class="rsb-actions">
-                    <button class="btn-primary small" id="applyRsbBtn">Aplicar sugerencia</button>
+                    <button class="btn-primary small" id="applyRsbBtn">Insertar en el capítulo</button>
                   </div>
                 </div>
               </div>
@@ -547,6 +577,7 @@
               <button class="tab-btn active" data-tab="outline" title="Esquema general">Esquema</button>
               <button class="tab-btn" data-tab="rules" title="Reglas y Lore base del libro">Reglas</button>
               <button class="tab-btn" data-tab="docs" title="Adjuntar PDFs y artículos de referencia">Fuentes</button>
+              <button class="tab-btn" data-tab="rpg" id="rpgPanelTab" title="Mesa de rol con reglas, dados y ficha persistente">RPG</button>
               <button class="tab-btn" data-tab="notes" title="Notas rápidas">Notas</button>
               <button class="tab-btn" data-tab="chars" title="Elenco y personalidades">Elenco</button>
             </div>
@@ -568,6 +599,18 @@
                 <input type="file" id="attachDocFile" accept=".pdf,.txt,.md,.json" multiple style="display:none;" />
               </div>
               <div id="storyDocsList" class="sources-list-container"></div>
+            </div>
+            <div class="tab-content" data-tab-content="rpg">
+              <div class="rpg-side-summary">
+                <div class="rpg-mode-badge" id="rpgModeBadge">Modo novela</div>
+                <h3>Mesa RPG</h3>
+                <p class="muted small" id="rpgSideHelp">Activa el modo RPG para separar la partida del manuscrito.</p>
+                <div class="rpg-mini-hud" id="rpgMiniHud"></div>
+                <div class="rpg-rules-mini" id="rpgRulesMini"></div>
+                <button class="btn-primary w-100" id="openRpgTableBtn" type="button">Abrir mesa de juego</button>
+                <button class="btn-secondary small w-100" id="analyzeRpgRulesSideBtn" type="button">Analizar reglas y fórmulas</button>
+                <p class="muted small rpg-syntax-help"><b>Sintaxis opcional:</b><br><code>// acción</code> · <code>— diálogo</code> · <code>[fuera de personaje]</code></p>
+              </div>
             </div>
             <div class="tab-content" data-tab-content="notes">
               <div id="storyNotesList" class="notes-list"></div>
@@ -647,7 +690,8 @@
 
           <div class="side-panel-info-box" style="margin:10px 0;">
             <span class="info-label">Voz de la obra aplicada</span>
-            <p class="muted small" style="margin:4px 0 0 0;" id="autoBookStyleSummary">Sin estilo definido — configúralo en “Configurar → Estilo y voz”.</p>
+            <p class="muted small" style="margin:4px 0 7px 0;" id="autoBookStyleSummary">Sin estilo definido — configúralo en “Configurar → Estilo y voz”.</p>
+            <button class="btn-secondary small" id="autoBookResearchWebBtn" type="button">Buscar respaldo web para esta referencia</button>
           </div>
 
           <label>Material de referencia adicional (Derivados)</label>
@@ -692,6 +736,164 @@
         </div>
       </div>
 
+      <!-- RPG TABLE: los turnos viven aquí y nunca crean capítulos por accidente -->
+      <div class="modal-backdrop" id="rpgTableModalBackdrop" role="dialog" aria-modal="true" aria-label="Mesa de juego RPG">
+        <div class="modal rpg-table-modal">
+          <div class="modal-head rpg-table-head">
+            <div>
+              <h3>Mesa RPG · <span id="rpgTableStoryTitle">Partida</span></h3>
+              <div class="muted small" id="rpgSessionMeta">Sesión persistente</div>
+            </div>
+            <div class="row-gap rpg-head-actions" style="margin:0;">
+              <label class="rpg-detail-label">Rol
+                <select id="rpgRoleSelect" title="Juega como personaje o dirige el mundo"><option value="player">Jugador</option><option value="director">Director</option></select>
+              </label>
+              <label class="rpg-detail-label">Idioma
+                <select id="rpgLanguageSelect" title="Idioma visible de la campaña"><option value="es">ES</option><option value="en">EN</option><option value="pt">PT</option><option value="fr">FR</option><option value="de">DE</option><option value="it">IT</option></select>
+              </label>
+              <label class="rpg-detail-label">Detalle GM
+                <select id="rpgGmDetailSelect" title="Controla la profundidad de cada turno del Game Master">
+                  <option value="balanced">Equilibrado</option>
+                  <option value="cinematic">Cinematográfico</option>
+                  <option value="epic">Épico / profundo</option>
+                </select>
+              </label>
+              <button class="btn-secondary small" id="rpgWorldDashboardBtn" type="button">Mundo</button>
+              <button class="btn-secondary small" id="rpgSessionZeroBtn" type="button">Sesión cero</button>
+              <button class="btn-secondary small" id="rpgOpenChaptersBtn" type="button">Capítulos</button>
+              <button class="btn-secondary small" id="rpgNewSessionBtn" type="button">Nueva sesión</button>
+              <button class="icon-btn" id="closeRpgTableBtn" title="Cerrar mesa">✕</button>
+            </div>
+          </div>
+          <div class="rpg-table-layout">
+            <section class="rpg-play-column">
+              <div class="rpg-turn-log" id="rpgTurnLog" aria-live="polite"></div>
+              <div class="rpg-dice-stage" id="rpgDiceStage" aria-live="assertive" aria-label="Tirada de dado" hidden>
+                <div class="rpg-d20" id="rpgAnimatedDie"><span id="rpgAnimatedDieValue">20</span></div>
+                <div class="rpg-dice-copy"><b id="rpgDiceTitle">Tirando D20…</b><span id="rpgDiceFormula"></span></div>
+              </div>
+              <div class="rpg-resolution-preview" id="rpgResolutionPreview" style="display:none;"></div>
+              <div class="rpg-syntax-toolbar" aria-label="Insertar tipo de intervención">
+                <button type="button" data-rpg-prefix="// ">Acción <code>//</code></button>
+                <button type="button" data-rpg-prefix="— ">Diálogo <code>—</code></button>
+                <button type="button" data-rpg-wrap="brackets">Fuera de personaje <code>[ ]</code></button>
+              </div>
+              <textarea id="rpgTurnInput" rows="3" placeholder="Describe lo que intentas. LoreVinci resolverá dados y costes antes de que el GM narre..."></textarea>
+              <div class="rpg-compose-actions">
+                <span class="muted small">Ctrl/⌘ + Enter para enviar · el GM nunca controla a tu personaje</span>
+                <div class="row-gap" style="margin:0;"><button class="btn-danger rpg-cancel-turn" id="rpgCancelTurnBtn" type="button" hidden>Cancelar</button><button class="btn-primary" id="rpgSendTurnBtn" type="button">Resolver turno</button></div>
+              </div>
+            </section>
+            <aside class="rpg-state-column">
+              <div class="rpg-hud" id="rpgHud"></div>
+              <div class="rpg-sheet-card">
+                <div class="rpg-card-head"><b>Ficha activa</b><button class="link-btn" id="rpgEditSheetBtn" type="button">Editar</button></div>
+                <div id="rpgSheetSummary"></div>
+              </div>
+              <div class="rpg-sheet-card">
+                <div class="rpg-card-head"><b>Reglas ejecutables</b><button class="link-btn" id="rpgAnalyzeRulesBtn" type="button">Reanalizar</button></div>
+                <div id="rpgRulesAudit"></div>
+              </div>
+              <div class="rpg-sheet-card">
+                <div class="rpg-card-head"><b>Mundo y consecuencias</b><span class="muted small" id="rpgWorldClock">Inicio</span></div>
+                <div id="rpgWorldLedger" class="rpg-world-ledger"></div>
+              </div>
+              <div class="rpg-sheet-card rpg-chapter-card">
+                <div class="rpg-card-head"><b>Crónica de capítulos</b><span class="muted small" id="rpgUncapturedTurns">0 turnos nuevos</span></div>
+                <div id="rpgChapterRegistry" class="rpg-chapter-registry"></div>
+                <button class="btn-primary small w-100" id="rpgCaptureChapterBtn" type="button">Registrar tramo como capítulo</button>
+              </div>
+              <div class="rpg-roll-box">
+                <label>Tirada manual transparente</label>
+                <div class="row-gap" style="margin:4px 0 0; flex-wrap:nowrap;">
+                  <select id="rpgManualRollType" style="margin:0;">
+                    <option value="plain">D20</option><option value="strength">D20 + Fuerza</option><option value="agility">D20 + Agilidad</option><option value="resistance">D20 + Resistencia</option><option value="cursed">D20 + Flujo + Control</option>
+                  </select>
+                  <button class="btn-secondary" id="rpgManualRollBtn" type="button">Tirar</button>
+                </div>
+                <div id="rpgManualRollResult" class="muted small"></div>
+              </div>
+              <button class="btn-secondary small w-100" id="rpgExportSessionBtn" type="button" title="Registra toda la sesión, incluso tramos ya capturados">Registrar sesión completa…</button>
+            </aside>
+          </div>
+        </div>
+      </div>
+
+      <!-- REGISTRO DE TRAMO RPG COMO CAPÍTULO -->
+      <div class="modal-backdrop" id="rpgChapterCaptureBackdrop" role="dialog" aria-modal="true" aria-label="Registrar capítulo RPG">
+        <div class="modal rpg-capture-modal">
+          <div class="modal-head"><div><h3>Registrar tramo como capítulo</h3><span class="muted small" id="rpgCaptureRangeText"></span></div><button class="icon-btn" id="closeRpgCaptureBtn">✕</button></div>
+          <label>Título del capítulo</label>
+          <input type="text" id="rpgCaptureTitle" placeholder="Ej: El templo bajo la lluvia" />
+          <label>Formato</label>
+          <select id="rpgCaptureMode">
+            <option value="chronicle">Crónica fiel — conserva turnos y diálogo</option>
+            <option value="prose">Prosa narrativa con Muse AI — sin cambiar lo ocurrido</option>
+          </select>
+          <div class="rpg-capture-preview" id="rpgCapturePreview"></div>
+          <div class="side-panel-info-box"><span class="info-label">Sin duplicados</span><p class="muted small" style="margin:4px 0 0;">Solo se registran los turnos posteriores al último capítulo capturado. La partida original permanece intacta.</p></div>
+          <div class="row-gap" style="justify-content:flex-end"><button class="btn-secondary" id="cancelRpgCaptureBtn">Cancelar</button><button class="btn-primary" id="confirmRpgCaptureBtn">Crear capítulo</button></div>
+        </div>
+      </div>
+
+      <!-- SESIÓN CERO GUIADA PARA PRINCIPIANTES -->
+      <div class="modal-backdrop" id="sessionZeroBackdrop" role="dialog" aria-modal="true" aria-label="Sesión cero guiada">
+        <div class="modal session-zero-modal">
+          <div class="modal-head"><div><h3>Sesión cero guiada</h3><span class="muted small">No necesitas experiencia previa: define cómo quieres vivir o dirigir este mundo.</span></div><button class="icon-btn" id="closeSessionZeroBtn">✕</button></div>
+          <div class="session-zero-progress"><span class="active">1 · Rol</span><span>2 · Mundo</span><span>3 · Riesgo</span><span>4 · Comenzar</span></div>
+          <div class="rpg-form-grid">
+            <div><label>Quiero participar como</label><select id="szRole"><option value="player">Jugador — vivo el mundo con mi personaje</option><option value="director">Director — controlo mundo, escenas y PNJ con ayuda de Muse</option></select></div>
+            <div><label>Mi experiencia</label><select id="szExperience"><option value="beginner">Principiante — explícame lo necesario</option><option value="intermediate">Intermedia — ayudas puntuales</option><option value="advanced">Avanzada — interfaz directa</option></select></div>
+            <div><label>Obra / universo</label><input id="szWork" type="text" placeholder="Mundo original o referencia" /></div>
+            <div><label>Autor/a o creador/a</label><input id="szAuthor" type="text" placeholder="Referencia general, sin copia literal" /></div>
+          </div>
+          <label>Punto de entrada</label><textarea id="szEntry" rows="3" placeholder="¿Dónde empieza la aventura y qué está a punto de cambiar?"></textarea>
+          <div class="rpg-form-grid">
+            <div><label>Tono</label><input id="szTone" type="text" placeholder="Aventura, misterio, tragedia, humor…" /></div>
+            <div><label>Dificultad</label><select id="szDifficulty"><option value="story">Narrativa</option><option value="balanced">Equilibrada</option><option value="challenging">Desafiante</option><option value="brutal">Brutal</option></select></div>
+            <div><label>Letalidad</label><select id="szLethality"><option value="safe">Segura</option><option value="heroic">Heroica</option><option value="dangerous">Peligrosa</option><option value="lethal">Letal</option></select></div>
+            <div><label>Relación con canon</label><select id="szFreedom"><option value="open">Mundo abierto</option><option value="canon">Canon estricto</option><option value="alternate">Línea alternativa</option></select></div>
+          </div>
+          <label>Límites y temas que no deben aparecer</label><textarea id="szLimits" rows="2" placeholder="Separa con comas. Puedes dejarlo vacío."></textarea>
+          <label class="session-zero-mentor"><input type="checkbox" id="szMentor" checked /> Activar Mentor para explicar reglas, escritura y roleplay sin romper la inmersión</label>
+          <div class="session-zero-summary" id="szSummary">LoreVinci preparará la ficha, el mundo persistente y una guía contextual.</div>
+          <div class="row-gap" style="justify-content:flex-end"><button class="btn-secondary" id="cancelSessionZeroBtn">Cancelar</button><button class="btn-primary" id="saveSessionZeroBtn">Entrar al mundo</button></div>
+        </div>
+      </div>
+
+      <!-- PANEL DE SISTEMAS DEL MUNDO -->
+      <div class="modal-backdrop" id="worldDashboardBackdrop" role="dialog" aria-modal="true" aria-label="Sistemas del mundo">
+        <div class="modal world-dashboard-modal">
+          <div class="modal-head"><div><h3>Sistemas del mundo</h3><span class="muted small" id="worldDashboardSubtitle">Estado persistente de campaña</span></div><button class="icon-btn" id="closeWorldDashboardBtn">✕</button></div>
+          <div class="world-dashboard-grid" id="worldDashboardGrid"></div>
+          <div class="world-tool-form" id="worldToolForm">
+            <select id="worldToolType" aria-label="Tipo de elemento del mundo"><option value="factions">Facción</option><option value="quests">Misión</option><option value="inventory">Objeto</option><option value="clocks">Reloj de peligro</option><option value="clues">Pista</option><option value="wounds">Herida</option><option value="locations">Lugar</option><option value="rumors">Rumor</option><option value="relationships">Relación</option></select>
+            <input id="worldToolName" type="text" placeholder="Nombre" aria-label="Nombre del elemento" />
+            <input id="worldToolDetail" type="text" placeholder="Objetivo, detalle o descripción" aria-label="Detalle del elemento" />
+            <input id="worldToolValue" type="number" value="0" title="Progreso, cantidad o relación" aria-label="Valor, progreso o cantidad" />
+            <button class="btn-primary" id="addWorldToolBtn" type="button">Añadir</button>
+          </div>
+          <div class="world-command-help"><b>Comandos rápidos:</b> <code>/estado</code> <code>/reloj Alarma 0/6</code> <code>/faccion Gremio | Controlar el puerto</code> <code>/mision Rescatar al guía</code> <code>/relacion Iria +2</code>. Los cambios directos requieren modo Director.</div>
+        </div>
+      </div>
+
+      <!-- INVESTIGACIÓN WEB Y SELECCIÓN DE FUENTES -->
+      <div class="modal-backdrop" id="webResearchModalBackdrop" role="dialog" aria-modal="true" aria-label="Investigar fuentes en internet">
+        <div class="modal web-research-modal">
+          <div class="modal-head"><div><h3>Investigación web verificable</h3><span class="muted small">Busca, revisa y selecciona qué fuentes entran al libro.</span></div><button class="icon-btn" id="closeWebResearchBtn">✕</button></div>
+          <div class="web-research-notice">LoreVinci usa internet solo cuando tú lo solicitas. Las fuentes se guardan con URL y fecha. Para referencias de autores extrae datos y rasgos generales; no copia texto ni suplanta una voz literal.</div>
+          <div class="web-search-row">
+            <input type="search" id="webResearchQuery" placeholder="Autor, obra, universo, hecho o tema a verificar…" />
+            <select id="webResearchProvider"><option value="all">Web + enciclopedia + libros</option><option value="web">Web abierta</option><option value="wikipedia">Wikipedia</option><option value="books">Open Library</option></select>
+            <button class="btn-primary" id="runWebResearchBtn">Buscar</button>
+          </div>
+          <div class="web-direct-row"><input type="url" id="webDirectUrl" placeholder="O pega una URL https:// concreta…" /><button class="btn-secondary" id="addDirectWebUrlBtn">Revisar URL</button></div>
+          <div class="web-research-status muted small" id="webResearchStatus">Esperando una búsqueda.</div>
+          <div class="web-research-results" id="webResearchResults"></div>
+          <div class="row-gap" style="justify-content:space-between; margin-top:12px;"><span class="muted small" id="webSelectionCount">0 seleccionadas</span><div class="row-gap" style="margin:0;"><button class="btn-secondary" id="cancelWebResearchBtn">Cerrar</button><button class="btn-primary" id="attachWebSourcesBtn">Añadir seleccionadas como fuentes</button></div></div>
+        </div>
+      </div>
+
       <!-- CHARACTER DETAIL MODAL -->
       <div class="modal-backdrop" id="charModalBackdrop" role="dialog" aria-modal="true" aria-label="Personaje">
         <div class="modal">
@@ -732,14 +934,22 @@
           </div>
           <label>Título</label>
           <input type="text" id="newStoryTitle" placeholder="El título de tu obra" />
+          <label>Tipo de proyecto</label>
+          <select id="newStoryMode">
+            <option value="novel">Novela / fanfic</option>
+            <option value="rpg">Partida de rol interactiva (GM)</option>
+          </select>
+          <p class="muted small" style="margin:-4px 0 8px;">El modo RPG conserva ficha, recursos, dados y turnos sin crear capítulos automáticamente.</p>
+          <label>Idioma de escritura y narración</label>
+          <select id="newStoryLanguage"><option value="es">Español</option><option value="en">English</option><option value="pt">Português</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="it">Italiano</option></select>
           <label>Género</label>
           <input type="text" id="newStoryGenre" placeholder="Fantasía, Ciencia ficción, Romance, Shonen..." />
           <label>Sinopsis</label>
           <textarea id="newStorySynopsis" rows="3" placeholder="De qué trata tu historia..."></textarea>
           <label>Reglas y Lore Base</label>
           <textarea id="newStoryRules" rows="2" placeholder="Leyes del universo, restricciones del fanfic..."></textarea>
-          <label>Obra o autor cuyo estilo se debe imitar</label>
-          <input type="text" id="newStoryStyleRef" placeholder="Ej: Dragon Ball (Toriyama), Brandon Sanderson, One Piece..." />
+          <label>Obra o autor de referencia creativa</label>
+          <input type="text" id="newStoryStyleRef" placeholder="Ej: aventura ágil, fantasía épica, comedia romántica..." />
           <label>Notas de voz y personalidad de la escritura</label>
           <textarea id="newStyleNotes" rows="2" placeholder="Ej: narración en 3ª persona limitada, humor seco, frases cortas en la acción..."></textarea>
           <label>Imagen de portada (Archivo de imagen)</label>
@@ -768,6 +978,7 @@
             <button class="config-tab" data-ctab="cover">Portada</button>
             <button class="config-tab" data-ctab="lore">Lore y reglas</button>
             <button class="config-tab" data-ctab="style">Estilo y voz</button>
+            <button class="config-tab" data-ctab="rpg">Partida RPG</button>
             <button class="config-tab" data-ctab="sources">Fuentes</button>
           </div>
 
@@ -776,6 +987,8 @@
             <input type="text" id="cfgTitle" placeholder="Título de la obra" />
             <label>Género</label>
             <input type="text" id="cfgGenre" placeholder="Fantasía, Ciencia ficción, Shonen..." />
+            <label>Idioma de salida</label>
+            <select id="cfgLanguage"><option value="es">Español</option><option value="en">English</option><option value="pt">Português</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="it">Italiano</option></select>
             <label>Sinopsis</label>
             <textarea id="cfgSynopsis" rows="4" placeholder="De qué trata tu historia..."></textarea>
             <label>Outline / Esquema general</label>
@@ -808,9 +1021,9 @@
           <div class="config-pane" data-cpane="style">
             <div class="side-panel-info-box" style="margin-bottom:12px;">
               <span class="info-label">Personalidad y escritura de la obra</span>
-              <p class="muted small" style="margin:4px 0 0 0;">Muse AI imitará esta voz en cada capítulo generado, además de respetar el canon.</p>
+              <p class="muted small" style="margin:4px 0 0 0;">Muse AI aplicará rasgos generales de esta voz con texto original, además de respetar el canon.</p>
             </div>
-            <label>Obra o autor de referencia a imitar</label>
+            <label>Obra, género o autor como referencia creativa</label>
             <input type="text" id="cfgStyleRef" placeholder="Ej: Dragon Ball (Akira Toriyama), Sanderson, Ursula K. Le Guin..." />
             <label>Notas de voz narrativa</label>
             <textarea id="cfgStyleNotes" rows="4" placeholder="Persona narrativa, ritmo, humor, densidad descriptiva, tics de diálogo..."></textarea>
@@ -838,23 +1051,70 @@
               <div style="flex:1; min-width:170px;">
                 <label>Fidelidad al estilo</label>
                 <select id="cfgStyleStrength">
-                  <option value="alta">Alta — imitar de cerca</option>
-                  <option value="media">Media — inspirarse</option>
+                  <option value="alta">Alta — aplicar rasgos con intensidad</option>
+                  <option value="media">Media — inspiración clara</option>
                   <option value="baja">Baja — voz propia</option>
                 </select>
               </div>
             </div>
             <div class="row-gap" style="margin-top:12px;">
               <button class="btn-secondary small" id="cfgExtractStyleBtn" title="Analiza los capítulos escritos y las fuentes para deducir la voz de la obra">Extraer estilo de lo ya escrito</button>
+              <button class="btn-primary small" id="cfgResearchStyleBtn" title="Buscar referencias verificables sobre el autor, obra o corriente y elegir qué fuentes incorporar">Investigar referencia en internet</button>
             </div>
             <label style="margin-top:14px;">Muestra de estilo (fragmento canónico que define la voz)</label>
             <textarea id="cfgStyleSample" rows="5" placeholder="Pega aquí un fragmento representativo de la obra original: Muse AI lo usará como patrón de voz."></textarea>
+          </div>
+
+          <div class="config-pane" data-cpane="rpg">
+            <div class="side-panel-info-box" style="margin-bottom:12px;">
+              <span class="info-label">Partida interactiva con árbitro determinista</span>
+              <p class="muted small" style="margin:4px 0 0;">La IA narra; LoreVinci tira los dados, calcula recursos y bloquea acciones imposibles. Cada respuesta termina esperando al jugador.</p>
+            </div>
+            <label style="display:flex; align-items:center; gap:8px; color:var(--text); font-weight:600;">
+              <input type="checkbox" id="cfgRpgEnabled" style="width:auto; margin:0;" /> Activar modo RPG para esta obra
+            </label>
+            <div class="rpg-campaign-box">
+              <b>Mundo de campaña</b>
+              <p class="muted small">Elige la obra y creador como referencia del mundo. LoreVinci conserva canon, personalidad y conocimiento limitado, pero la campaña sigue abierta a decisiones con consecuencias.</p>
+              <div class="rpg-form-grid">
+                <div><label>Obra / universo de referencia</label><input type="text" id="cfgRpgReferenceWork" placeholder="Ej: una saga, anime, novela o mundo propio" /></div>
+                <div><label>Autor/a o creador/a</label><input type="text" id="cfgRpgReferenceAuthor" placeholder="Referencia creativa; no copia literal" /></div>
+              </div>
+              <label>Punto de entrada de la campaña</label><textarea id="cfgRpgEntryPoint" rows="3" placeholder="Dónde empieza, qué acaba de ocurrir y qué amenaza está activa…"></textarea>
+              <label>Relación con el canon</label><select id="cfgRpgFreedom"><option value="open">Mundo abierto — canon como base, consecuencias libres</option><option value="canon">Canon estricto — cambios difíciles y justificados</option><option value="alternate">Línea alternativa — divergencias persistentes</option></select>
+            </div>
+            <div class="rpg-form-grid">
+              <div><label>Nombre del jugador/personaje</label><input type="text" id="cfgRpgName" placeholder="Nombre" /></div>
+              <div><label>Edad</label><input type="number" id="cfgRpgAge" min="1" max="999" value="18" /></div>
+              <div><label>Ocupación / especie</label><input type="text" id="cfgRpgOccupation" placeholder="Estudiante, chamán, maldición..." /></div>
+              <div><label>Grado inicial</label><select id="cfgRpgGrade"><option value="4">Grado 4</option><option value="3">Grado 3</option><option value="2">Grado 2</option><option value="1">Grado 1</option><option value="special">Especial</option></select></div>
+              <div><label>Linaje</label><input type="text" id="cfgRpgLineage" placeholder="Sin clan / aprobado por GM" /></div>
+              <div><label>Técnica innata</label><input type="text" id="cfgRpgTechnique" placeholder="Una técnica única" /></div>
+            </div>
+            <label>Motivación</label><input type="text" id="cfgRpgMotivation" placeholder="Dinero, moral, venganza, supervivencia..." />
+            <label>Herramienta inicial</label><input type="text" id="cfgRpgEquipment" placeholder="Arma común o amuleto de Grado 4" />
+            <label style="display:flex; align-items:center; gap:8px; color:var(--text); font-weight:600; margin:8px 0;">
+              <input type="checkbox" id="cfgRpgHeavenly" style="width:auto; margin:0;" /> Restricción Celestial (PEM 0 y atributos físicos x2)
+            </label>
+            <label style="display:flex; align-items:center; gap:8px; color:var(--text); font-weight:600; margin:8px 0;">
+              <input type="checkbox" id="cfgRpgRcrt" style="width:auto; margin:0;" /> Talento raro de Técnica Inversa (RCRT)
+            </label>
+            <div class="rpg-attributes-grid">
+              <label>Fuerza<input type="number" id="cfgRpgStrength" min="0" max="100" value="3" /></label>
+              <label>Agilidad<input type="number" id="cfgRpgAgility" min="0" max="100" value="3" /></label>
+              <label>Resistencia<input type="number" id="cfgRpgResistance" min="0" max="100" value="3" /></label>
+              <label>Control<input type="number" id="cfgRpgControl" min="0" max="100" value="3" /></label>
+              <label>Flujo<input type="number" id="cfgRpgFlow" min="0" max="100" value="3" /></label>
+              <label>Reserva<input type="number" id="cfgRpgReserve" min="0" max="100" value="0" /></label>
+            </div>
+            <div class="rpg-config-preview" id="cfgRpgDerivedPreview"></div>
           </div>
 
           <div class="config-pane" data-cpane="sources">
             <p class="muted small">Fuentes adjuntas a este libro. Súbelas también desde el Studio de Fuentes o el panel del editor.</p>
             <div class="upload-action-bar" style="margin-bottom:12px;">
               <button class="btn-primary small" id="cfgAttachDocsBtn">Adjuntar varios PDFs / documentos</button>
+              <button class="btn-secondary small" id="cfgSearchWebBtn">Buscar y seleccionar fuentes web</button>
               <input type="file" id="cfgDocsInput" accept=".pdf,.txt,.md,.json" multiple style="display:none;" />
             </div>
             <div id="cfgSourcesList" class="sources-list-container"></div>
@@ -1109,6 +1369,7 @@
             <div class="help-item"><b>Auto-detectar Personajes</b> — en la sección Personajes, analiza tus textos para extraer perfiles y personalidades sin registro manual.</div>
             <div class="help-item"><b>Portadas y Reglas Base</b> — personaliza cada obra con imagen de portada y establece leyes de lore inmutables.</div>
             <div class="help-item"><b>Contador de Capítulos visible</b> — visualiza claramente cuántos capítulos están escritos y su estado en todo momento.</div>
+            <div class="help-item"><b>Mesa RPG</b> — activa “Partida RPG” al crear o configurar una obra. Usa <code>// acción</code>, <code>— diálogo</code> y <code>[fuera de personaje]</code>; los dados, costes y requisitos se resuelven antes de narrar y los turnos no crean capítulos.</div>
           </div>
           <div class="row-gap" style="justify-content:flex-end">
             <button class="btn-primary" id="replayOnboardingBtn">Ver tutorial de nuevo</button>
@@ -1166,6 +1427,7 @@
 
   <script src="vendor/pdfjs/pdf.min.js"></script>
   <script src="vendor/tesseract/tesseract.min.js"></script>
+  <script src="rpg-engine.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

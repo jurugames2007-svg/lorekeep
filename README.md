@@ -43,13 +43,55 @@ Windows para generar el `.exe`, en macOS para el `.dmg`).
 - **Stats**: palabras totales, capítulos, racha de escritura y actividad de los últimos 14 días.
 - **Settings**: nombre de autor/a, configuración y **verificación real** de Muse AI (proveedor, modelo, API key) y respaldo/restauración de todos tus datos.
 - **Fuentes & PDFs**: carga de **múltiples PDFs a la vez** con extracción real de texto, clasificación automática por **sub-tipo de historia** y **verso**, y filtros combinados.
+- **Mesa RPG**: modo de partida interactiva separado del manuscrito, con ficha persistente, D20 público, recursos, reglas/fórmulas ejecutables y un GM que siempre espera la decisión del jugador.
+
+## Mesa RPG: rol interactivo con reglas reales
+
+Al crear o configurar una obra puedes activar **Partida RPG**. Este modo corrige la diferencia entre pedirle prosa a una IA y ejecutar una partida:
+
+- **Nunca crea capítulos por cada mensaje.** Los turnos viven en una sesión persistente. Convertir una sesión en capítulo es una acción manual, confirmada y crea exactamente uno.
+- **Nunca delega los dados ni la aritmética a la IA.** LoreVinci tira el D20 localmente, muestra la operación, comprueba requisitos y descuenta PEM/Vida antes de pedir la narración.
+- **Ficha persistente**: identidad, edad, ocupación, grado, linaje, motivación, técnica, herramienta, Restricción Celestial y los seis atributos físicos/malditos.
+- **Fórmulas calculadas**: PEM y Vida máximos, iniciativa, carga, percepción, recuperación, costes de técnicas, Tobari y Dominio, entre otras reglas automatizadas.
+- **Acciones imposibles se bloquean con una razón.** Por ejemplo, un personaje de Grado 4 no puede abrir un Dominio; la acción no consume recursos ni llama a la API.
+- **Auditoría de reglas**: lee reglamentos de 100 o más puntos sin el antiguo recorte fijo de 4.000 caracteres y muestra contradicciones, como “Control más alto” frente a “D20 + Control”.
+- **Fuentes realmente consultadas**: la Mesa selecciona pasajes relevantes de los documentos adjuntos y registra cuáles usó en cada turno.
+- **Salida segura en español**: bloquea razonamiento interno (`The user wants…`, `I need to…`), narración mayormente inglesa y respuestas que intenten decidir por el jugador. Hace una reparación automática; si no es segura, usa una resolución local sin mostrar el borrador defectuoso.
+- **Turno estricto**: el GM describe entorno, PNJ y consecuencias, produce un solo turno y termina preguntando qué hace el jugador.
+
+La sintaxis es opcional; también se acepta lenguaje natural:
+
+- `// intento derribar la puerta CD 15` — acción.
+- `— No pienso retroceder` — diálogo del jugador.
+- `[¿Qué regla se aplica aquí?]` — consulta fuera de personaje, sin gasto ni tirada.
+
+### Loop de partida y crónica
+
+- El menú lateral **Mesa RPG** abre directamente la última partida usada.
+- Cada obra puede elegir **Español, English, Português, Français, Deutsch o Italiano**; el GM, Muse, sugerencias insertables, capítulos RPG y audiolibro usan ese idioma. El filtro de razonamiento interno sigue activo incluso cuando se elige inglés.
+- El asistente en tiempo real entrega por defecto **un párrafo final listo para insertar**, no una lista de ideas. El comentario editorial permanece como modo opcional.
+- Cada tirada muestra un **D20 animado** antes de revelar el natural, modificador, CD, ventaja/desventaja o crítico. Respeta `prefers-reduced-motion`.
+- Al entrar al modo RPG eliges **Jugador** (vivir el mundo mediante tu personaje) o **Director** (controlar escenas, PNJ y sistemas con Muse como copiloto).
+- La **Sesión cero guiada** pregunta experiencia, obra/universo, autor o creador, punto de entrada, tono, dificultad, letalidad, límites y relación con el canon; un principiante puede empezar sin conocer reglas previas.
+- El panel **Sistemas del mundo** gestiona facciones, misiones, inventario, relojes de peligro, pistas, heridas, lugares, rumores y relaciones. En modo Director también admite comandos como `/estado`, `/reloj`, `/faccion` o `/mision`.
+- Al entrar eliges **obra/universo, autor o creador, punto de entrada y relación con el canon**: mundo abierto, canon estricto o línea alternativa.
+- El GM permite profundidad equilibrada, cinematográfica o épica. El prompt exige atmósfera, consecuencias, PNJ con subtexto, complicaciones y posición espacial clara, sin decidir por el jugador.
+- El mundo conserva ubicación, reloj, hechos y consecuencias. Cada PNJ recibe personalidad, deseos, conocimiento inicial y memoria propia; solo aprende lo que presencia o se le comunica y nunca obtiene omnisciencia por leer el prompt.
+- Cada turno tiene cancelación visible, timeout de 45 segundos y cierre transaccional: un comando cancelado no aplica recursos ni consecuencias y nunca deja bloqueados los siguientes comandos.
+- **Crónica de capítulos** registra únicamente los turnos nuevos. Puede conservarlos como crónica fiel o transformarlos en prosa con Muse sin alterar hechos, dados ni decisiones.
+
+### Investigación web seleccionable
+
+Desde **Configurar → Estilo y voz** o **Fuentes** puedes buscar información pública en Wikipedia, Open Library y web abierta, o revisar una URL concreta. LoreVinci nunca incorpora resultados silenciosamente: muestra título, resumen, proveedor y dominio para que el usuario seleccione qué fuentes entran al libro.
+
+Las páginas seleccionadas se extraen en el proceso principal, se limitan a 30 MB y se guardan como Referencia Auxiliar con URL y fecha. Se bloquean `file://`, localhost, redes privadas, redirecciones inseguras y contenido binario. Para referencias de autores se usan hechos, bibliografía y rasgos generales; no se copian fragmentos ni se suplanta literalmente su voz.
 
 ## Fuentes y PDFs (carga múltiple)
 
 En **Fuentes & PDFs** puedes subir **muchos PDFs al mismo tiempo**:
 
 - Pulsa *"Subir varios PDFs / artículos"* y selecciona todos los archivos que quieras
-  (hasta 40 por lote), o simplemente **arrástralos juntos** sobre la zona de carga.
+  (hasta 40 por lote y **30 MB por archivo**), o simplemente **arrástralos juntos** sobre la zona de carga.
 - El texto de cada PDF se extrae de verdad con **pdf.js incluido en la app** (100% offline):
   se conserva el número de páginas y el contenido queda buscable.
 - Una barra de progreso muestra archivo por archivo qué se añadió, qué era duplicado y
@@ -174,6 +216,20 @@ Al generar capítulos, LoreVinci ya no manda solo un documento recortado:
 - Cada pasaje va etiquetado con su documento, sub-tipo y verso para que la IA sepa de
   dónde sale cada dato.
 
+## OmniRoute: enrutamiento opcional para Muse
+
+LoreVinci integra **OmniRoute** como gateway local OpenAI-compatible, sin incluirlo ni instalarlo silenciosamente. La integración fue validada contra OmniRoute 3.8.50 (MIT):
+
+1. Instala por tu cuenta: `npm install -g omniroute`.
+2. Inicia el gateway: `omniroute` (dashboard en `http://localhost:20128`).
+3. En LoreVinci abre **Ajustes → Muse AI → Detectar y usar OmniRoute**.
+4. Si tu instancia exige una key de acceso local, créala en el dashboard de OmniRoute y pégala en LoreVinci.
+5. Pulsa **Verificar y activar API** para realizar una generación real.
+
+El router permite perfiles independientes: RPG y capítulos usan por defecto `auto/smart`, Muse `auto/fast`, planificación `auto` e investigación `auto/cheap`. Puedes cambiarlos y elegir compresión desactivada, perfil del gateway o RTK. LoreVinci muestra, cuando OmniRoute envía sus headers, proveedor/modelo real, latencia, fallback, caché, coste, compresión, decisión y versión.
+
+La conexión directa con OpenAI, OpenRouter, Groq, Ollama o LM Studio sigue disponible. LoreVinci nunca importa credenciales de OmniRoute; solo llama al endpoint que el usuario configura. Los conectores gratuitos/no oficiales y sus términos son responsabilidad de OmniRoute y del usuario.
+
 ## Configurar y verificar Muse AI
 
 Ve a **Ajustes → Muse AI** e ingresa:
@@ -207,14 +263,18 @@ clave, la URL o el modelo, la verificación se invalida y hay que repetirla.
 ## Pruebas
 
 ```bash
-npm install --no-save jsdom pdfjs-dist@3.11.174 tesseract.js@5.1.1
+npm install
 npm test
 ```
 
-Seis suites, 152 comprobaciones: núcleo y seguridad, ingesta multi-PDF con extracción
-real, motor de generación, handlers del proceso principal, OCR y un **maratón de 30
-capítulos** contra un modelo simulado adverso (que trunca, devuelve JSON roto, falla
-la red y filtra texto del asistente) para comprobar que el libro se entrega íntegro.
+Catorce suites, 409 comprobaciones: núcleo y seguridad, ingesta multi-PDF con extracción
+real, motor de generación, handlers del proceso principal, OCR, Mesa RPG, una batería
+adversarial basada en la retroalimentación beta, investigación web segura y un **maratón
+de 30 capítulos** contra un modelo simulado adverso (que trunca, devuelve JSON roto,
+falla la red y filtra texto del asistente). Las suites RPG verifican reglamentos de 100
+puntos, fórmulas, D20 animado, registro incremental, fuentes seleccionadas, reparación
+de salidas inglesas y que el chat nunca cree capítulos por accidente. La suite OmniRoute
+verifica detección, modelos `auto/*`, perfiles por tarea, fallback/directo y telemetría.
 
 ## Dónde se guardan tus datos
 

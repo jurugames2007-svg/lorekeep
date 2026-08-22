@@ -1,0 +1,147 @@
+1. Identidad básica: Todo jugador debe definir nombre, edad y ocupación (estudiante, chamán profesional o maldición).
+2. Grado inicial: Los personajes comienzan en Grado 4 (novatos) a menos que la historia dicte lo contrario.
+3. Rango de energía: Se inicia con 100 Puntos de Energía Maldita (PEM).
+4. Atributos físicos: Fuerza, Agilidad y Resistencia definen tus capacidades sin usar magia.
+5. Atributos malditos: Control, Flujo y Reserva definen tu poder como chamán o maldición.
+6. Restricción Celestial: Puedes cambiar tu PEM a 0 para duplicar tus atributos físicos.
+7. Linaje: Pertenecer a los tres grandes clanes (Gojo, Kamo, Zenin) requiere aprobación del narrador.
+8. Herramientas iniciales: Todo chamán inicia con un arma común o un amuleto maldito de Grado 4.
+9. Apariencia: El diseño visual de tu ropa y arma debe justificarse con tu historia.
+10. Motivación: Debes definir por qué arriesgas tu vida (dinero, moral, venganza o supervivencia).
+11. Gasto base: Activar una técnica básica cuesta 10 PEM.
+12. Recuperación: Se recuperan 15 PEM por cada turno de descanso completo.
+13. Concentración: Fallar un ataque físico por desconcentración reduce tu PEM en 5.
+14. Percepción: Chamanes de grado superior pueden oler o sentir la firma de PEM de otros a distancia.
+15. Agotamiento total: Llegar a 0 PEM causa desmayo o vulnerabilidad crítica absoluta.
+16. Chispas Negras: No se pueden forzar; ocurren al sacar un 20 crítico en dados.
+17. Multiplicador crítico: Un Destello Negro multiplica el daño físico y maldito por 2.5.
+18. El Zone: Tras un Destello Negro, el control de tu PEM sube al 120% temporalmente.
+19. Fuga de energía: Las emociones negativas descontroladas gastan PEM sin querer.
+20. Ocultamiento: Puedes gastar 5 PEM por turno para borrar tu rastro mágico.
+21. Técnica Innata: Cada chamán nace con una sola técnica única e inmutable.
+22. Creación de extensiones: Puedes inventar derivados de tu técnica gastando más PEM.
+23. Técnicas Barrera: El uso de pantallas (Tobari) para ocultar el combate cuesta 20 PEM.
+24. Contrato Vinculante: Revelar cómo funciona tu técnica al rival aumenta su potencia un 30%.
+25. Contratos de sacrificio: Sacrificar un sentido o un brazo otorga un aumento de poder masivo y permanente.
+26. Técnica Inversa (RCRT): Solo sanas heridas graves si tu personaje posee esta habilidad médica rara.
+27. Costo de sanación: Usar RCRT cuesta el triple de PEM que un ataque normal.
+28. Veneno: Las maldiciones son inmunes al veneno convencional, los humanos no.
+29. Destrucción del cerebro: Apuntar a la cabeza cancela el uso de RCRT del rival de inmediato.
+30. Amplificación de Dominio: Capa protectora que neutraliza técnicas rivales pero te impide usar la tuya.
+31. Caída de Pétalos: Técnica secreta anti-dominio para amortiguar golpes inevitables.
+32. Simple Domain: Barrera pequeña que te protege de los efectos de acierto seguro del rival.
+33. Armas Malditas: Solo las armas imbuidas con PEM pueden dañar permanentemente a las maldiciones.
+34. Daño colateral: Destruir el entorno puede dar ventajas tácticas.
+35. Fatiga de combate: Tras 5 turnos seguidos peleando, los atributos físicos bajan un 10%.
+36. Requisito de Grado: Solo personajes de Grado 1 o Especial pueden intentar manifestarlo.
+37. Costo masivo: Activar tu Dominio consume el 80% de tu PEM total actual.
+38. Acierto Seguro: Dentro de tu Dominio, tus ataques nunca fallan el tiro.
+39. Choque de Dominios: Si dos personajes lo abren a la vez, gana el que tenga más atributo de Control.
+40. Romper desde fuera: Un Dominio es casi indestructible por dentro, pero frágil por fuera.
+41. Quemadura de técnica: Tras cerrarse el Dominio, tu técnica innata queda bloqueada por 3 turnos.
+42. Límite de tiempo: Un Dominio estándar dura un máximo de 3 turnos de rol activos.
+43. Dominio incompleto: Si te falta talento, creas el espacio pero sin el efecto de acierto seguro.
+44. Condiciones de escape: Puedes modificar los límites para dejar entrar personas a cambio de atrapar más fácil a otras.
+45. Estética: El jugador debe describir con lujo de detalles la atmósfera y el alma de su Dominio.
+46. Origen: Las maldiciones nacen del miedo acumulado de los humanos hacia conceptos específicos.
+47. Grado Especial: Tienen conciencia humana, hablan y pueden usar Expansión de Dominio.
+48. Regeneración natural: Las maldiciones sanan extremidades usando PEM normal, no RCRT.
+49. Visibilidad: Los humanos comunes no pueden ver maldiciones a menos que estén al borde de la muerte.
+50. Comportamiento salvaje: Las maldiciones de bajo grado atacan a cualquier humano a la vista sin estrategia.
+51. Úteros Malditos: Pueden aparecer en el mapa y tardarán turnos específicos en eclosionar.
+52. Objetos Malditos: Consumir un objeto de grado especial causa la muerte o posesión.
+53. Chamanes Chasis: Humanos que sirven de recipientes para chamanes del pasado.
+54. Cadáveres Malditos: Muñecos con núcleos de PEM independientes que actúan de aliados.
+55. Shikigamis: Criaturas invocadas mediante talismanes o sombras que obedecen órdenes directas del usuario.
+56. El Dado Base: Se lanza un dado de 20 caras (D20) para resolver cualquier acción dudosa.
+57. Modificadores: Tu nivel de atributo se suma al resultado del dado.
+58. Pifia Crítica: Sacar 1 significa fallo catastrófico.
+59. Éxito Crítico: Sacar 20 otorga daño masivo, información extra o esquiva perfecta.
+60. Tirada de Iniciativa: D20 + Agilidad para decidir quién ataca primero.
+61. Tirada de Voluntad: Se usa para resistir técnicas mentales, miedo o ilusiones.
+62. Ventaja: En una emboscada ideal lanzas dos dados y conservas el número más alto.
+63. Desventaja: A ciegas o herido lanzas dos dados y conservas el número más bajo.
+64. Resistencia Física: Para mitigar daño, el defensor lanza D20 + Resistencia.
+65. Dificultad (CD): El narrador pone la meta: Fácil 10, Media 15, Difícil 20, Heroica 25.
+66. Control del entorno: El narrador maneja clima, hora y aparición de civiles.
+67. Arbitraje: La palabra del narrador es ley si hay disputas.
+68. Gestión de misiones: Asignación de misiones según el grado actual.
+69. Consecuencias reales: Una mala decisión puede matar NPC importantes.
+70. Ritmo: El narrador corta diálogos excesivos si el combate requiere decisiones rápidas.
+71. Creación de misterios: Ocultar datos de enemigos hasta que el jugador los investigue.
+72. Control de daños: Decidir cuánto sabe el gobierno y el público sobre los destrozos.
+73. Balance: Si el enemigo es invencible, el narrador debe dar pistas de escape o debilidades.
+74. Recompensas: Entregar experiencia o herramientas malditas al cerrar un arco.
+75. Secretos: El narrador puede enviar información privada que el grupo no sabe.
+76. Fuego amigo: Las técnicas de área dañan compañeros si no calculas el espacio.
+77. Trabajo en equipo: Atacar al mismo objetivo en el mismo turno otorga +2 al ataque.
+78. Sacrificio heroico: Un jugador puede recibir el golpe mortal destinado a un compañero.
+79. Sinergia de técnicas: Combinar técnicas afines duplica el daño final.
+80. Chamanes Ejecutores: Si un compañero se corrompe, el grupo debe cazarlo.
+81. Transfusión de energía: No se puede regalar PEM salvo que una técnica lo permita.
+82. Estrategia en combo: Distraer consume tu acción pero da Ventaja al ataque aliado.
+83. Rescate médico: Llevar a un aliado a la enfermería detiene su sangrado.
+84. Pactos de grupo: Contratos vinculantes que involucran a todo el equipo.
+85. Comunicación: Los intercomunicadores pueden fallar con alta densidad de energía maldita.
+86. Recomendación: Para subir de grado necesitas dos recomendaciones de rango superior.
+87. Misión de prueba: Debes realizar una misión de grado superior acompañado.
+88. Puntos de Atributo: Subir de rango otorga 5 puntos libres.
+89. Evolución de técnica: Al llegar a Grado 1 puedes desbloquear la técnica máxima.
+90. Maestría de barreras: Subir de nivel reduce el costo de PEM de pantallas a la mitad.
+91. Control de Emociones: La experiencia reduce PEM perdido por pánico.
+92. Fama: El grado alto atrae maldiciones fuertes.
+93. Salario de Chamán: Subir de grado aumenta dinero para herramientas.
+94. Cicatrices de batalla: Heridas graves no tratadas dejan marcas permanentes.
+95. Sabiduría ancestral: Pergaminos de clan revelan debilidades enemigas.
+96. Meta-gaming prohibido: El personaje no sabe lo leído fuera del juego.
+97. Respeto al turno: No interrumpas la descripción del ataque de otro jugador.
+98. God-moding prohibido: No puedes esquivar todo ni inventar inmunidad sin dados.
+99. Consistencia de tono: Mantener una vibra seria, peligrosa y tensa.
+100. Diversión mutua: El fin es construir una historia trágica y épica juntos.
+
+[Energía Maldita Máxima (PEM)] = 100 + (Atributo Reserva * 15)
+[Vida Máxima (Puntos de Impacto)] = 50 + (Atributo Resistencia * 10)
+[Iniciativa de Combate] = Dado D20 + Atributo Agilidad + Modificador de Alerta
+[Capacidad de Carga de Herramientas] = 2 + (Atributo Fuerza / 2)
+[Rango de Percepción Maldita] = (Atributo Control + Atributo Flujo) * 5 metros
+[Tirada de Ataque Físico] = Dado D20 + Atributo Fuerza o Agilidad
+[Tirada de Defensa / Esquiva] = Dado D20 + Atributo Agilidad
+[Tirada de Bloqueo / Mitigación] = Dado D20 + Atributo Resistencia
+[Daño Físico Base Melee] = (Atributo Fuerza * 2) + Modificador de Arma
+[Daño Físico Base Distancia] = (Atributo Agilidad * 1.5) + Modificador de Arma
+[Daño Final Recibido] = [Daño Total del Atacante] - [Resultado de Mitigación del Defensor]
+[Tirada de Ataque Maldito] = Dado D20 + Atributo Flujo + Atributo Control
+[Potencia de Técnica Innata Básica] = (Atributo Flujo * 3) + (PEM Gastados / 2)
+[Daño de Técnica de Extensión] = (Atributo Flujo * 4) + PEM Gastados
+[Costo de PEM por Técnica Básica] = 10 PEM (Fijo)
+[Costo de PEM por Técnica de Extensión] = 20 PEM + (Daño extra deseado * 2)
+[Recuperación de PEM por Turno de Descanso] = 15 + Atributo Reserva
+[Ocultamiento de Rastro Mágico] = Costo de 5 PEM por turno activo
+[Probabilidad de Destello Negro] = Solo si el Dado D20 natural es 20
+[Daño de Destello Negro] = [Daño Físico o Mágico Total] * 2.5
+[Estado En la Zona] = Multiplica Atributos de Control y Flujo por 1.20 durante 3 turnos
+[Pifia Crítica en Combate] = Si el Dado D20 natural es 1 (El atacante recibe la mitad del daño de su propio ataque)
+[Bonificador por Revelar la Técnica] = [Daño Total de la Técnica] * 1.30
+[Sacrificio Temporal] = Otorga +5 a la siguiente Tirada a cambio de -20 de Vida
+[Sacrificio Permanente] = +2 Puntos de Atributo Permanentes o técnica nueva
+[Costo de Activación de Pantalla (Tobari)] = 20 PEM
+[Resistencia de la Pantalla (Tobari)] = (Atributo Control del Creador) * 50 Puntos de Estructura
+[Requisito de Activación de Dominio] = Solo Chamanes Grado 1 o Especial con Control > 15
+[Costo de Expansión de Dominio] = [PEM Actuales del Jugador] * 0.80
+[Duración Estándar del Dominio] = 3 Turnos de Combate Activos
+[Resolución de Choque de Dominios] = Tirada Enfrentada: (Dado D20 + Control) vs (Dado D20 + Control)
+[Quemadura de Técnica Post-Dominio] = Bloqueo total de Técnica Innata por 3 turnos
+[Costo de Activación de RCRT] = PEM Gastados * 3
+[Vida Regenerada con RCRT] = PEM Gastados / 3
+[Vida Regenerada con PEM (Maldiciones)] = PEM Gastados
+[Curación a un Aliado] = PEM Gastados / 4
+[Vida Base de Maldición Enemiga] = (Grado de la Maldición * 100) + 50
+[PEM Base de Maldición Enemiga] = (Grado de la Maldición * 150) + 100
+[Daño Base de Maldición] = Dado D20 + (Grado de la Maldición * 3)
+[Estadísticas de Shikigami Invocado] = Atributos iguales al (Atributo Control del Usuario * 0.80)
+[Costo de Mantenimiento de Shikigami] = 5 PEM por turno
+[Experiencia Necesaria para Subir de Grado] = [Grado Actual] * 1000 XP
+[Puntos de Atributo Ganados por Subida de Grado] = 5 Puntos Libres
+[Dinero Recibido por Misión Cumplida] = (Grado de la Misión * 2000 USD)
+[Dificultad de Acción Común] = Fácil 10, Media 15, Difícil 20, Heroica 25
+[Sinergia de Ataque en Equipo] = Tirada de Ataque + 2 por cada aliado

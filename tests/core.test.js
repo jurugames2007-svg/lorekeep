@@ -80,6 +80,8 @@ setTimeout(() => {
   ok('XSS: contenido conservado', dirty.includes('hola'));
   ok('dedupe por nombre', probe(`checkAndPreventDuplicateSource([{name:'a.pdf',content:'x'}],'a.pdf','y')`) === true);
   ok('dedupe permite nuevo', probe(`checkAndPreventDuplicateSource([{name:'a.pdf',content:'x'}],'b.pdf','otro texto largo distinto')`) === false);
+  ok('límite de fuentes subió a 30 MB', probe('MAX_FILE_SIZE') === 30 * 1024 * 1024);
+  ok('30 MB permitido y exceso rechazado', probe('isFileTooLarge({size:30*1024*1024})') === false && probe('isFileTooLarge({size:30*1024*1024+1})') === true);
 
   // OCR disponible como API
   ok('ocrIsAvailable definido', probe('typeof ocrIsAvailable') === 'function');

@@ -42,11 +42,17 @@ function makeApp({ seed = null, bridge = {}, withPdf = false } = {}) {
     aiGenerate: async () => ({ ok: true, text: 'texto', truncated: false }),
     aiModels: async () => ({ ok: true, models: ['gpt-4o'] }),
     aiVerify: async () => ({ ok: true, steps: [] }),
+    omniRouteStatus: async () => ({ ok:true, baseUrl:'http://localhost:20128/v1', dashboardUrl:'http://localhost:20128', latencyMs:12, modelCount:4, models:['auto','auto/smart','auto/fast','auto/cheap'], autoAvailable:true, version:'3.8.50' }),
+    webSearch: async () => ({ ok: true, results: [] }),
+    webFetch: async ({ url }) => ({ ok: true, page: { url, title:'Fuente web', description:'', content:'Contenido web de prueba suficientemente extenso para ser una fuente verificable.', fetchedAt:Date.now() } }),
     isDesktop: true
   };
   if (seed || Object.keys(bridge).length) w.lorevinci = { ...defaults, ...bridge };
   const errors = [];
   w.addEventListener('error', (e) => errors.push(e.message));
+  const engineScript = w.document.createElement('script');
+  engineScript.textContent = fs.readFileSync(P + 'rpg-engine.js', 'utf8');
+  w.document.body.appendChild(engineScript);
   const script = w.document.createElement('script');
   script.textContent = fs.readFileSync(P + 'app.js', 'utf8') + '\n;window.__probe=(c)=>eval(c);';
   w.document.body.appendChild(script);
