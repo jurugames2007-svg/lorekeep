@@ -28,7 +28,9 @@
     if (!story.projectMode) story.projectMode = 'novel';
     if (!story.rpg || typeof story.rpg !== 'object') story.rpg = {};
     const rpg = story.rpg;
-    rpg.language = 'es';
+    const supportedLanguages = ['es','en','pt','fr','de','it'];
+    rpg.language = supportedLanguages.includes(story.outputLanguage) ? story.outputLanguage : supportedLanguages.includes(rpg.language) ? rpg.language : 'es';
+    story.outputLanguage = rpg.language;
     rpg.strictTurns = rpg.strictTurns !== false;
     rpg.syntaxEnabled = rpg.syntaxEnabled !== false;
     rpg.gmDetail = ['balanced','cinematic','epic'].includes(rpg.gmDetail) ? rpg.gmDetail : 'cinematic';
@@ -618,8 +620,9 @@
     return lines.join('\n');
   }
 
-  function auditModelOutput(text) {
+  function auditModelOutput(text, options = {}) {
     const raw = String(text || '').trim();
+    const language = options.language || 'es';
     const patterns = [
       /\bThe user wants\b/i, /\bI need to\b/i, /\bLet me (?:analyze|write|continue)\b/i,
       /\bKey elements\b/i, /\bcurrent situation\b/i, /\bThe last word is\b/i,
@@ -647,7 +650,9 @@
       ...(raw.match(/(?:^|\n)\s*—[^\n]{4,}/g) || [])
     ];
     const englishDialogue = spokenSegments.some(segment => languageScore(segment).english);
-    return { ok: Boolean(raw) && leaks.length === 0 && !startsEnglish && !mostlyEnglish && !englishDialogue, leaks, startsEnglish, mostlyEnglish, englishDialogue, empty: !raw };
+    const enforceSpanish = language === 'es';
+    const languageMismatch = enforceSpanish && (startsEnglish || mostlyEnglish || englishDialogue);
+    return { ok: Boolean(raw) && leaks.length === 0 && !languageMismatch, leaks, startsEnglish, mostlyEnglish, englishDialogue, languageMismatch, language, empty: !raw };
   }
 
   function extractJson(text) {
@@ -661,28 +666,32 @@
     }
   }
 
-  function auditGmOutput(text) {
-    const base = auditModelOutput(text);
+  function auditGmOutput(text, options = {}) {
+    const base = auditModelOutput(text, options);
     const raw = String(text || '');
     const controlPatterns = [
       /\b(?:tú|tu personaje)\s+(?:decides|eliges|piensas|sientes|dices|respondes|corres|avanzas|atacas|te mueves|aceptas|rechazas|levantas|saltas|tomas|abres|entras|caminas|usas|lanzas|golpeas|esquivas|huyes|gritas)\b/i,
       /(?:^|[.!?:"“]\s*)(?:Decides|Eliges|Piensas|Sientes|Dices|Respondes|Corres|Avanzas|Atacas|Aceptas|Rechazas|Levantas|Saltas|Tomas|Abres|Entras|Caminas|Usas|Lanzas|Golpeas|Esquivas|Huyes|Gritas)\b/i,
       /\bno puedes evitar (?:pensar|sentir|decir|hacer)\b/i,
       /\b(?:te obliga|te hace|te fuerza) a (?:huir|atacar|decir|aceptar|caminar|entrar|moverte)\b/i,
-      /\bpones palabras en (?:tu|la) boca\b/i
+      /\bpones palabras en (?:tu|la) boca\b/i,
+      /\b(?:you|your character)\s+(?:decide|choose|think|feel|say|answer|run|advance|attack|move|accept|refuse|raise|jump|take|open|enter|walk|use|throw|strike|dodge|flee|shout)s?\b/i,
+      /(?:^|[.!?:"“]\s*)(?:You decide|You choose|You think|You feel|You say|You run|You attack|You enter|You flee)\b/i
     ];
     const controlsPlayer = controlPatterns.some(rx => rx.test(raw));
     return { ...base, ok: base.ok && !controlsPlayer, controlsPlayer };
   }
 
-  function normalizeGmOutput(text) {
-    const audit = auditGmOutput(text);
+  function normalizeGmOutput(text, options = {}) {
+    const language = options.language || 'es';
+    const audit = auditGmOutput(text, { language });
     if (!audit.ok) return { ok: false, error: audit.empty ? 'Respuesta vacía' : audit.controlsPlayer ? 'El GM intentó controlar al personaje del jugador.' : 'El proveedor expuso razonamiento interno o respondió fuera del formato seguro.', audit };
     const parsed = extractJson(text);
     let narrative = parsed ? String(parsed.narracion || parsed.narrative || '').trim() : String(text || '').trim();
     let question = parsed ? String(parsed.pregunta || parsed.question || '').trim() : '';
     narrative = narrative.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^```\w*\s*|```$/g, '').trim();
-    if (!question && !/[?¿]\s*$/.test(narrative)) question = '¿Qué haces?';
+    const questions = { es:'¿Qué haces?', en:'What do you do?', pt:'O que você faz?', fr:'Que faites-vous ?', de:'Was tust du?', it:'Che cosa fai?' };
+    if (!question && !/[?¿]\s*$/.test(narrative)) question = options.question || questions[language] || questions.es;
     const output = [narrative, question].filter(Boolean).join('\n\n');
     return { ok: Boolean(narrative), text: output, narrative, question, parsed };
   }

@@ -8,7 +8,7 @@
 
 **APROBADO para los fallos reproducibles informados por el beta tester.**
 
-La validación automatizada completa ejecuta **343 comprobaciones en 10 suites**. La batería adversarial específica reproduce las frases y situaciones del reporte, usa fuentes hostiles, respuestas corruptas y sesiones largas. El resultado actual es **70/70** en esa batería y **343/343** en el conjunto total.
+La validación automatizada completa ejecuta **357 comprobaciones en 11 suites**. La batería adversarial específica reproduce las frases y situaciones del reporte, usa fuentes hostiles, respuestas corruptas y sesiones largas. El resultado actual es **70/70** en esa batería y **357/357** en el conjunto total.
 
 Esto no significa que cualquier modelo externo sea infalible. Significa que una respuesta defectuosa ya no debe llegar sin control al manuscrito o a la partida: se valida, se intenta reparar una vez y, si sigue siendo insegura, se descarta y se reemplaza por una resolución local trazable.
 
@@ -41,6 +41,7 @@ Esto no significa que cualquier modelo externo sea infalible. Significa que una 
 | BETA-23 | Todo comando puede quedar en deadlock | Cancelación visible, AbortController por turno, timeout de 45 s y `finally` transaccional | Cancelación durante proveedor lento y comando posterior | ✅ |
 | BETA-24 | Falta experiencia de mundo según obra/autor | Campaña elige obra, creador, entrada y política de canon; estado y consecuencias persisten | Suite `rpg-loop` | ✅ |
 | BETA-25 | PNJ cambian de carácter u obtienen omnisciencia | Ficha, personalidad, conocimiento inicial y memoria por PNJ entran al prompt y se validan por identidad | Ledger epistémico persistente | ✅ |
+| BETA-26 | Sugerencias en inglés/no insertables | Idioma por obra y campaña; filtro meta independiente del idioma; párrafo final insertable por defecto | Suite `language` 14/14 | ✅ |
 
 ## Cobertura mecánica del reglamento entregado
 
@@ -122,7 +123,8 @@ core                    49/49
  rpg-adversarial         70/70
  rpg-loop                36/36
  web                     16/16
- TOTAL                  343/343
+ language                14/14
+ TOTAL                  357/357
 ```
 
 También se comprueba:

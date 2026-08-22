@@ -68,6 +68,8 @@ La sintaxis es opcional; también se acepta lenguaje natural:
 ### Loop de partida y crónica
 
 - El menú lateral **Mesa RPG** abre directamente la última partida usada.
+- Cada obra puede elegir **Español, English, Português, Français, Deutsch o Italiano**; el GM, Muse, sugerencias insertables, capítulos RPG y audiolibro usan ese idioma. El filtro de razonamiento interno sigue activo incluso cuando se elige inglés.
+- El asistente en tiempo real entrega por defecto **un párrafo final listo para insertar**, no una lista de ideas. El comentario editorial permanece como modo opcional.
 - Cada tirada muestra un **D20 animado** antes de revelar el natural, modificador, CD, ventaja/desventaja o crítico. Respeta `prefers-reduced-motion`.
 - Al entrar al modo RPG eliges **obra/universo, autor o creador, punto de entrada y relación con el canon**: mundo abierto, canon estricto o línea alternativa.
 - El GM permite profundidad equilibrada, cinematográfica o épica. El prompt exige atmósfera, consecuencias, PNJ con subtexto, complicaciones y posición espacial clara, sin decidir por el jugador.
@@ -248,7 +250,7 @@ npm install
 npm test
 ```
 
-Diez suites, 343 comprobaciones: núcleo y seguridad, ingesta multi-PDF con extracción
+Once suites, 357 comprobaciones: núcleo y seguridad, ingesta multi-PDF con extracción
 real, motor de generación, handlers del proceso principal, OCR, Mesa RPG, una batería
 adversarial basada en la retroalimentación beta, investigación web segura y un **maratón
 de 30 capítulos** contra un modelo simulado adverso (que trunca, devuelve JSON roto,

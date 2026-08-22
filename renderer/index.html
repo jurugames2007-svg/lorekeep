@@ -516,6 +516,7 @@
                 <button id="realtimeAssistantToggle" class="btn-secondary small" title="Activar/Desactivar sugerencias de estilo en tiempo real al escribir" style="display:inline-flex; align-items:center; gap:6px;">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>Asistente de estilo: <span id="assistantStatusText">OFF</span>
                 </button>
+                <select id="realtimeSuggestionMode" class="toolbar-select" title="Elige si el asistente entrega texto final insertable o una observación editorial"><option value="insert">Texto para insertar</option><option value="editorial">Comentario editorial</option></select>
                 <button id="zenModeBtn" title="Modo Zen — solo escritura (Cmd+Shift+F)" aria-label="Modo Zen" style="display:inline-flex; align-items:center; gap:6px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>Zen</button>
                 <button id="toggleLeftPanelBtn" title="Colapsar/Expandir panel izquierdo">◀ Panel</button>
                 <button id="readerModeBtn" title="Entrar en Modo Lectura Inmersivo" style="display:inline-flex; align-items:center; gap:6px;">
@@ -533,12 +534,12 @@
                 <div id="chapterEditor" class="chapter-editor size-standard font-sans" contenteditable="true" spellcheck="true" placeholder="Comienza a escribir tu obra..."></div>
                 <div id="realtimeSuggestionBox" class="realtime-suggestion-box" style="display:none;">
                   <div class="rsb-head">
-                    <span style="display:inline-flex; align-items:center; gap:5px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>Sugerencia de redacción en tiempo real</span>
+                    <span style="display:inline-flex; align-items:center; gap:5px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg><span id="rsbTitle">Texto listo para insertar</span></span>
                     <button class="icon-btn small" id="closeRsbBtn">✕</button>
                   </div>
                   <div class="rsb-body" id="rsbContent">Analizando coherencia y estilo...</div>
                   <div class="rsb-actions">
-                    <button class="btn-primary small" id="applyRsbBtn">Aplicar sugerencia</button>
+                    <button class="btn-primary small" id="applyRsbBtn">Insertar en el capítulo</button>
                   </div>
                 </div>
               </div>
@@ -718,6 +719,9 @@
               <div class="muted small" id="rpgSessionMeta">Sesión persistente</div>
             </div>
             <div class="row-gap rpg-head-actions" style="margin:0;">
+              <label class="rpg-detail-label">Idioma
+                <select id="rpgLanguageSelect" title="Idioma visible de la campaña"><option value="es">ES</option><option value="en">EN</option><option value="pt">PT</option><option value="fr">FR</option><option value="de">DE</option><option value="it">IT</option></select>
+              </label>
               <label class="rpg-detail-label">Detalle GM
                 <select id="rpgGmDetailSelect" title="Controla la profundidad de cada turno del Game Master">
                   <option value="balanced">Equilibrado</option>
@@ -864,6 +868,8 @@
             <option value="rpg">Partida de rol interactiva (GM)</option>
           </select>
           <p class="muted small" style="margin:-4px 0 8px;">El modo RPG conserva ficha, recursos, dados y turnos sin crear capítulos automáticamente.</p>
+          <label>Idioma de escritura y narración</label>
+          <select id="newStoryLanguage"><option value="es">Español</option><option value="en">English</option><option value="pt">Português</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="it">Italiano</option></select>
           <label>Género</label>
           <input type="text" id="newStoryGenre" placeholder="Fantasía, Ciencia ficción, Romance, Shonen..." />
           <label>Sinopsis</label>
@@ -909,6 +915,8 @@
             <input type="text" id="cfgTitle" placeholder="Título de la obra" />
             <label>Género</label>
             <input type="text" id="cfgGenre" placeholder="Fantasía, Ciencia ficción, Shonen..." />
+            <label>Idioma de salida</label>
+            <select id="cfgLanguage"><option value="es">Español</option><option value="en">English</option><option value="pt">Português</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="it">Italiano</option></select>
             <label>Sinopsis</label>
             <textarea id="cfgSynopsis" rows="4" placeholder="De qué trata tu historia..."></textarea>
             <label>Outline / Esquema general</label>

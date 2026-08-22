@@ -1839,3 +1839,6 @@ body.has-wallpaper.wallpaper-no-overlay::before { background-image:var(--wallpap
 .rpg-world-ledger { border-left:2px solid #a78bfa; padding-left:8px; }
 .rpg-world-ledger li { margin-bottom:4px; }
 .rpg-cancel-turn { border-color:rgba(251,113,133,.45) !important; color:#fb8da0 !important; }
+
+.toolbar-select { width:auto; min-width:118px; margin:0 3px; padding:4px 6px; font-size:10.5px; background:transparent; color:var(--muted); border:1px solid var(--border); }
+.toolbar-select:focus { background:var(--panel-2); }
