@@ -16,6 +16,7 @@
     "test:perf": "node tests/perf.test.js",
     "test:personalization": "node tests/personalization.test.js",
     "test:regression": "node tests/regression.test.js",
+    "test:enterprise": "node tests/enterprise.test.js",
     "lint": "eslint .",
     "verify": "npm run lint && npm test"
   },

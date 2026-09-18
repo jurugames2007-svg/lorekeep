@@ -100,7 +100,6 @@ if (!window.lorevinci) {
 let DATA = null;
 let currentStoryId = null;
 let currentChapterId = null;
-let saveTimeout = null;
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $all = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -512,67 +511,81 @@ function redoEditor() {
   return ok;
 }
 
-// ---- Persistencia: el guardado automático informa cuando falla ----
-let saveInFlight = null;
-let saveQueued = false;
-let saveFailureReported = false;
+// ============ PERSISTENCIA ============
+// La orquestación (debounce, coalescencia de escrituras en vuelo, reporte único
+// de fallo y de recuperación, métricas y logs con trace_id) vive en
+// renderer/app-kernel.js, sin ninguna referencia al DOM. Aquí solo quedan los
+// dos adaptadores: el de estado hacia la interfaz y el puente hacia el IPC.
+//
+// Antes había cuatro variables de módulo mutables (saveTimeout, saveInFlight,
+// saveQueued, saveFailureReported) leídas y escritas desde varios puntos del
+// archivo —incluido el atajo Ctrl+S—, de modo que cualquier función podía dejar
+// la máquina de estados en una combinación imposible. Ahora el estado es privado
+// del controlador y lo único observable es un snapshot congelado.
+const saveLogger = window.LoreKernel.createLogger({ scope: 'lorevinci' });
 
+const persistence = window.LoreKernel.createPersistenceController({
+  // Late binding a propósito: el puente puede sustituirse (y las pruebas lo hacen).
+  save: (payload) => window.lorevinci.saveData(payload),
+  getPayload: () => DATA,
+  debounceMs: window.LoreKernel.PERSISTENCE.DEBOUNCE_MS,
+  logger: saveLogger,
+  // Observer: cualquier cambio invalida el índice de búsqueda global.
+  onChange: () => { globalSearchIndex = []; },
+  onStatus: (status, detail) => setSaveStatus(status, detail),
+  onFailure: (error) => {
+    const message = window.LoreKernel.formatSaveFailure(error);
+    const K = window.LoreKernel;
+    showToast(`${K.MESSAGES.SAVE_FAILED_TOAST_PREFIX}${message}${K.MESSAGES.SAVE_FAILED_TOAST_SUFFIX}`);
+    pushNotification(K.MESSAGES.SAVE_ERROR_NOTIFICATION_TITLE, message, 'error');
+  },
+  onRecover: () => showToast(window.LoreKernel.MESSAGES.SAVE_RECOVERED_TOAST)
+});
+
+/**
+ * Escribe ahora y devuelve el `Result` del intento. Nunca rechaza: el error
+ * llega como valor, así que quien llama decide qué hacer con él.
+ * @returns {Promise<object>} Result<{bytes: number|null}> | Result<AppError>
+ */
 function persistNow() {
-  if (!DATA) return Promise.resolve();
-  const payload = DATA;
-  saveInFlight = Promise.resolve()
-    .then(() => window.lorevinci.saveData(payload))
-    .then((result) => {
-      if (result && result.ok === false) throw new Error(result.error || 'El almacenamiento rechazó los datos.');
-      setSaveStatus('saved');
-      if (saveFailureReported) {
-        saveFailureReported = false;
-        showToast('Guardado restablecido: tus cambios vuelven a quedar en disco.');
-      }
-    })
-    .catch((err) => {
-      setSaveStatus('error', String((err && err.message) || err));
-      if (!saveFailureReported) {
-        saveFailureReported = true;
-        const message = String((err && err.message) || err).slice(0, 180);
-        showToast(`⚠ No se pudo guardar: ${message}. Exporta un respaldo desde Ajustes.`);
-        pushNotification('Error de guardado', message, 'error');
-      }
-    })
-    .finally(() => {
-      saveInFlight = null;
-      if (saveQueued) { saveQueued = false; scheduleSave(); }
-    });
-  return saveInFlight;
+  return persistence.flush();
 }
 
+/** Programa una escritura con debounce. */
 function scheduleSave() {
-  globalSearchIndex = []; // cualquier cambio invalida el índice de búsqueda
-  if (saveTimeout) clearTimeout(saveTimeout);
-  setSaveStatus('saving');
-  saveTimeout = setTimeout(() => {
-    saveTimeout = null;
-    if (saveInFlight) { saveQueued = true; return; }
-    persistNow();
-  }, 400);
+  persistence.schedule();
 }
 
+/** Estado del guardado, como snapshot congelado (solo lectura). */
+// eslint-disable-next-line no-unused-vars -- API pública de diagnóstico (la usan las pruebas)
+function getSaveState() {
+  return persistence.getState();
+}
+
+/**
+ * Adaptador de estado → DOM. Es la única función que toca el indicador; el
+ * núcleo no sabe que existe la interfaz.
+ * @param {'saving'|'saved'|'error'} status
+ * @param {string} [detail] Motivo del fallo, para el `title` accesible.
+ */
 function setSaveStatus(status, detail = '') {
   const el = $('#saveIndicator');
   const text = $('#saveIndicatorText');
   if (!el || !text) return;
-  el.classList.toggle('saving', status === 'saving');
-  el.classList.toggle('error', status === 'error');
+  const { STATUS } = window.LoreKernel.PERSISTENCE;
+  const M = window.LoreKernel.MESSAGES;
+  el.classList.toggle('saving', status === STATUS.SAVING);
+  el.classList.toggle('error', status === STATUS.ERROR);
   el.setAttribute('aria-live', 'polite');
-  if (status === 'saving') {
-    text.textContent = 'Guardando…';
-    el.title = 'Guardando cambios en tu equipo';
-  } else if (status === 'error') {
-    text.textContent = 'Sin guardar';
-    el.title = detail || 'No se pudo guardar. Exporta un respaldo desde Ajustes.';
+  if (status === STATUS.SAVING) {
+    text.textContent = M.STATUS_SAVING_TEXT;
+    el.title = M.STATUS_SAVING_TITLE;
+  } else if (status === STATUS.ERROR) {
+    text.textContent = M.STATUS_ERROR_TEXT;
+    el.title = detail || M.STATUS_ERROR_TITLE_FALLBACK;
   } else {
-    text.textContent = 'Todo guardado';
-    el.title = 'Todos los cambios están en tu equipo';
+    text.textContent = M.STATUS_SAVED_TEXT;
+    el.title = M.STATUS_SAVED_TITLE;
   }
 }
 
@@ -7312,8 +7325,13 @@ document.addEventListener('keydown', (e) => {
   // Guardar ahora: fuerza la escritura en disco y confirma el estado.
   if (mod && e.key.toLowerCase() === 's') {
     e.preventDefault();
-    if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
-    persistNow().then(() => showToast('Cambios guardados en tu equipo.'));
+    persistence.cancel(); // anula el debounce pendiente sin escribir dos veces
+    persistNow().then((result) => {
+      // Antes se brindaba con "Cambios guardados" incluso cuando el disco había
+      // rechazado la escritura: el `catch` interno resolvía la promesa igual.
+      if (result.isOk) showToast('Cambios guardados en tu equipo.');
+      else showToast(`⚠ No se pudo guardar: ${window.LoreKernel.formatSaveFailure(result.error)}.`);
+    });
     return;
   }
 

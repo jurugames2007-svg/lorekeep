@@ -6,6 +6,11 @@ const net = require('net');
 // Datos semilla compartidos con el renderer: una sola fuente de verdad.
 const LoreSeed = require('./renderer/seed-data');
 const LoreDomSafe = require('./renderer/dom-safe');
+const LoreKernel = require('./renderer/app-kernel');
+
+// Log estructurado del proceso principal: una línea JSON por evento, con
+// trace_id para correlacionar todo lo que ocurre dentro de un mismo guardado.
+const mainLogger = LoreKernel.createLogger({ scope: 'main' });
 
 const sanitizeHtml = LoreDomSafe.sanitizeHtml;
 const safeImageUrl = LoreDomSafe.safeImageUrl;
@@ -325,14 +330,50 @@ function atomicWriteJson(filePath, data) {
   fs.renameSync(tmp, filePath);
 }
 
-function rotateBackups(p) {
-  const bak1 = p + '.bak1';
-  const bak2 = p + '.bak2';
-  const bak3 = p + '.bak3';
-  if (!fs.existsSync(p)) return;
-  try { if (fs.existsSync(bak2)) { if (fs.existsSync(bak3)) fs.unlinkSync(bak3); fs.renameSync(bak2, bak3); } } catch {}
-  try { if (fs.existsSync(bak1)) fs.renameSync(bak1, bak2); } catch {}
-  try { fs.copyFileSync(p, bak1); } catch {}
+/**
+ * Rota `datos.json` → `.bak1` → `.bak2` → `.bak3`.
+ *
+ * Los tres `catch {}` que había aquí silenciaban por completo un fallo de
+ * respaldo: el usuario creía tener tres copias de seguridad y podía no tener
+ * ninguna. Un fallo de rotación no debe impedir el guardado (sería peor), pero
+ * sí debe quedar registrado con su causa.
+ *
+ * @param {string} filePath Ruta del JSON de datos.
+ * @returns {{ rotated: number, failures: Array<{ step: string, code: string }> }}
+ */
+function rotateBackups(filePath) {
+  if (!fs.existsSync(filePath)) return { rotated: 0, failures: [] };
+
+  const slots = [filePath + '.bak1', filePath + '.bak2', filePath + '.bak3'];
+  const [bak1, bak2, bak3] = slots;
+  /** @type {Array<{ step: string, code: string }>} */
+  const failures = [];
+
+  // Cada paso es una función de un solo propósito; `attempt` convierte la
+  // excepción en un `Result` en vez de obligar a un try/catch por línea.
+  const steps = [
+    { step: 'unlink_bak3', run: () => { if (fs.existsSync(bak3)) fs.unlinkSync(bak3); } },
+    { step: 'promote_bak2_to_bak3', run: () => { if (fs.existsSync(bak2)) fs.renameSync(bak2, bak3); } },
+    { step: 'promote_bak1_to_bak2', run: () => { if (fs.existsSync(bak1)) fs.renameSync(bak1, bak2); } },
+    { step: 'copy_current_to_bak1', run: () => fs.copyFileSync(filePath, bak1) }
+  ];
+
+  let rotated = 0;
+  for (const { step, run } of steps) {
+    const result = LoreKernel.attempt(run, (thrown) => LoreKernel.toAppError(thrown, step));
+    if (result.isOk) { rotated += 1; continue; }
+    failures.push({ step, code: result.error.code });
+    mainLogger.warn('backup_rotation_step_failed', {
+      step,
+      code: result.error.code,
+      reason: result.error.message,
+      path: filePath
+    });
+  }
+  if (failures.length) {
+    mainLogger.error('backup_rotation_incomplete', { failures, path: filePath });
+  }
+  return { rotated, failures };
 }
 
 function saveData(data) {
