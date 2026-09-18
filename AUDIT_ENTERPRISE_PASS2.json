@@ -42,14 +42,14 @@
     },
     {
       "type": "FATAL",
-      "location": "main.js:100, main.js:751, main.js:780, app.js:1856, app.js:1858, app.js:2241, app.js:2299, app.js:2346",
+      "location": "main.js:100, main.js:751, main.js:803, app.js:1856, app.js:1858, app.js:2241, app.js:2299, app.js:2346",
       "issue": "Ocho `catch {}` totalmente vacíos (sin siquiera comentario) repartidos entre el proceso principal y el renderer: cancelación de stream (main.js:100), parseo de enlaces de búsqueda (main.js:751), control de tamaño de prompt (main.js:803), las dos estrategias de parseo JSON (app.js:1856 y 1858) y tres liberaciones de recursos (pdf.destroy() en app.js:2241 y 2346, worker.terminate() en app.js:2299). Son los 8 que la rúbrica puntúa como FATAL.",
       "impact": "Los `destroy()`/`terminate()` que fallan dejan workers wasm y handles vivos: fuga de memoria que solo se manifiesta minutos después y no se puede atribuir a su causa. Los fallos de parseo se convertían en 'JSON vacío' o '0 resultados' tres capas más arriba, sin información para depurar.",
       "status": "CORREGIDO — nuevo `LoreKernel.runCleanup(label, releaseFn, logger)` para recursos y `LoreKernel.attempt` para lógica; todos los fallos quedan tipados y registrados."
     },
     {
       "type": "WARNING",
-      "location": "renderer/app.js:626, app.js:6062, app.js:7574, app.js:7579, app.js:7692, app.js:7698",
+      "location": "main.js:780, renderer/app.js:626, app.js:6062, app.js:7574, app.js:7579, app.js:7692, app.js:7698",
       "issue": "Seis `catch` cuyo cuerpo era únicamente un comentario (`catch { /* noop */ }`) y dos más cuyo cuerpo devolvía un valor descartando la causa (`clipboard:write` devolvía `{ok:false}` sin decir por qué; `readSnapshotStore` devolvía `{}` ante un almacén corrupto). Semánticamente equivalentes a vacíos: la intención está documentada pero el fallo sigue siendo invisible en ejecución. Con los 8 anteriores suman las 16 cláusulas de este pase.",
       "impact": "Los dos de secretos son los que más importan: si `secretsSet` falla, la API key permanece en el almacén JSON sin cifrar (menos protegida de lo que la UI anuncia); si `secretsGet` falla, el usuario pierde su clave sin explicación. Con cuota llena, `writeSnapshotStore` desactiva la red de recuperación de capítulos sin avisar.",
       "status": "CORREGIDO — degradación conservada donde es legítima (focus, execCommand) pero registrada en debug/warn; secretos y cuota de instantáneas en warn con campo `consequence`."
