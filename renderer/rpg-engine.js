@@ -721,7 +721,6 @@
     ];
     const leaks = patterns.filter(rx => rx.test(raw)).map(rx => rx.source);
     const startsEnglish = /^(?:The|I |Let |Key |Current |However,|Looking )/i.test(raw);
-    const words = normalize(raw).split(/\s+/).filter(Boolean);
     const englishWords = new Set(['the','and','you','your','with','from','that','this','into','when','what','where','does','do','is','are','was','were','can','will','would','should','rain','soldier','character','player','story','continue','attack','move','stop','right','there','put','hands','run','east','forest','river','now','here','come','get','out','stay','back','down','open','door']);
     const spanishWords = new Set(['el','la','los','las','y','que','con','desde','cuando','donde','es','son','fue','puede','hara','debes','lluvia','soldado','personaje','jugador','historia','continua','ataca','alto','aqui','corre','bosque','rio','ahora','manos','puerta']);
     const languageScore = (fragment) => {

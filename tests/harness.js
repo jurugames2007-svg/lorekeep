@@ -50,13 +50,30 @@ function makeApp({ seed = null, bridge = {}, withPdf = false } = {}) {
   if (seed || Object.keys(bridge).length) w.lorevinci = { ...defaults, ...bridge };
   const errors = [];
   w.addEventListener('error', (e) => errors.push(e.message));
-  const engineScript = w.document.createElement('script');
-  engineScript.textContent = fs.readFileSync(P + 'rpg-engine.js', 'utf8');
-  w.document.body.appendChild(engineScript);
+  // El núcleo de la aplicación emite logs estructurados (una línea JSON) por
+  // console.debug. Se capturan en un array en vez de volcarlos a stdout: una
+  // suite que pasa debe ser silenciosa, y las pruebas que necesitan inspeccionar
+  // la observabilidad leen `logs` directamente.
+  const logs = [];
+  w.console.debug = (line) => { logs.push(String(line)); };
+  w.console.info = (line) => { logs.push(String(line)); };
+  // Módulos compartidos (seguridad de salida + semilla) antes que el motor y la app.
+  ['app-kernel.js', 'dom-safe.js', 'seed-data.js', 'rpg-engine.js'].forEach((file) => {
+    const moduleScript = w.document.createElement('script');
+    moduleScript.textContent = fs.readFileSync(P + file, 'utf8');
+    w.document.body.appendChild(moduleScript);
+  });
   const script = w.document.createElement('script');
   script.textContent = fs.readFileSync(P + 'app.js', 'utf8') + '\n;window.__probe=(c)=>eval(c);';
   w.document.body.appendChild(script);
-  return { w, errors, click: (id) => w.document.getElementById(id).dispatchEvent(new w.MouseEvent('click', { bubbles: true })) };
+  return {
+    w,
+    errors,
+    logs,
+    /** Logs estructurados parseados (descarta lo que no sea JSON). */
+    parsedLogs: () => logs.map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean),
+    click: (id) => w.document.getElementById(id).dispatchEvent(new w.MouseEvent('click', { bubbles: true }))
+  };
 }
 
 function makeSeed(overrides = {}) {

@@ -7,6 +7,9 @@
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <a class="skip-link" href="#content-area">Saltar al contenido principal</a>
+  <!-- Mensajes emergentes: se anuncian a lectores de pantalla (role=status + aria-live) -->
+  <div id="lorevinciToast" class="lorevinci-toast" role="status" aria-live="polite" aria-atomic="true"></div>
   <!-- STEAM / WATT-PAD STYLE STARTUP LOADING SCREEN -->
   <div class="startup-loader" id="startupLoader">
     <div class="sl-content">
@@ -25,7 +28,7 @@
       </div>
       <h1 class="sl-title">LoreVinci</h1>
       <p class="sl-sub">Cargando motor de escritura creativa e investigación local...</p>
-      <div class="sl-progress-wrap"><div class="sl-progress-track"><div class="sl-progress-bar"></div></div><div class="sl-loader-meta"><span>Inicializando LoreVinci</span><span aria-live="polite">100%</span></div></div><div class="sl-particles" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="sl-progress-wrap"><div class="sl-progress-track"><div class="sl-progress-bar"></div></div><div class="sl-loader-meta"><span id="startupLoaderStatus">Inicializando LoreVinci…</span><span aria-live="polite" id="startupLoaderPct">cargando</span></div></div><div class="sl-particles" aria-hidden="true"><i></i><i></i><i></i></div>
     </div>
   </div>
   <div class="app-shell">
@@ -89,22 +92,33 @@
       <header class="topbar">
         <div class="crumb" id="crumb">Inicio</div>
         <div class="top-actions">
-          <input type="text" id="globalSearch" placeholder="Buscar historias, personajes..." title="Buscar en todas tus historias y personajes" />
-          <div id="searchResults" class="search-results"></div>
-          <button class="icon-btn" id="notifBtn" title="Notificaciones">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+          <label class="sr-only" for="globalSearch">Buscar en tus historias, capítulos y personajes</label>
+          <input type="search" id="globalSearch" placeholder="Buscar historias, capítulos, personajes…" title="Buscar en títulos y dentro del texto de tus capítulos" aria-describedby="searchHelp" />
+          <span id="searchHelp" class="sr-only">Escribe al menos dos caracteres. Usa las flechas para elegir un resultado, Enter para abrirlo y Escape para cerrar.</span>
+          <div id="searchResults" class="search-results" role="listbox" aria-label="Resultados de búsqueda"></div>
+          <div class="notif-wrap">
+          <button class="icon-btn" id="notifBtn" type="button" title="Centro de actividad" aria-label="Notificaciones (sin novedades)" aria-haspopup="dialog" aria-expanded="false" aria-controls="notifPanel">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
           </button>
-          <button class="icon-btn" id="helpTopBtn" title="Guía rápida de uso">
+          <div class="notif-panel" id="notifPanel" role="dialog" aria-label="Centro de actividad" data-open="0">
+            <div class="notif-head">
+              <b>Actividad reciente</b>
+              <button class="link-btn" id="notifClearBtn" type="button">Vaciar</button>
+            </div>
+            <div class="notif-list" id="notifList"></div>
+          </div>
+          </div>
+          <button class="icon-btn" id="helpTopBtn" type="button" title="Guía rápida de uso" aria-label="Abrir la guía rápida de uso">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
           </button>
-          <div class="profile-avatar-wrap" id="profileAvatarBtn" title="Personalizar tema, tipografía y perfil">
-            <div class="avatar-border rank-gold">
-              <div class="avatar" id="topbarAvatarIcon">AU</div>
-            </div>
-            <span class="profile-badge">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="#35d07f" stroke="#101218" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="9 12 11 14 15 10" stroke="#fff"></polyline></svg>
+          <button type="button" class="profile-avatar-wrap" id="profileAvatarBtn" title="Personalizar tema, tipografía y perfil" aria-label="Abrir perfil literario, tema e insignias" aria-haspopup="dialog">
+            <span class="avatar-border rank-gold">
+              <span class="avatar" id="topbarAvatarIcon">AU</span>
             </span>
-          </div>
+            <span class="profile-badge">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="#35d07f" stroke="#101218" stroke-width="2.5" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="9 12 11 14 15 10" stroke="#fff"></polyline></svg>
+            </span>
+          </button>
         </div>
       </header>
 
@@ -129,6 +143,15 @@
             <h3>Racha de escritura</h3>
             <div class="big-stat" id="homeStreak">0 días</div>
           </div>
+        </div>
+
+        <div class="card goal-card" id="homeGoalBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-labelledby="homeGoalLabel" hidden>
+          <div class="goal-head">
+            <span id="homeGoalLabel">Meta de escritura de hoy</span>
+            <span class="muted small" id="homeGoalText">0 de 500 palabras hoy</span>
+          </div>
+          <div class="goal-track"><div class="goal-fill" id="homeGoalFill" style="width:0%"></div></div>
+          <p class="muted small goal-hint">Cambia la meta en Ajustes → Ritmo de escritura. Se cuenta solo lo que escribes, no lo que borras.</p>
         </div>
 
         <div class="home-recent">
@@ -204,7 +227,7 @@
               <button class="btn-secondary" id="linkUniversalSourceBtn">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align:-2px;"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>Vincular del Repositorio Universal
               </button>
-              <input type="file" id="bookDocFileInput" accept=".pdf,.txt,.md,.json" multiple style="display:none;" />
+              <input type="file" id="bookDocFileInput" aria-label="Seleccionar documentos para añadir al libro activo" accept=".pdf,.txt,.md,.json" multiple style="display:none;" />
             </div>
 
             <!-- Barra de carga múltiple con progreso -->
@@ -222,7 +245,7 @@
 
             <!-- Filtros de fuentes por historia, tipo y verso -->
             <div class="source-filter-bar" id="sourceFilterBar">
-              <input type="search" id="srcFilterSearch" placeholder="Buscar en nombre o contenido de las fuentes..." />
+              <input type="search" id="srcFilterSearch" aria-label="Buscar dentro del nombre y el contenido de las fuentes" placeholder="Buscar en nombre o contenido de las fuentes..." />
               <select id="srcFilterStory" title="Filtrar por historia a la que pertenece la fuente">
                 <option value="all">Todas las historias</option>
               </select>
@@ -255,7 +278,7 @@
         <div class="section-head">
           <h1 class="page-title">Personajes y Personalidades</h1>
           <div class="row-gap">
-            <select id="charStoryFilter"></select>
+            <select id="charStoryFilter" aria-label="Filtrar personajes por historia"></select>
             <button class="btn-secondary" id="autoDetectCharsBtn" title="Detectar automáticamente personajes y personalidades de los capítulos">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align:-2px;"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>Auto-detectar de historias
             </button>
@@ -272,7 +295,7 @@
         <div class="collab-columns">
             <div class="card">
             <h3>Compartir historia</h3>
-            <select id="collabStorySelect"></select>
+            <select id="collabStorySelect" aria-label="Elegir la historia a exportar o compartir"></select>
             <button class="btn-secondary" id="exportStoryBtn">Exportar historia (.json)</button>
             <button class="btn-secondary" id="exportTxtBtn">Exportar como texto (.txt)</button>
             <button class="btn-primary" id="exportPdfBtn" style="margin-top:6px;">Exportar libro como PDF (.html/print)</button>
@@ -287,7 +310,7 @@
           <h3>Notas para colaboradores</h3>
           <div id="collabNotesList" class="notes-list"></div>
           <div class="row-gap">
-            <input type="text" id="collabNoteInput" placeholder="Escribe una nota para tu equipo..." />
+            <input type="text" id="collabNoteInput" aria-label="Escribir una nota para tu equipo de colaboración" placeholder="Escribe una nota para tu equipo..." />
             <button class="btn-primary" id="addCollabNote">Agregar</button>
           </div>
         </div>
@@ -334,7 +357,7 @@
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align:-2px;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>Abrir Perfil, Foto, Portada e Insignias
             </button>
           </div>
-          <label style="margin-top:10px; display:block;">Nombre de autor/a</label>
+          <label style="margin-top:10px; display:block;" for="authorNameInput">Nombre de autor/a</label>
           <input type="text" id="authorNameInput" />
         </div>
         <div class="card settings-card">
@@ -342,7 +365,7 @@
           <p class="muted small" style="margin-bottom:12px;">Interfaz recalibrada a escala compacta editorial (menos invasiva). Ajusta la densidad global sin perder legibilidad. Recomendado para escritores que pasan horas en el editor.</p>
           <div class="row-gap" style="gap: 12px; margin-bottom: 12px; align-items:flex-end;">
             <div style="flex: 1; min-width: 180px;">
-              <label>Escala global de la interfaz</label>
+              <label for="settingsUiScaleSelect">Escala global de la interfaz</label>
               <select id="settingsUiScaleSelect">
                 <option value="compact">Compacta — 90% (Recomendada • menos invasiva)</option>
                 <option value="balanced">Equilibrada — 100% (Clásica)</option>
@@ -350,7 +373,7 @@
               </select>
             </div>
             <div style="flex: 1; min-width: 160px;">
-              <label>Densidad de tarjetas y listas</label>
+              <label for="settingsDensitySelect">Densidad de tarjetas y listas</label>
               <select id="settingsDensitySelect">
                 <option value="comfortable">Cómoda (equilibrio)</option>
                 <option value="compact">Compacta (más contenido visible)</option>
@@ -364,7 +387,7 @@
           <p class="muted small" style="margin-bottom:12px;">Configura la experiencia del lienzo. El ancho editorial óptimo es 680px (~66 caracteres por línea) para lectura y flujo.</p>
           <div class="row-gap" style="gap: 16px; margin-bottom: 12px;">
             <div style="flex: 1; min-width: 200px;">
-              <label>Tipografía de Narración</label>
+              <label for="settingsEditorFontSelect">Tipografía de narración</label>
               <select id="settingsEditorFontSelect">
                 <option value="font-sans">Sans-Serif Moderno (Inter / Segoe UI)</option>
                 <option value="font-serif">Serif Editorial (Georgia / Novela Literaria)</option>
@@ -372,7 +395,7 @@
               </select>
             </div>
             <div style="flex: 1; min-width: 180px;">
-              <label>Ancho del Lienzo</label>
+              <label for="settingsEditorWidthSelect">Ancho del lienzo</label>
               <select id="settingsEditorWidthSelect">
                 <option value="680px">Editorial Óptimo (680px • 66 caracteres)</option>
                 <option value="780px">Estándar Literario (780px)</option>
@@ -381,13 +404,37 @@
               </select>
             </div>
             <div style="flex: 1; min-width: 150px;">
-              <label>Tamaño de Texto</label>
+              <label for="settingsEditorSizeSelect">Tamaño de texto</label>
               <select id="settingsEditorSizeSelect">
                 <option value="size-standard">Equilibrado (14.8px • recomendado)</option>
                 <option value="size-compact">Compacto (13.8px • más denso)</option>
                 <option value="size-large">Grande (16px • accesible)</option>
               </select>
             </div>
+          </div>
+        </div>
+        <div class="card settings-card">
+          <h3>Identidad visual y ambiente — tu escritorio, tu tono</h3>
+          <p class="muted small" style="margin-bottom:12px;">Tres ajustes que cambian cómo se <em>siente</em> escribir: el color de acento de toda la interfaz, un ambiente de fondo que reduce la fatiga visual y la meta de palabras propia de cada capítulo.</p>
+          <div class="row-gap" style="gap: 16px; margin-bottom: 12px; align-items:flex-end;">
+            <div style="flex: 0 0 auto;">
+              <label for="settingsAccentColor">Color de acento</label>
+              <input type="color" id="settingsAccentColor" value="#e84a67" aria-describedby="accentColorHelp" />
+            </div>
+            <div style="flex: 0 0 auto;">
+              <button type="button" class="btn-secondary small" id="accentColorResetBtn">Volver al color del tema</button>
+            </div>
+            <div style="flex: 1; min-width: 200px;">
+              <label for="settingsAmbientSelect">Ambiente de fondo</label>
+              <select id="settingsAmbientSelect">
+                <option value="none">Sin ambiente (tema actual)</option>
+                <option value="paper">Papel cálido — luz suave de día</option>
+                <option value="sepia">Sepia — tinta antigua, bajo contraste</option>
+                <option value="night">Noche azul — mínimo brillo para escribir de madrugada</option>
+                <option value="forest">Bosque — verde profundo y descansado</option>
+              </select>
+            </div>
+            <span class="muted small" id="accentColorHelp" style="max-width:230px; line-height:1.4;">El acento se usa en botones, enlaces, progreso y focos. Se guarda con tu perfil y respeta el modo de movimiento reducido.</span>
           </div>
         </div>
         <div class="card settings-card">
@@ -429,7 +476,7 @@
           </div>
 
           <div style="border-top:1px solid var(--border); padding-top:14px; margin-top:14px;">
-            <label>Proveedor (rellena la URL base por ti)</label>
+            <label for="aiProviderPreset">Proveedor (rellena la URL base por ti)</label>
             <select id="aiProviderPreset">
               <option value="custom">Personalizado / Otro</option>
               <option value="omniroute">OmniRoute local — auto-routing y fallback (localhost:20128)</option>
@@ -440,16 +487,16 @@
               <option value="lmstudio">LM Studio local — http://localhost:1234/v1</option>
             </select>
 
-            <label>URL Base de la API</label>
+            <label for="aiBaseUrl">URL Base de la API</label>
             <input type="text" id="aiBaseUrl" placeholder="https://api.openai.com/v1 o http://localhost:11434/v1" />
 
-            <label>API Key (se almacena únicamente en tu equipo)</label>
+            <label for="aiApiKey">API Key (se almacena cifrada en tu equipo, fuera del JSON de datos)</label>
             <div class="input-with-action">
               <input type="password" id="aiApiKey" placeholder="sk-..." />
               <button class="btn-icon-subtle" id="toggleApiKeyVisibility" type="button" title="Mostrar / ocultar la clave">Ver</button>
             </div>
 
-            <label style="margin-top:14px;">Modelo seleccionado</label>
+            <label style="margin-top:14px;" for="aiModelSelect">Modelo seleccionado</label>
             <select id="aiModelSelect">
               <option value="gpt-4o-mini">gpt-4o-mini (Default)</option>
             </select>
@@ -464,11 +511,31 @@
               <button class="btn-secondary" id="saveAiBtn">Guardar ajustes</button>
               <button class="btn-danger small" id="aiDisconnectBtn" style="display:none;">Desconectar y borrar clave</button>
             </div>
-            <div id="aiTestResult" class="muted small" style="margin-top:10px;"></div>
+            <div id="aiTestResult" class="muted small" style="margin-top:10px;" role="status" aria-live="polite"></div>
+            <p id="aiKeyProtectionHint" class="key-protection-hint" data-state="info" role="status">Comprobando cómo se guarda tu clave…</p>
 
             <div class="ai-privacy-note">
               <b>Privacidad:</b> la clave nunca sale de tu equipo salvo hacia el proveedor que tú elijas. No hay servidores intermedios de LoreVinci.
               <button class="link-btn" id="openrouterMyKeysBtn" type="button">Obtener una API key en OpenRouter ↗</button>
+            </div>
+          </div>
+        </div>
+        <div class="card settings-card">
+          <h3>Ritmo de escritura</h3>
+          <p class="muted small" style="margin-bottom:12px;">Tres ajustes de comodidad que no tocan tu contenido: una meta diaria visible, un modo de concentración línea a línea y la recuperación de versiones del capítulo.</p>
+          <div class="row-gap" style="gap:14px; align-items:flex-end; flex-wrap:wrap;">
+            <div style="min-width:200px;">
+              <label for="dailyWordGoalInput">Meta diaria de palabras</label>
+              <input type="number" id="dailyWordGoalInput" min="0" max="20000" step="50" value="500" aria-describedby="dailyWordGoalHelp" />
+              <span id="dailyWordGoalHelp" class="muted small">Pon 0 para ocultar la meta. Se mide con lo que escribes cada día en tu zona horaria.</span>
+            </div>
+            <label class="switch-row" for="typewriterModeToggle">
+              <input type="checkbox" id="typewriterModeToggle" />
+              <span>Modo máquina de escribir — resalta la línea actual y atenúa el resto</span>
+            </label>
+            <div class="goal-card inline" id="dailyGoalBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Progreso de la meta diaria" hidden>
+              <div class="goal-track"><div class="goal-fill" id="dailyGoalFill" style="width:0%"></div></div>
+              <span class="muted small" id="dailyGoalText"></span>
             </div>
           </div>
         </div>
@@ -481,7 +548,7 @@
               Aplicar OCR automáticamente al subir
             </label>
             <div style="min-width:190px;">
-              <label>Idioma del OCR</label>
+              <label for="ocrLangSelect">Idioma del OCR</label>
               <select id="ocrLangSelect">
                 <option value="spa">Español</option>
                 <option value="eng">Inglés</option>
@@ -524,7 +591,7 @@
           <div class="editor-main">
             <div class="chapter-editor-wrapper">
               <label class="field-label">Título de la historia</label>
-              <input type="text" id="storyTitleInput" class="story-title-input" placeholder="Escribe el título de tu historia..." />
+              <input type="text" id="storyTitleInput" aria-label="Título de la historia" class="story-title-input" placeholder="Escribe el título de tu historia..." />
 
               <div class="editor-toolbar">
                 <button data-cmd="bold" title="Negrita (Ctrl+B)" aria-label="Negrita"><b>B</b></button>
@@ -552,12 +619,27 @@
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"></path><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path></svg>Audiolibro
                 </button>
                 <button id="toggleRightPanelBtn" title="Colapsar/Expandir panel derecho">Panel </button>
+                <button id="openSnapshotsBtn" type="button" title="Versiones guardadas del capítulo actual" aria-label="Abrir versiones guardadas del capítulo" style="display:inline-flex; align-items:center; gap:6px;">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><polyline points="3 3 3 8 8 8"></polyline></svg>Versiones
+                </button>
+                <button id="editorUndoBtn" type="button" title="Deshacer (Ctrl+Z)" aria-label="Deshacer último cambio del capítulo">↶</button>
+                <button id="editorRedoBtn" type="button" title="Rehacer (Ctrl+Mayús+Z)" aria-label="Rehacer último cambio del capítulo">↷</button>
               <span id="wordCount" class="muted small"></span>
+              <span class="chapter-goal" id="chapterGoalWrap" hidden>
+                <label for="chapterGoalInput" class="sr-only">Meta de palabras de este capítulo</label>
+                <span aria-hidden="true" title="Meta de palabras del capítulo">🎯</span>
+                <input type="number" id="chapterGoalInput" min="0" max="100000" step="50" placeholder="Meta"
+                       aria-label="Meta de palabras de este capítulo" aria-describedby="chapterGoalProgress" />
+                <span id="chapterGoalProgress" class="muted small" role="status"></span>
+              </span>
+              <span id="writingSessionStats" class="muted small session-stats" aria-live="off"></span>
               </div>
 
-              <input type="text" id="chapterTitleInput" class="chapter-title-input" placeholder="Título del capítulo" />
+              <input type="text" id="chapterTitleInput" aria-label="Título del capítulo" class="chapter-title-input" placeholder="Título del capítulo" />
               <div style="position:relative; flex:1; display:flex; flex-direction:column;">
-                <div id="chapterEditor" class="chapter-editor size-standard font-sans" contenteditable="true" spellcheck="true" placeholder="Comienza a escribir tu obra..."></div>
+                <label class="sr-only" id="chapterEditorLabel" for="chapterEditor">Cuerpo del capítulo</label>
+              <div id="chapterEditor" class="chapter-editor size-standard font-sans" contenteditable="true" spellcheck="true" role="textbox" aria-multiline="true" aria-labelledby="chapterEditorLabel" aria-describedby="chapterEditorHelp" placeholder="Comienza a escribir tu obra..."></div>
+              <span id="chapterEditorHelp" class="sr-only">Editor de texto enriquecido. Ctrl+Z deshace y Ctrl+Mayús+Z rehace sobre el historial del capítulo. Ctrl+Mayús+F activa el modo Zen.</span>
                 <div id="realtimeSuggestionBox" class="realtime-suggestion-box" style="display:none;">
                   <div class="rsb-head">
                     <span style="display:inline-flex; align-items:center; gap:5px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg><span id="rsbTitle">Texto listo para insertar</span></span>
@@ -582,10 +664,10 @@
               <button class="tab-btn" data-tab="chars" title="Elenco y personalidades">Elenco</button>
             </div>
             <div class="tab-content active" data-tab-content="outline">
-              <textarea id="outlineText" placeholder="Escribe el esquema / outline de esta historia..."></textarea>
+              <textarea id="outlineText" aria-label="Esquema u outline de la historia" placeholder="Escribe el esquema / outline de esta historia..."></textarea>
             </div>
             <div class="tab-content" data-tab-content="rules">
-              <textarea id="rulesText" placeholder="Establece las reglas base, leyes del universo, restricciones y fuentes de prioridad del libro..."></textarea>
+              <textarea id="rulesText" aria-label="Reglas base y leyes del universo de la historia" placeholder="Establece las reglas base, leyes del universo, restricciones y fuentes de prioridad del libro..."></textarea>
             </div>
             <div class="tab-content" data-tab-content="docs">
               <div class="side-panel-info-box">
@@ -596,7 +678,7 @@
                 <button class="btn-primary small w-100" id="triggerAttachDocBtn">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align:-2px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>Subir varios PDFs o artículos
                 </button>
-                <input type="file" id="attachDocFile" accept=".pdf,.txt,.md,.json" multiple style="display:none;" />
+                <input type="file" id="attachDocFile" aria-label="Seleccionar documentos para adjuntar a esta historia" accept=".pdf,.txt,.md,.json" multiple style="display:none;" />
               </div>
               <div id="storyDocsList" class="sources-list-container"></div>
             </div>
@@ -615,7 +697,7 @@
             <div class="tab-content" data-tab-content="notes">
               <div id="storyNotesList" class="notes-list"></div>
               <div class="row-gap">
-                <input type="text" id="storyNoteInput" placeholder="Nueva nota..." />
+                <input type="text" id="storyNoteInput" aria-label="Escribir una nueva nota de la historia" placeholder="Nueva nota..." />
                 <button class="btn-primary small" id="addStoryNote">Agregar</button>
               </div>
             </div>
@@ -646,7 +728,7 @@
               <button data-prompt="Continúa el capítulo actual con 2 párrafos, manteniendo el tono.">Continuar capítulo</button>
             </div>
             <div class="muse-input-row">
-              <input type="text" id="museInput" placeholder="Pídele algo a Muse AI..." />
+              <input type="text" id="museInput" aria-label="Escribir tu petición al asistente Muse AI" placeholder="Pídele algo a Muse AI..." />
               <button id="museSend" class="btn-primary small">Enviar</button>
             </div>
           </div>
@@ -673,18 +755,18 @@
           <p class="muted small">Genera automáticamente capítulos coherentes respetando la fuente prioritaria (Canon) y los documentos derivados adjuntos.</p>
           
           <label>Seleccionar fuente principal (Prioridad / Canon)</label>
-          <select id="autoBookPrioritySourceSelect">
+          <select id="autoBookPrioritySourceSelect" aria-label="Elegir la fuente prioritaria (Canon Absoluto) para la generación">
             <option value="">Usar reglas base y sinopsis general</option>
           </select>
 
           <div style="display:flex; gap:10px;">
             <div style="flex:1;">
               <label>Filtrar fuentes por sub-tipo</label>
-              <select id="autoBookSubtypeFilter"><option value="all">Todos los sub-tipos</option></select>
+              <select id="autoBookSubtypeFilter" aria-label="Filtrar las fuentes por sub-tipo de historia"><option value="all">Todos los sub-tipos</option></select>
             </div>
             <div style="flex:1;">
               <label>Filtrar fuentes por verso</label>
-              <select id="autoBookVerseFilter"><option value="all">Todos los versos</option></select>
+              <select id="autoBookVerseFilter" aria-label="Filtrar las fuentes por verso o cosmología"><option value="all">Todos los versos</option></select>
             </div>
           </div>
 
@@ -695,23 +777,23 @@
           </div>
 
           <label>Material de referencia adicional (Derivados)</label>
-          <textarea id="autoBookSources" rows="3" placeholder="Pega aquí resúmenes, fragmentos de fuentes o lore complementario..."></textarea>
+          <textarea id="autoBookSources" aria-label="Material adicional del autor para la generación" rows="3" placeholder="Pega aquí resúmenes, fragmentos de fuentes o lore complementario..."></textarea>
           
           <label>Reglas cronológicas y de continuidad</label>
-          <textarea id="autoBookChronology" rows="2" placeholder="Ej: Mantener orden cronológico estricto, respetar nivel de poder, no contradecir fuentes..."></textarea>
+          <textarea id="autoBookChronology" aria-label="Reglas cronológicas para la generación" rows="2" placeholder="Ej: Mantener orden cronológico estricto, respetar nivel de poder, no contradecir fuentes..."></textarea>
           
           <div style="display:flex; gap:10px; flex-wrap:wrap;">
             <div style="flex:1; min-width:120px;">
               <label>Capítulos a generar</label>
-              <input type="number" id="autoBookCount" value="3" min="1" max="50" />
+              <input type="number" id="autoBookCount" aria-label="Número de capítulos a generar" value="3" min="1" max="50" />
             </div>
             <div style="flex:1; min-width:140px;">
               <label>Palabras por capítulo</label>
-              <input type="number" id="autoBookLength" value="1200" min="300" max="4000" step="100" />
+              <input type="number" id="autoBookLength" aria-label="Extensión objetivo de cada capítulo en palabras" value="1200" min="300" max="4000" step="100" />
             </div>
             <div style="flex:1;">
               <label>Enfoque narrativo</label>
-              <select id="autoBookTone">
+              <select id="autoBookTone" aria-label="Tono narrativo de la generación">
                 <option value="accion">Acción y Aventura (Shonen)</option>
                 <option value="drama">Drama e Introspección</option>
                 <option value="misterio">Misterio y Tensión</option>
@@ -778,7 +860,7 @@
                 <button type="button" data-rpg-prefix="— ">Diálogo <code>—</code></button>
                 <button type="button" data-rpg-wrap="brackets">Fuera de personaje <code>[ ]</code></button>
               </div>
-              <textarea id="rpgTurnInput" rows="3" placeholder="Describe lo que intentas. LoreVinci resolverá dados y costes antes de que el GM narre..."></textarea>
+              <textarea id="rpgTurnInput" aria-label="Describir la acción, diálogo o consulta de tu turno" rows="3" placeholder="Describe lo que intentas. LoreVinci resolverá dados y costes antes de que el GM narre..."></textarea>
               <div class="rpg-compose-actions">
                 <span class="muted small">Ctrl/⌘ + Enter para enviar · el GM nunca controla a tu personaje</span>
                 <div class="row-gap" style="margin:0;"><button class="btn-danger rpg-cancel-turn" id="rpgCancelTurnBtn" type="button" hidden>Cancelar</button><button class="btn-primary" id="rpgSendTurnBtn" type="button">Resolver turno</button></div>
@@ -806,7 +888,7 @@
               <div class="rpg-roll-box">
                 <label>Tirada manual transparente</label>
                 <div class="row-gap" style="margin:4px 0 0; flex-wrap:nowrap;">
-                  <select id="rpgManualRollType" style="margin:0;">
+                  <select id="rpgManualRollType" aria-label="Tipo de tirada manual" style="margin:0;">
                     <option value="plain">D20</option><option value="strength">D20 + Fuerza</option><option value="agility">D20 + Agilidad</option><option value="resistance">D20 + Resistencia</option><option value="cursed">D20 + Flujo + Control</option>
                   </select>
                   <button class="btn-secondary" id="rpgManualRollBtn" type="button">Tirar</button>
@@ -824,9 +906,9 @@
         <div class="modal rpg-capture-modal">
           <div class="modal-head"><div><h3>Registrar tramo como capítulo</h3><span class="muted small" id="rpgCaptureRangeText"></span></div><button class="icon-btn" id="closeRpgCaptureBtn">✕</button></div>
           <label>Título del capítulo</label>
-          <input type="text" id="rpgCaptureTitle" placeholder="Ej: El templo bajo la lluvia" />
+          <input type="text" id="rpgCaptureTitle" aria-label="Título del capítulo que se registrará desde la partida" placeholder="Ej: El templo bajo la lluvia" />
           <label>Formato</label>
-          <select id="rpgCaptureMode">
+          <select id="rpgCaptureMode" aria-label="Modo de registro del capítulo (crónica o prosa)">
             <option value="chronicle">Crónica fiel — conserva turnos y diálogo</option>
             <option value="prose">Prosa narrativa con Muse AI — sin cambiar lo ocurrido</option>
           </select>
@@ -842,19 +924,19 @@
           <div class="modal-head"><div><h3>Sesión cero guiada</h3><span class="muted small">No necesitas experiencia previa: define cómo quieres vivir o dirigir este mundo.</span></div><button class="icon-btn" id="closeSessionZeroBtn">✕</button></div>
           <div class="session-zero-progress"><span class="active">1 · Rol</span><span>2 · Mundo</span><span>3 · Riesgo</span><span>4 · Comenzar</span></div>
           <div class="rpg-form-grid">
-            <div><label>Quiero participar como</label><select id="szRole"><option value="player">Jugador — vivo el mundo con mi personaje</option><option value="director">Director — controlo mundo, escenas y PNJ con ayuda de Muse</option></select></div>
-            <div><label>Mi experiencia</label><select id="szExperience"><option value="beginner">Principiante — explícame lo necesario</option><option value="intermediate">Intermedia — ayudas puntuales</option><option value="advanced">Avanzada — interfaz directa</option></select></div>
-            <div><label>Obra / universo</label><input id="szWork" type="text" placeholder="Mundo original o referencia" /></div>
-            <div><label>Autor/a o creador/a</label><input id="szAuthor" type="text" placeholder="Referencia general, sin copia literal" /></div>
+            <div><label>Quiero participar como</label><select id="szRole" aria-label="Tu rol en la partida: jugador o director"><option value="player">Jugador — vivo el mundo con mi personaje</option><option value="director">Director — controlo mundo, escenas y PNJ con ayuda de Muse</option></select></div>
+            <div><label>Mi experiencia</label><select id="szExperience" aria-label="Tu nivel de experiencia en juegos de rol"><option value="beginner">Principiante — explícame lo necesario</option><option value="intermediate">Intermedia — ayudas puntuales</option><option value="advanced">Avanzada — interfaz directa</option></select></div>
+            <div><label>Obra / universo</label><input id="szWork" aria-label="Obra o universo de referencia" type="text" placeholder="Mundo original o referencia" /></div>
+            <div><label>Autor/a o creador/a</label><input id="szAuthor" aria-label="Autor o creador de referencia" type="text" placeholder="Referencia general, sin copia literal" /></div>
           </div>
-          <label>Punto de entrada</label><textarea id="szEntry" rows="3" placeholder="¿Dónde empieza la aventura y qué está a punto de cambiar?"></textarea>
+          <label>Punto de entrada</label><textarea id="szEntry" aria-label="Punto de entrada de la aventura" rows="3" placeholder="¿Dónde empieza la aventura y qué está a punto de cambiar?"></textarea>
           <div class="rpg-form-grid">
-            <div><label>Tono</label><input id="szTone" type="text" placeholder="Aventura, misterio, tragedia, humor…" /></div>
-            <div><label>Dificultad</label><select id="szDifficulty"><option value="story">Narrativa</option><option value="balanced">Equilibrada</option><option value="challenging">Desafiante</option><option value="brutal">Brutal</option></select></div>
-            <div><label>Letalidad</label><select id="szLethality"><option value="safe">Segura</option><option value="heroic">Heroica</option><option value="dangerous">Peligrosa</option><option value="lethal">Letal</option></select></div>
-            <div><label>Relación con canon</label><select id="szFreedom"><option value="open">Mundo abierto</option><option value="canon">Canon estricto</option><option value="alternate">Línea alternativa</option></select></div>
+            <div><label>Tono</label><input id="szTone" aria-label="Tono de la campaña" type="text" placeholder="Aventura, misterio, tragedia, humor…" /></div>
+            <div><label>Dificultad</label><select id="szDifficulty" aria-label="Dificultad de la campaña"><option value="story">Narrativa</option><option value="balanced">Equilibrada</option><option value="challenging">Desafiante</option><option value="brutal">Brutal</option></select></div>
+            <div><label>Letalidad</label><select id="szLethality" aria-label="Letalidad de la campaña"><option value="safe">Segura</option><option value="heroic">Heroica</option><option value="dangerous">Peligrosa</option><option value="lethal">Letal</option></select></div>
+            <div><label>Relación con canon</label><select id="szFreedom" aria-label="Relación con el canon: mundo abierto, canon estricto o línea alternativa"><option value="open">Mundo abierto</option><option value="canon">Canon estricto</option><option value="alternate">Línea alternativa</option></select></div>
           </div>
-          <label>Límites y temas que no deben aparecer</label><textarea id="szLimits" rows="2" placeholder="Separa con comas. Puedes dejarlo vacío."></textarea>
+          <label>Límites y temas que no deben aparecer</label><textarea id="szLimits" aria-label="Límites y temas a evitar en la partida" rows="2" placeholder="Separa con comas. Puedes dejarlo vacío."></textarea>
           <label class="session-zero-mentor"><input type="checkbox" id="szMentor" checked /> Activar Mentor para explicar reglas, escritura y roleplay sin romper la inmersión</label>
           <div class="session-zero-summary" id="szSummary">LoreVinci preparará la ficha, el mundo persistente y una guía contextual.</div>
           <div class="row-gap" style="justify-content:flex-end"><button class="btn-secondary" id="cancelSessionZeroBtn">Cancelar</button><button class="btn-primary" id="saveSessionZeroBtn">Entrar al mundo</button></div>
@@ -883,11 +965,11 @@
           <div class="modal-head"><div><h3>Investigación web verificable</h3><span class="muted small">Busca, revisa y selecciona qué fuentes entran al libro.</span></div><button class="icon-btn" id="closeWebResearchBtn">✕</button></div>
           <div class="web-research-notice">LoreVinci usa internet solo cuando tú lo solicitas. Las fuentes se guardan con URL y fecha. Para referencias de autores extrae datos y rasgos generales; no copia texto ni suplanta una voz literal.</div>
           <div class="web-search-row">
-            <input type="search" id="webResearchQuery" placeholder="Autor, obra, universo, hecho o tema a verificar…" />
-            <select id="webResearchProvider"><option value="all">Web + enciclopedia + libros</option><option value="web">Web abierta</option><option value="wikipedia">Wikipedia</option><option value="books">Open Library</option></select>
+            <input type="search" id="webResearchQuery" aria-label="Consulta de investigación web" placeholder="Autor, obra, universo, hecho o tema a verificar…" />
+            <select id="webResearchProvider" aria-label="Proveedor de búsqueda web"><option value="all">Web + enciclopedia + libros</option><option value="web">Web abierta</option><option value="wikipedia">Wikipedia</option><option value="books">Open Library</option></select>
             <button class="btn-primary" id="runWebResearchBtn">Buscar</button>
           </div>
-          <div class="web-direct-row"><input type="url" id="webDirectUrl" placeholder="O pega una URL https:// concreta…" /><button class="btn-secondary" id="addDirectWebUrlBtn">Revisar URL</button></div>
+          <div class="web-direct-row"><input type="url" id="webDirectUrl" aria-label="URL concreta para revisar como fuente" placeholder="O pega una URL https:// concreta…" /><button class="btn-secondary" id="addDirectWebUrlBtn">Revisar URL</button></div>
           <div class="web-research-status muted small" id="webResearchStatus">Esperando una búsqueda.</div>
           <div class="web-research-results" id="webResearchResults"></div>
           <div class="row-gap" style="justify-content:space-between; margin-top:12px;"><span class="muted small" id="webSelectionCount">0 seleccionadas</span><div class="row-gap" style="margin:0;"><button class="btn-secondary" id="cancelWebResearchBtn">Cerrar</button><button class="btn-primary" id="attachWebSourcesBtn">Añadir seleccionadas como fuentes</button></div></div>
@@ -902,22 +984,22 @@
             <button class="icon-btn" id="closeCharModal" title="Cerrar">✕</button>
           </div>
           <label>Historia</label>
-          <select id="charStorySelect"></select>
+          <select id="charStorySelect" aria-label="Historia a la que pertenece el personaje"></select>
           <label>Nombre</label>
-          <input type="text" id="charName" />
+          <input type="text" id="charName" aria-label="Nombre del personaje" />
           <label>Rol</label>
-          <input type="text" id="charRole" placeholder="Protagonista, antagonista, secundario..." />
+          <input type="text" id="charRole" aria-label="Rol del personaje" placeholder="Protagonista, antagonista, secundario..." />
           <label>Identificador de variante / universo</label>
-          <input type="text" id="charVariant" placeholder="Ej: Goku (WHAT IF — Saiyajin sin Tierra)" />
+          <input type="text" id="charVariant" aria-label="Identificador de variante del personaje" placeholder="Ej: Goku (WHAT IF — Saiyajin sin Tierra)" />
           <label>Cosmología o línea temporal</label>
-          <input type="text" id="charCosmology" placeholder="Canon Z, Universo 7, Metaverso, línea temporal 3..." />
+          <input type="text" id="charCosmology" aria-label="Cosmología, verso o línea temporal del personaje" placeholder="Canon Z, Universo 7, Metaverso, línea temporal 3..." />
           <label>Conocimiento y límites</label>
-          <textarea id="charKnowledge" rows="3" placeholder="Qué sabe, qué no sabe y quién se lo contó..."></textarea>
+          <textarea id="charKnowledge" aria-label="Qué sabe el personaje y cómo lo aprendió" rows="3" placeholder="Qué sabe, qué no sabe y quién se lo contó..."></textarea>
           <label><input type="checkbox" id="charOmniscient" /> Tiene omnisciencia declarada</label>
           <label>Descripción y Personalidad (Auto-detectada o manual)</label>
-          <textarea id="charDesc" rows="4" placeholder="Personalidad, motivaciones, comportamiento..."></textarea>
+          <textarea id="charDesc" aria-label="Descripción y personalidad del personaje" rows="4" placeholder="Personalidad, motivaciones, comportamiento..."></textarea>
           <label>Rasgos (separados por coma)</label>
-          <input type="text" id="charTraits" placeholder="valiente, sarcástico, leal" />
+          <input type="text" id="charTraits" aria-label="Rasgos del personaje separados por comas" placeholder="valiente, sarcástico, leal" />
           <div class="row-gap">
             <button class="btn-primary" id="saveCharBtn">Guardar</button>
             <button class="btn-danger" id="deleteCharBtn">Eliminar</button>
@@ -933,29 +1015,29 @@
             <button class="icon-btn" id="closeStoryModal" title="Cerrar">✕</button>
           </div>
           <label>Título</label>
-          <input type="text" id="newStoryTitle" placeholder="El título de tu obra" />
+          <input type="text" id="newStoryTitle" aria-label="Título de la nueva historia" placeholder="El título de tu obra" />
           <label>Tipo de proyecto</label>
-          <select id="newStoryMode">
+          <select id="newStoryMode" aria-label="Modo del proyecto: novela o partida RPG">
             <option value="novel">Novela / fanfic</option>
             <option value="rpg">Partida de rol interactiva (GM)</option>
           </select>
           <p class="muted small" style="margin:-4px 0 8px;">El modo RPG conserva ficha, recursos, dados y turnos sin crear capítulos automáticamente.</p>
           <label>Idioma de escritura y narración</label>
-          <select id="newStoryLanguage"><option value="es">Español</option><option value="en">English</option><option value="pt">Português</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="it">Italiano</option></select>
+          <select id="newStoryLanguage" aria-label="Idioma de salida de la obra"><option value="es">Español</option><option value="en">English</option><option value="pt">Português</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="it">Italiano</option></select>
           <label>Género</label>
-          <input type="text" id="newStoryGenre" placeholder="Fantasía, Ciencia ficción, Romance, Shonen..." />
+          <input type="text" id="newStoryGenre" aria-label="Género de la historia" placeholder="Fantasía, Ciencia ficción, Romance, Shonen..." />
           <label>Sinopsis</label>
-          <textarea id="newStorySynopsis" rows="3" placeholder="De qué trata tu historia..."></textarea>
+          <textarea id="newStorySynopsis" aria-label="Sinopsis de la historia" rows="3" placeholder="De qué trata tu historia..."></textarea>
           <label>Reglas y Lore Base</label>
-          <textarea id="newStoryRules" rows="2" placeholder="Leyes del universo, restricciones del fanfic..."></textarea>
+          <textarea id="newStoryRules" aria-label="Reglas inquebrantables de la historia" rows="2" placeholder="Leyes del universo, restricciones del fanfic..."></textarea>
           <label>Obra o autor de referencia creativa</label>
-          <input type="text" id="newStoryStyleRef" placeholder="Ej: aventura ágil, fantasía épica, comedia romántica..." />
+          <input type="text" id="newStoryStyleRef" aria-label="Referencia de estilo o autor modelo" placeholder="Ej: aventura ágil, fantasía épica, comedia romántica..." />
           <label>Notas de voz y personalidad de la escritura</label>
-          <textarea id="newStyleNotes" rows="2" placeholder="Ej: narración en 3ª persona limitada, humor seco, frases cortas en la acción..."></textarea>
+          <textarea id="newStyleNotes" aria-label="Notas de estilo narrativo" rows="2" placeholder="Ej: narración en 3ª persona limitada, humor seco, frases cortas en la acción..."></textarea>
           <label>Imagen de portada (Archivo de imagen)</label>
-          <input type="file" id="newStoryCoverFile" accept="image/*" />
+          <input type="file" id="newStoryCoverFile" aria-label="Seleccionar imagen de portada" accept="image/*" />
           <label>Color de respaldo (si no hay imagen)</label>
-          <input type="color" id="newStoryColor" value="#c81e3a" />
+          <input type="color" id="newStoryColor" aria-label="Color base de la portada" value="#c81e3a" />
           <div class="row-gap" style="margin-top:14px;">
             <button class="btn-primary" id="createStoryBtn">Crear historia</button>
           </div>
@@ -984,15 +1066,15 @@
 
           <div class="config-pane active" data-cpane="identity">
             <label>Título</label>
-            <input type="text" id="cfgTitle" placeholder="Título de la obra" />
+            <input type="text" id="cfgTitle" aria-label="Título de la obra" placeholder="Título de la obra" />
             <label>Género</label>
-            <input type="text" id="cfgGenre" placeholder="Fantasía, Ciencia ficción, Shonen..." />
+            <input type="text" id="cfgGenre" aria-label="Género de la obra" placeholder="Fantasía, Ciencia ficción, Shonen..." />
             <label>Idioma de salida</label>
-            <select id="cfgLanguage"><option value="es">Español</option><option value="en">English</option><option value="pt">Português</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="it">Italiano</option></select>
+            <select id="cfgLanguage" aria-label="Idioma de salida de la obra"><option value="es">Español</option><option value="en">English</option><option value="pt">Português</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="it">Italiano</option></select>
             <label>Sinopsis</label>
-            <textarea id="cfgSynopsis" rows="4" placeholder="De qué trata tu historia..."></textarea>
+            <textarea id="cfgSynopsis" aria-label="Sinopsis de la obra" rows="4" placeholder="De qué trata tu historia..."></textarea>
             <label>Outline / Esquema general</label>
-            <textarea id="cfgOutline" rows="4" placeholder="Cap 1 ... Cap 2 ... arco general"></textarea>
+            <textarea id="cfgOutline" aria-label="Outline general por capítulos" rows="4" placeholder="Cap 1 ... Cap 2 ... arco general"></textarea>
           </div>
 
           <div class="config-pane" data-cpane="cover">
@@ -1001,9 +1083,9 @@
               <div class="cfg-cover-actions">
                 <button class="btn-secondary small" id="cfgUploadCoverBtn">Subir imagen de portada</button>
                 <button class="btn-icon-subtle small" id="cfgRemoveCoverBtn">Quitar portada</button>
-                <input type="file" id="cfgCoverInput" accept="image/*" style="display:none;" />
+                <input type="file" id="cfgCoverInput" aria-label="Cambiar la imagen de portada" accept="image/*" style="display:none;" />
                 <label style="margin-top:12px;">Color de respaldo</label>
-                <input type="color" id="cfgColor" value="#c81e3a" />
+                <input type="color" id="cfgColor" aria-label="Color base de la portada" value="#c81e3a" />
                 <p class="muted small" style="margin-top:10px;">La portada se usa en la biblioteca, en el Studio de fuentes y en la exportación del libro.</p>
               </div>
             </div>
@@ -1011,11 +1093,11 @@
 
           <div class="config-pane" data-cpane="lore">
             <label>Reglas y Lore Base (inquebrantables)</label>
-            <textarea id="cfgRules" rows="5" placeholder="Leyes del universo, límites de poder, restricciones..."></textarea>
+            <textarea id="cfgRules" aria-label="Reglas inquebrantables de la obra" rows="5" placeholder="Leyes del universo, límites de poder, restricciones..."></textarea>
             <label>Lore base extendido (contexto del mundo)</label>
-            <textarea id="cfgLoreBase" rows="5" placeholder="Geografía, facciones, historia previa, tecnología, magia..."></textarea>
+            <textarea id="cfgLoreBase" aria-label="Lore base del mundo" rows="5" placeholder="Geografía, facciones, historia previa, tecnología, magia..."></textarea>
             <label>Reglas cronológicas y de continuidad</label>
-            <textarea id="cfgChronology" rows="3" placeholder="Ej: orden cronológico estricto, no contradecir el canon absoluto..."></textarea>
+            <textarea id="cfgChronology" aria-label="Reglas cronológicas de la obra" rows="3" placeholder="Ej: orden cronológico estricto, no contradecir el canon absoluto..."></textarea>
           </div>
 
           <div class="config-pane" data-cpane="style">
@@ -1024,13 +1106,13 @@
               <p class="muted small" style="margin:4px 0 0 0;">Muse AI aplicará rasgos generales de esta voz con texto original, además de respetar el canon.</p>
             </div>
             <label>Obra, género o autor como referencia creativa</label>
-            <input type="text" id="cfgStyleRef" placeholder="Ej: Dragon Ball (Akira Toriyama), Sanderson, Ursula K. Le Guin..." />
+            <input type="text" id="cfgStyleRef" aria-label="Referencia de estilo o autor modelo" placeholder="Ej: Dragon Ball (Akira Toriyama), Sanderson, Ursula K. Le Guin..." />
             <label>Notas de voz narrativa</label>
-            <textarea id="cfgStyleNotes" rows="4" placeholder="Persona narrativa, ritmo, humor, densidad descriptiva, tics de diálogo..."></textarea>
+            <textarea id="cfgStyleNotes" aria-label="Notas de estilo narrativo" rows="4" placeholder="Persona narrativa, ritmo, humor, densidad descriptiva, tics de diálogo..."></textarea>
             <div class="row-gap" style="gap:12px; flex-wrap:wrap;">
               <div style="flex:1; min-width:170px;">
                 <label>Persona narrativa</label>
-                <select id="cfgNarrativePerson">
+                <select id="cfgNarrativePerson" aria-label="Persona narrativa">
                   <option value="auto">Automática (según la obra)</option>
                   <option value="first">Primera persona</option>
                   <option value="third-limited">Tercera limitada</option>
@@ -1039,7 +1121,7 @@
               </div>
               <div style="flex:1; min-width:170px;">
                 <label>Registro / tono base</label>
-                <select id="cfgToneRegister">
+                <select id="cfgToneRegister" aria-label="Registro del tono">
                   <option value="auto">Automático</option>
                   <option value="literario">Literario y descriptivo</option>
                   <option value="agil">Ágil y directo</option>
@@ -1050,7 +1132,7 @@
               </div>
               <div style="flex:1; min-width:170px;">
                 <label>Fidelidad al estilo</label>
-                <select id="cfgStyleStrength">
+                <select id="cfgStyleStrength" aria-label="Intensidad de la imitación de estilo">
                   <option value="alta">Alta — aplicar rasgos con intensidad</option>
                   <option value="media">Media — inspiración clara</option>
                   <option value="baja">Baja — voz propia</option>
@@ -1062,7 +1144,7 @@
               <button class="btn-primary small" id="cfgResearchStyleBtn" title="Buscar referencias verificables sobre el autor, obra o corriente y elegir qué fuentes incorporar">Investigar referencia en internet</button>
             </div>
             <label style="margin-top:14px;">Muestra de estilo (fragmento canónico que define la voz)</label>
-            <textarea id="cfgStyleSample" rows="5" placeholder="Pega aquí un fragmento representativo de la obra original: Muse AI lo usará como patrón de voz."></textarea>
+            <textarea id="cfgStyleSample" aria-label="Fragmento de muestra para extraer la voz del autor" rows="5" placeholder="Pega aquí un fragmento representativo de la obra original: Muse AI lo usará como patrón de voz."></textarea>
           </div>
 
           <div class="config-pane" data-cpane="rpg">
@@ -1077,22 +1159,22 @@
               <b>Mundo de campaña</b>
               <p class="muted small">Elige la obra y creador como referencia del mundo. LoreVinci conserva canon, personalidad y conocimiento limitado, pero la campaña sigue abierta a decisiones con consecuencias.</p>
               <div class="rpg-form-grid">
-                <div><label>Obra / universo de referencia</label><input type="text" id="cfgRpgReferenceWork" placeholder="Ej: una saga, anime, novela o mundo propio" /></div>
-                <div><label>Autor/a o creador/a</label><input type="text" id="cfgRpgReferenceAuthor" placeholder="Referencia creativa; no copia literal" /></div>
+                <div><label>Obra / universo de referencia</label><input type="text" id="cfgRpgReferenceWork" aria-label="Obra o universo de referencia de la partida" placeholder="Ej: una saga, anime, novela o mundo propio" /></div>
+                <div><label>Autor/a o creador/a</label><input type="text" id="cfgRpgReferenceAuthor" aria-label="Autor o creador de referencia de la partida" placeholder="Referencia creativa; no copia literal" /></div>
               </div>
-              <label>Punto de entrada de la campaña</label><textarea id="cfgRpgEntryPoint" rows="3" placeholder="Dónde empieza, qué acaba de ocurrir y qué amenaza está activa…"></textarea>
-              <label>Relación con el canon</label><select id="cfgRpgFreedom"><option value="open">Mundo abierto — canon como base, consecuencias libres</option><option value="canon">Canon estricto — cambios difíciles y justificados</option><option value="alternate">Línea alternativa — divergencias persistentes</option></select>
+              <label>Punto de entrada de la campaña</label><textarea id="cfgRpgEntryPoint" aria-label="Punto de entrada de la partida" rows="3" placeholder="Dónde empieza, qué acaba de ocurrir y qué amenaza está activa…"></textarea>
+              <label>Relación con el canon</label><select id="cfgRpgFreedom" aria-label="Libertad respecto al canon"><option value="open">Mundo abierto — canon como base, consecuencias libres</option><option value="canon">Canon estricto — cambios difíciles y justificados</option><option value="alternate">Línea alternativa — divergencias persistentes</option></select>
             </div>
             <div class="rpg-form-grid">
-              <div><label>Nombre del jugador/personaje</label><input type="text" id="cfgRpgName" placeholder="Nombre" /></div>
-              <div><label>Edad</label><input type="number" id="cfgRpgAge" min="1" max="999" value="18" /></div>
-              <div><label>Ocupación / especie</label><input type="text" id="cfgRpgOccupation" placeholder="Estudiante, chamán, maldición..." /></div>
-              <div><label>Grado inicial</label><select id="cfgRpgGrade"><option value="4">Grado 4</option><option value="3">Grado 3</option><option value="2">Grado 2</option><option value="1">Grado 1</option><option value="special">Especial</option></select></div>
-              <div><label>Linaje</label><input type="text" id="cfgRpgLineage" placeholder="Sin clan / aprobado por GM" /></div>
-              <div><label>Técnica innata</label><input type="text" id="cfgRpgTechnique" placeholder="Una técnica única" /></div>
+              <div><label>Nombre del jugador/personaje</label><input type="text" id="cfgRpgName" aria-label="Nombre del personaje jugador" placeholder="Nombre" /></div>
+              <div><label>Edad</label><input type="number" id="cfgRpgAge" aria-label="Edad del personaje jugador" min="1" max="999" value="18" /></div>
+              <div><label>Ocupación / especie</label><input type="text" id="cfgRpgOccupation" aria-label="Ocupación del personaje jugador" placeholder="Estudiante, chamán, maldición..." /></div>
+              <div><label>Grado inicial</label><select id="cfgRpgGrade" aria-label="Grado del personaje jugador"><option value="4">Grado 4</option><option value="3">Grado 3</option><option value="2">Grado 2</option><option value="1">Grado 1</option><option value="special">Especial</option></select></div>
+              <div><label>Linaje</label><input type="text" id="cfgRpgLineage" aria-label="Linaje o clan del personaje jugador" placeholder="Sin clan / aprobado por GM" /></div>
+              <div><label>Técnica innata</label><input type="text" id="cfgRpgTechnique" aria-label="Técnica innata del personaje jugador" placeholder="Una técnica única" /></div>
             </div>
-            <label>Motivación</label><input type="text" id="cfgRpgMotivation" placeholder="Dinero, moral, venganza, supervivencia..." />
-            <label>Herramienta inicial</label><input type="text" id="cfgRpgEquipment" placeholder="Arma común o amuleto de Grado 4" />
+            <label>Motivación</label><input type="text" id="cfgRpgMotivation" aria-label="Motivación del personaje jugador" placeholder="Dinero, moral, venganza, supervivencia..." />
+            <label>Herramienta inicial</label><input type="text" id="cfgRpgEquipment" aria-label="Equipo del personaje jugador" placeholder="Arma común o amuleto de Grado 4" />
             <label style="display:flex; align-items:center; gap:8px; color:var(--text); font-weight:600; margin:8px 0;">
               <input type="checkbox" id="cfgRpgHeavenly" style="width:auto; margin:0;" /> Restricción Celestial (PEM 0 y atributos físicos x2)
             </label>
@@ -1115,7 +1197,7 @@
             <div class="upload-action-bar" style="margin-bottom:12px;">
               <button class="btn-primary small" id="cfgAttachDocsBtn">Adjuntar varios PDFs / documentos</button>
               <button class="btn-secondary small" id="cfgSearchWebBtn">Buscar y seleccionar fuentes web</button>
-              <input type="file" id="cfgDocsInput" accept=".pdf,.txt,.md,.json" multiple style="display:none;" />
+              <input type="file" id="cfgDocsInput" aria-label="Seleccionar fuentes para adjuntar a la obra" accept=".pdf,.txt,.md,.json" multiple style="display:none;" />
             </div>
             <div id="cfgSourcesList" class="sources-list-container"></div>
           </div>
@@ -1168,7 +1250,7 @@
                 </div>
                 <div class="author-info-fields">
                   <label class="field-label" style="margin-bottom:2px;">Nombre de Autor/a</label>
-                  <input type="text" id="profileAuthorNameInput" class="author-name-input" placeholder="Tu nombre artístico..." />
+                  <input type="text" id="profileAuthorNameInput" aria-label="Nombre artístico de autor o autora" class="author-name-input" placeholder="Tu nombre artístico..." />
                   <div class="equipped-badge-display" id="profileModalEquippedBadge">
                     <span class="canon-badge canon-primary">Autor Verificado</span>
                   </div>
@@ -1179,7 +1261,7 @@
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align:-2px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>Subir foto de perfil
                 </button>
                 <button class="btn-icon-subtle small" id="removeProfilePhotoBtn" title="Quitar foto y usar monograma de iniciales" style="display:none; font-size:11.5px; padding:6px 8px;">Quitar foto</button>
-                <input type="file" id="profilePhotoInput" accept="image/*" style="display:none;" />
+                <input type="file" id="profilePhotoInput" aria-label="Seleccionar tu foto de perfil" accept="image/*" style="display:none;" />
               </div>
 
               <!-- PORTADA DE TU LIBRO ESCRITO (OBRA DESTACADA) -->
@@ -1202,13 +1284,13 @@
                   </div>
                 </div>
                 <div class="row-gap" style="margin-top: 12px; gap:8px;">
-                  <select id="profileStorySelect" style="flex:1; margin:0; font-size:12px;">
+                  <select id="profileStorySelect" aria-label="Elegir la obra destacada de tu perfil" style="flex:1; margin:0; font-size:12px;">
                     <option value="">-- Elegir de mis historias --</option>
                   </select>
                   <button class="btn-secondary small" id="uploadCustomBookCoverBtn" title="Subir imagen de portada personalizada (Sin NSFW)">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px; vertical-align:-2px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>Subir portada
                   </button>
-                  <input type="file" id="profileCoverInput" accept="image/*" style="display:none;" />
+                  <input type="file" id="profileCoverInput" aria-label="Seleccionar una portada personalizada para tu perfil" accept="image/*" style="display:none;" />
                 </div>
               </div>
             </div>
@@ -1228,7 +1310,7 @@
                 <div class="row-gap" style="justify-content:space-between; margin-bottom:4px; gap:12px;">
                   <div style="flex:1;">
                     <label style="margin:0; font-weight:600;">Marco del Avatar</label>
-                    <select id="profileBorderSelect" style="margin:4px 0 0 0;">
+                    <select id="profileBorderSelect" aria-label="Estilo del borde de tu avatar" style="margin:4px 0 0 0;">
                       <option value="rank-gold">Oro Editorial (Clásico)</option>
                       <option value="rank-slate">Grafito Minimalista (Neutro)</option>
                       <option value="rank-neon">Cian Moderno (Neón)</option>
@@ -1237,8 +1319,10 @@
                   </div>
                   <div style="flex:1;">
                     <label style="margin:0; font-weight:600;">Paleta de Fondo</label>
-                    <select id="appThemeBackgroundSelect" style="margin:4px 0 0 0;">
+                    <select id="appThemeBackgroundSelect" aria-label="Tema de color de la aplicación" style="margin:4px 0 0 0;">
                       <option value="bg-obsidian">Obsidian Oscuro (Default)</option>
+                      <option value="bg-paper">Papel Claro (alta luminosidad / impresión)</option>
+                      <option value="bg-auto">Automático — sigue el modo claro/oscuro del sistema</option>
                       <option value="bg-midnight">Medianoche Editorial</option>
                       <option value="bg-graphite">Grafito Minimalista</option>
                       <option value="bg-crimson">Terciopelo Carmesí</option>
@@ -1251,7 +1335,7 @@
                   <label style="font-weight:600;">Fondo personalizado</label>
                   <p class="muted small">Puedes usar una imagen o un GIF animado. Resolución recomendada: 1920 × 1080 px. Para pantallas 4K: 3840 × 2160 px. Relación ideal 16:9.</p>
                   <div class="row-gap">
-                    <input type="file" id="wallpaperInput" accept="image/jpeg,image/png,image/webp,image/gif" />
+                    <input type="file" id="wallpaperInput" aria-label="Seleccionar una imagen de fondo para la aplicación" accept="image/jpeg,image/png,image/webp,image/gif" />
                     <button class="btn-secondary small" id="removeWallpaperBtn" type="button">Quitar fondo</button>
                   </div>
                   <label class="small"><input type="checkbox" id="wallpaperOverlayToggle" checked /> Aplicar capa de contraste para facilitar la lectura</label>
@@ -1270,7 +1354,7 @@
       </div>
 
       <!-- NOTEBOOKLM UNIVERSAL REPOSITORY LINK MODAL -->
-      <div class="modal-backdrop" id="linkUniversalModalBackdrop">
+      <div class="modal-backdrop" id="linkUniversalModalBackdrop" role="dialog" aria-modal="true" aria-label="Vincular fuente del repositorio universal">
         <div class="modal" style="width: 560px;">
           <div class="modal-head">
             <h3>Vincular Fuente del Repositorio Universal</h3>
@@ -1286,7 +1370,7 @@
       </div>
 
       <!-- NOTEBOOKLM READER & AI SUMMARY MODAL -->
-      <div class="modal-backdrop" id="nblmReaderModalBackdrop">
+      <div class="modal-backdrop" id="nblmReaderModalBackdrop" role="dialog" aria-modal="true" aria-label="Lector de la fuente">
         <div class="modal" style="width: 720px; max-width: 95vw;">
           <div class="modal-head" style="border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 14px;">
             <div>
@@ -1314,7 +1398,7 @@
           </div>
         </div>
       </div>
-      <div class="modal-backdrop" id="welcomeModalBackdrop">
+      <div class="modal-backdrop" id="welcomeModalBackdrop" role="dialog" aria-modal="true" aria-label="Bienvenida a LoreVinci">
         <div class="modal onboarding-modal">
           <div class="onboarding-slide" data-slide="0">
             <div class="onboarding-icon-box">
@@ -1358,7 +1442,7 @@
       </div>
 
       <!-- HELP MODAL -->
-      <div class="modal-backdrop" id="helpModalBackdrop">
+      <div class="modal-backdrop" id="helpModalBackdrop" role="dialog" aria-modal="true" aria-label="Guía rápida de uso">
         <div class="modal help-modal">
           <div class="modal-head">
             <h3>Guía experta de LoreVinci</h3>
@@ -1370,6 +1454,10 @@
             <div class="help-item"><b>Portadas y Reglas Base</b> — personaliza cada obra con imagen de portada y establece leyes de lore inmutables.</div>
             <div class="help-item"><b>Contador de Capítulos visible</b> — visualiza claramente cuántos capítulos están escritos y su estado en todo momento.</div>
             <div class="help-item"><b>Mesa RPG</b> — activa “Partida RPG” al crear o configurar una obra. Usa <code>// acción</code>, <code>— diálogo</code> y <code>[fuera de personaje]</code>; los dados, costes y requisitos se resuelven antes de narrar y los turnos no crean capítulos.</div>
+            <div class="help-item"><b>Ritmo de escritura</b> — define una meta diaria de palabras en Ajustes → Ritmo de escritura y sigue tu progreso en Inicio. El modo máquina de escribir resalta la línea que estás escribiendo y atenúa el resto.</div>
+            <div class="help-item"><b>Versiones del capítulo</b> — el botón <code>Versiones</code> del editor guarda copias locales al abrir el capítulo y antes de cada generación con IA o borrado. Puedes restaurar cualquiera sin salir de la app.</div>
+            <div class="help-item"><b>Centro de actividad</b> — la campana de la cabecera reúne capítulos generados, avisos de coherencia y errores de guardado. Si algo no se pudo guardar, lo verás ahí y en el indicador del editor.</div>
+            <div class="help-item"><b>Atajos de teclado</b> — <code>Ctrl/⌘+K</code> buscar · <code>Ctrl/⌘+B</code> panel lateral · <code>Ctrl/⌘+Shift+F</code> modo Zen · <code>Ctrl/⌘+Z</code> deshacer · <code>Ctrl/⌘+Shift+Z</code> rehacer · <code>F1</code> esta guía · <code>Esc</code> cerrar cualquier diálogo.</div>
           </div>
           <div class="row-gap" style="justify-content:flex-end">
             <button class="btn-primary" id="replayOnboardingBtn">Ver tutorial de nuevo</button>
@@ -1425,8 +1513,24 @@
     </div>
   </div>
 
+  <!-- Versiones del capítulo: recuperación local sin servidor -->
+  <div class="modal-backdrop" id="snapshotModalBackdrop" role="dialog" aria-modal="true" aria-labelledby="snapshotModalTitle">
+    <div class="modal small-modal">
+      <div class="modal-head">
+        <h3 id="snapshotModalTitle">Versiones del capítulo</h3>
+        <button class="icon-btn" id="closeSnapshotModal" type="button" aria-label="Cerrar versiones">✕</button>
+      </div>
+      <p class="muted small">Se guarda una copia al abrir el capítulo y antes de cada generación con IA. Las versiones viven solo en este equipo y no se exportan en el respaldo.</p>
+      <div class="snapshot-list" id="snapshotList"></div>
+    </div>
+  </div>
+
   <script src="vendor/pdfjs/pdf.min.js"></script>
   <script src="vendor/tesseract/tesseract.min.js"></script>
+  <!-- Módulos compartidos: seguridad de salida y datos semilla (deben ir antes que app.js) -->
+  <script src="app-kernel.js"></script>
+  <script src="dom-safe.js"></script>
+  <script src="seed-data.js"></script>
   <script src="rpg-engine.js"></script>
   <script src="app.js"></script>
 </body>

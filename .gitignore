@@ -4,3 +4,6 @@ dist/
 
 # Dependencias de prueba instaladas con --no-save
 /node_modules/
+
+# Scratch de auditoría (no se versiona)
+.tmp-audit/
