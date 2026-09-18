@@ -178,9 +178,44 @@ async function settleDeep(times = 6) {
 }
 
 // ============================================================
+// 5b. runCleanup — limpieza de recursos sin catch silencioso
+// ============================================================
+{
+  const lines = [];
+  const logger = K.createLogger({ scope: 'cleanup', traceId: 'T-CLEAN', sink: (l) => lines.push(JSON.parse(l)) });
+
+  const okSync = K.runCleanup('recurso-sync', () => 'liberado', logger);
+  ok('runCleanup síncrono devuelve un Result ok', okSync.isOk === true && okSync.value === 'liberado');
+  ok('una limpieza exitosa no registra nada', lines.length === 0);
+
+  const badSync = K.runCleanup('recurso-roto', () => { throw new Error('handle ya cerrado'); }, logger);
+  ok('runCleanup NO propaga la excepción de la limpieza', badSync.isErr === true);
+  ok('el fallo de limpieza se clasifica', badSync.error.code === K.ERROR_CODES.TRANSPORT_FAILURE);
+  ok('el fallo de limpieza queda REGISTRADO', lines.length === 1 && lines[0].event === 'cleanup_failed');
+  ok('el registro identifica el recurso y la causa', lines[0].resource === 'recurso-roto' && /handle ya cerrado/.test(lines[0].reason));
+  ok('el registro comparte el trace_id del ciclo', lines[0].trace_id === 'T-CLEAN');
+
+  ok('runCleanup sin logger no revienta', K.runCleanup('sin-log', () => { throw new Error('x'); }).isErr === true);
+  ok('runCleanup con un argumento inválido devuelve err', K.runCleanup('no-fn', 'no soy función', logger).isErr === true);
+}
+
+// ============================================================
 // 6. Controlador de persistencia — invariantes I1..I4
 // ============================================================
 async function controllerTests() {
+  // runCleanup con limpieza ASÍNCRONA (pdf.destroy(), worker.terminate()).
+  {
+    const lines = [];
+    const logger = K.createLogger({ scope: 'cleanup', sink: (l) => lines.push(JSON.parse(l)) });
+    const asyncOk = await K.runCleanup('pdfjs', async () => { await Promise.resolve(); return true; }, logger);
+    ok('runCleanup awaitable resuelve a Result ok', asyncOk.isOk === true);
+    ok('la limpieza async exitosa no registra', lines.length === 0);
+
+    const asyncBad = await K.runCleanup('tesseract', async () => { throw new Error('worker muerto'); }, logger);
+    ok('una limpieza async que rechaza no propaga', asyncBad.isErr === true);
+    ok('una limpieza async fallida se registra', lines.length === 1 && lines[0].event === 'cleanup_failed' && lines[0].resource === 'tesseract');
+  }
+
   ok('exige deps.save como función', (() => {
     try { K.createPersistenceController({ getPayload: () => ({}) }); return false; }
     catch (e) { return e instanceof K.ValidationError; }
@@ -452,6 +487,68 @@ async function mainProcessTests() {
   ok('el evento lleva trace_id', Boolean(stepFailure && typeof stepFailure.trace_id === 'string' && stepFailure.trace_id.length > 0));
   ok('el proceso principal usa scope "main"', parsed.every((e) => String(e.scope).startsWith('main')));
 
+  // ---- El control de tamaño de prompt: antes fallaba ABIERTO ----
+  const realFetch = global.fetch;
+  let fetchCalls = 0;
+  global.fetch = async () => {
+    fetchCalls += 1;
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      json: async () => ({ choices: [{ message: { content: 'respuesta del modelo' }, finish_reason: 'stop' }], model: 'gpt-4o' })
+    };
+  };
+  const parseLines = () => captured.map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+
+  try {
+    const circular = { role: 'user', content: 'texto' };
+    circular.self = circular; // JSON.stringify lanza: referencia circular
+
+    captured.length = 0;
+    console.debug = (l) => captured.push(l);
+    let res;
+    try {
+      res = await handlers['ai:generate'](null, {
+        baseUrl: 'https://api.openai.com/v1', apiKey: 'sk-test', model: 'gpt-4o',
+        messages: [circular], task: 'writing'
+      });
+    } finally { console.debug = realDebug; }
+
+    ok('un prompt no serializable se RECHAZA (falla cerrado)', res.ok === false);
+    ok('el rechazo explica que no se pudo medir el tamaño', /No se pudo medir el tama\u00f1o del prompt/.test(res.error), res.error);
+    ok('un prompt no serializable NO llega a la API', fetchCalls === 0, `fetchCalls=${fetchCalls}`);
+    const unmeasurable = parseLines().find((e) => e.event === 'prompt_size_unmeasurable');
+    ok('el fallo del control se registra como ERROR estructurado', Boolean(unmeasurable));
+    ok('el registro lleva código, modelo y tarea', Boolean(unmeasurable && unmeasurable.code && unmeasurable.model === 'gpt-4o' && unmeasurable.task === 'writing'));
+    ok('el registro lleva trace_id', Boolean(unmeasurable && unmeasurable.trace_id));
+
+    captured.length = 0;
+    console.debug = (l) => captured.push(l);
+    try {
+      res = await handlers['ai:generate'](null, {
+        baseUrl: 'https://api.openai.com/v1', apiKey: 'sk-test', model: 'gpt-4o',
+        messages: [{ role: 'user', content: 'a'.repeat(130000) }], task: 'writing'
+      });
+    } finally { console.debug = realDebug; }
+    ok('un prompt de 130k caracteres se rechaza', res.ok === false && /Prompt demasiado largo/.test(res.error), res.error);
+    ok('el mensaje de rechazo cita el límite real', /120k/.test(res.error), res.error);
+    ok('el prompt desmesurado no llega a la API', fetchCalls === 0);
+    const tooLong = parseLines().find((e) => e.event === 'prompt_too_long');
+    ok('el rechazo por tamaño se registra con la métrica', Boolean(tooLong) && tooLong.chars > 120000 && tooLong.limit === 120000);
+
+    captured.length = 0;
+    res = await handlers['ai:generate'](null, {
+      baseUrl: 'https://api.openai.com/v1', apiKey: 'sk-test', model: 'gpt-4o',
+      messages: [{ role: 'user', content: 'hola' }], task: 'writing'
+    });
+    ok('un prompt válido sí llega a la API', fetchCalls === 1, `fetchCalls=${fetchCalls}`);
+    ok('un prompt válido devuelve el texto del modelo', res.ok === true && res.text === 'respuesta del modelo');
+    ok('un prompt válido no genera logs de error', parseLines().every((e) => e.level !== 'error'));
+  } finally {
+    global.fetch = realFetch;
+  }
+
   fs.rmSync(userData, { recursive: true, force: true });
 }
 
@@ -460,7 +557,7 @@ async function mainProcessTests() {
 // ============================================================
 async function integrationTests() {
   const seed = makeSeed();
-  const { w, errors } = makeApp({ seed });
+  const { w, errors, parsedLogs } = makeApp({ seed });
   const d = w.document;
   const byId = (id) => d.getElementById(id);
   const tick = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -525,6 +622,58 @@ async function integrationTests() {
   probe('scheduleSave()');
   ok('scheduleSave() invalida el índice de búsqueda', probe('globalSearchIndex.length') === 0);
   probe('persistence.cancel()');
+
+  // ---- El puente web ya no pierde la biblioteca en silencio ----
+  // makeApp() sin seed ni bridge deja que app.js instale SU puente real
+  // (localStorage); con seed el arnés lo sustituye y el código no se ejecuta.
+  {
+    const bridge = makeApp({});
+    await tick(2800);
+    bridge.w.localStorage.setItem('lorevinci-data', '{"stories": [ esto está roto');
+    const recovered = await bridge.w.lorevinci.loadData();
+    const failure = bridge.parsedLogs().find((e) => e.event === 'local_load_failed');
+    ok('un JSON corrupto en localStorage sigue devolviendo datos utilizables', Boolean(recovered) && Array.isArray(recovered.stories));
+    ok('la pérdida de datos por JSON corrupto se REGISTRA', Boolean(failure), bridge.parsedLogs().slice(-3).map((e) => e.event).join(','));
+    ok('se registra como error, no como debug', failure && failure.level === 'error');
+    ok('el registro mide cuántos bytes se descartaron', failure && failure.stored_bytes > 10, failure && String(failure.stored_bytes));
+    ok('el registro explica la consecuencia para el usuario', failure && /semilla/i.test(failure.consequence));
+    ok('el registro identifica el código del fallo', failure && typeof failure.code === 'string' && failure.code.length > 0);
+
+    bridge.w.localStorage.setItem('lorevinci-data', JSON.stringify({ settings: {}, stories: [] }));
+    const healthy = await bridge.w.lorevinci.loadData();
+    ok('con JSON válido el puente devuelve los datos sin registrar fallos', Array.isArray(healthy.stories) && bridge.parsedLogs().filter((e) => e.event === 'local_load_failed').length === 1);
+    bridge.w.close();
+  }
+
+  // ---- Instantáneas: almacén corrupto ----
+  const snapshotKey = probe('SNAPSHOT_STORAGE_KEY');
+  ok('readSnapshotStore devuelve {} ante un almacén corrupto', (() => {
+    w.localStorage.setItem(snapshotKey, '{roto');
+    return probe('JSON.stringify(readSnapshotStore())') === '{}';
+  })());
+  ok('el almacén de instantáneas corrupto se registra', parsedLogs().some((e) => e.event === 'snapshot_store_corrupt'), parsedLogs().slice(-3).map((e) => e.event).join(','));
+  ok('readSnapshotStore sigue leyendo un almacén válido', (() => {
+    w.localStorage.setItem(snapshotKey, JSON.stringify({ cap1: { at: 1 } }));
+    return probe('JSON.stringify(readSnapshotStore())') === '{"cap1":{"at":1}}';
+  })());
+  ok('writeSnapshotStore confirma la escritura', probe('writeSnapshotStore({ cap2: { at: 2 } })') === true);
+
+  // extractJsonObject: mismo contrato observable, pero ahora deja rastro.
+  ok('extractJsonObject sigue devolviendo null ante JSON inválido', probe(`extractJsonObject('{"a":}')`) === null);
+  const jsonFailure = parsedLogs().find((e) => e.event === 'json_extraction_failed');
+  ok('el JSON inválido del modelo queda REGISTRADO', Boolean(jsonFailure));
+  ok('el registro dice cuántas estrategias fallaron', jsonFailure && jsonFailure.strategies === 2);
+  ok('el registro incluye la causa y una muestra del candidato', jsonFailure && Boolean(jsonFailure.reason) && typeof jsonFailure.candidate_head === 'string');
+  ok('el registro viaja con el trace_id del ámbito', jsonFailure && typeof jsonFailure.trace_id === 'string' && jsonFailure.trace_id.length > 0);
+  ok('extractJsonObject sigue parseando lo válido sin loggear', probe('extractJsonObject(\'{"a":1}\').a') === 1);
+
+  // Los fallos de guardado provocados más arriba también deben ser observables.
+  const writeFailures = parsedLogs().filter((e) => e.event === 'write_failed');
+  ok('los fallos de guardado quedaron registrados como evento estructurado', writeFailures.length >= 3, String(writeFailures.length));
+  ok('cada fallo registrado lleva code y duración', writeFailures.every((e) => typeof e.code === 'string' && typeof e.duration_ms === 'number'));
+  ok('todos los eventos del ciclo comparten trace_id', new Set(parsedLogs().filter((e) => e.scope && e.scope.startsWith('lorevinci:persistence')).map((e) => e.trace_id)).size >= 1);
+  ok('la recuperación tras el fallo también se registró', parsedLogs().some((e) => e.event === 'write_recovered'));
+  ok('el scope del log de guardado no es redundante', parsedLogs().some((e) => e.scope === 'lorevinci:persistence:write'), JSON.stringify([...new Set(parsedLogs().map((e) => e.scope))]));
 
   const runtime = errors.filter((e) => !/Not implemented|Could not parse CSS/i.test(e));
   ok('sin errores de ejecución en la integración', runtime.length === 0, runtime.slice(0, 3).join(' | '));

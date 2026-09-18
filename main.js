@@ -12,6 +12,10 @@ const LoreKernel = require('./renderer/app-kernel');
 // trace_id para correlacionar todo lo que ocurre dentro de un mismo guardado.
 const mainLogger = LoreKernel.createLogger({ scope: 'main' });
 
+// Límites centralizados: ni números mágicos ni strings repetidos en el handler.
+const MAX_PROMPT_CHARS = 120000;
+const CLIPBOARD_MAX_CHARS = 20000;
+
 const sanitizeHtml = LoreDomSafe.sanitizeHtml;
 const safeImageUrl = LoreDomSafe.safeImageUrl;
 // Campos de texto plano (títulos, nombres, notas, contenido de fuentes): se les
@@ -97,7 +101,12 @@ async function fetchPublicWebPage(rawUrl, maxBytes = 30 * 1024 * 1024) {
         const { value, done } = await reader.read();
         if (done) break;
         total += value.byteLength;
-        if (total > maxBytes) { try { await reader.cancel(); } catch {} throw new Error('La página supera el límite de 30 MB.'); }
+        if (total > maxBytes) {
+          // Se libera el stream antes de lanzar: si `cancel()` falla, el socket
+          // queda abierto. No puede romper el flujo, pero tampoco silenciarse.
+          await LoreKernel.runCleanup('web-reader', () => reader.cancel(), mainLogger);
+          throw new Error('La página supera el límite de 30 MB.');
+        }
         chunks.push(Buffer.from(value));
       }
       buffer = Buffer.concat(chunks, total);
@@ -697,12 +706,18 @@ ipcMain.handle('web:search', async (_evt, payload) => {
   const provider = String(payload && payload.provider || 'all');
   if (query.length < 2) return { ok:false, error:'Escribe al menos 2 caracteres para buscar.' };
   const results = [];
+  // Set de URLs ya vistas: la deduplicación era un `results.some(...)` dentro de
+  // un bucle, es decir O(n²) sobre el conjunto de resultados. Con el Set el
+  // descarte de duplicados es O(1) por enlace.
+  const seenUrls = new Set();
   const push = item => {
-    if (!item || !item.url || results.some(r => r.url === item.url)) return;
+    if (!item || !item.url || seenUrls.has(item.url)) return;
+    seenUrls.add(item.url);
     results.push({ title:String(item.title || item.url).slice(0,240), url:String(item.url), snippet:String(item.snippet || '').slice(0,700), provider:item.provider || 'web' });
   };
   const headers = { 'User-Agent':'LoreVinci/1.0 Research (+https://lorevinci.app)', Accept:'application/json,text/html;q=0.9' };
   const errors = [];
+  let skippedLinks = 0;
 
   if (provider === 'all' || provider === 'wikipedia') {
     try {
@@ -739,18 +754,37 @@ ipcMain.handle('web:search', async (_evt, payload) => {
       const linkRx = /<a[^>]+class=["'][^"']*result__a[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
       let match;
       while ((match = linkRx.exec(html)) && results.length < 18) {
-        let target = decodeWebEntities(match[1]);
-        try {
-          const parsed = new URL(target, 'https://duckduckgo.com');
-          target = parsed.searchParams.get('uddg') || parsed.toString();
-          const targetUrl = new URL(target);
-          if (!['http:','https:'].includes(targetUrl.protocol) || /duckduckgo\.com$/i.test(targetUrl.hostname)) continue;
+        const rawTarget = decodeWebEntities(match[1]);
+        // Cada enlace se resuelve de forma aislada: uno roto se descarta y se
+        // registra, pero no puede tumbar el resto de resultados. El `catch {}`
+        // anterior los descartaba sin dejar rastro, así que una búsqueda que
+        // devolvía 0 resultados no se podía diagnosticar.
+        const parsedLink = LoreKernel.attempt(() => {
+          const parsed = new URL(rawTarget, 'https://duckduckgo.com');
+          const resolved = parsed.searchParams.get('uddg') || parsed.toString();
+          const targetUrl = new URL(resolved);
+          if (!['http:', 'https:'].includes(targetUrl.protocol) || /duckduckgo\.com$/i.test(targetUrl.hostname)) {
+            return null; // enlace interno o de esquema no admitido: se descarta
+          }
           const tail = html.slice(linkRx.lastIndex, linkRx.lastIndex + 1600);
           const snippet = stripWebHtml((tail.match(/class=["'][^"']*result__snippet[^"']*["'][^>]*>([\s\S]*?)<\/(?:a|div)>/i) || [null, ''])[1]);
-          push({ title:stripWebHtml(match[2]), url:targetUrl.toString(), snippet, provider:'Web' });
-        } catch {}
+          return { title: stripWebHtml(match[2]), url: targetUrl.toString(), snippet, provider: 'Web' };
+        });
+        if (parsedLink.isErr) {
+          skippedLinks += 1;
+          mainLogger.debug('web_result_link_skipped', {
+            reason: parsedLink.error.message,
+            target_head: rawTarget.slice(0, 120)
+          });
+          continue;
+        }
+        if (parsedLink.value) push(parsedLink.value);
       }
     } catch (err) { errors.push(`Web: ${String(err.message || err)}`); }
+  }
+
+  if (skippedLinks) {
+    mainLogger.warn('web_results_links_skipped', { skipped: skippedLinks, kept: results.length });
   }
 
   return results.length
@@ -777,8 +811,12 @@ ipcMain.handle('secrets:set', async (_evt, apiKey) => {
 });
 ipcMain.handle('secrets:status', async () => ({ ok: true, encrypted: encryptionAvailable() }));
 ipcMain.handle('clipboard:write', async (_evt, text) => {
-  try { clipboard.writeText(String(text || '').slice(0, 20000)); return { ok: true }; }
-  catch { return { ok: false }; }
+  const written = LoreKernel.attempt(() => clipboard.writeText(String(text || '').slice(0, CLIPBOARD_MAX_CHARS)));
+  if (written.isErr) {
+    mainLogger.warn('clipboard_write_failed', { code: written.error.code, reason: written.error.message });
+    return { ok: false, error: written.error.message };
+  }
+  return { ok: true };
 });
 
 if (typeof ipcMain.on === 'function') {
@@ -796,11 +834,28 @@ ipcMain.handle('ai:generate', async (_evt, payload) => {
   if (!apiKey && !isLocal) {
     return { ok: false, error: 'Falta configurar tu API Key en Ajustes > Muse AI.' };
   }
-  // Validación de mensajes para evitar prompt injection extremo: limitar tamaño
-  try {
-    const totalChars = JSON.stringify(messages).length;
-    if (totalChars > 120000) return { ok: false, error: 'Prompt demasiado largo (límite 120k chars). Reduce fuentes o reglas.' };
-  } catch {}
+  // Validación de mensajes para evitar prompt injection extremo: limitar tamaño.
+  //
+  // El `catch {}` que había aquí dejaba el control FALLANDO ABIERTO: si
+  // `JSON.stringify` lanzaba (referencias circulares en `messages`, un BigInt,
+  // un getter que revienta) la comprobación se omitía por completo y el prompt
+  // sin medir salía hacia la API. Un límite de coste y de inyección que no se
+  // aplica cuando más falta hace es peor que no tenerlo: da falsa seguridad.
+  // Ahora falla CERRADO y registra la causa.
+  const measured = LoreKernel.attempt(() => JSON.stringify(messages).length);
+  if (measured.isErr) {
+    mainLogger.error('prompt_size_unmeasurable', {
+      code: measured.error.code,
+      reason: measured.error.message,
+      model: String(model || ''),
+      task: String(task || '')
+    });
+    return { ok: false, error: 'No se pudo medir el tamaño del prompt (mensaje no serializable). Revisa las fuentes adjuntas e inténtalo de nuevo.' };
+  }
+  if (measured.unwrap() > MAX_PROMPT_CHARS) {
+    mainLogger.warn('prompt_too_long', { chars: measured.unwrap(), limit: MAX_PROMPT_CHARS, task: String(task || '') });
+    return { ok: false, error: `Prompt demasiado largo (límite ${MAX_PROMPT_CHARS / 1000}k chars). Reduce fuentes o reglas.` };
+  }
 
   const controller = new AbortController();
   const key = String(requestId || '');

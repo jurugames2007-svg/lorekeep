@@ -528,6 +528,35 @@
   }
 
   /**
+   * Ejecuta una limpieza de recurso que NO debe romper el flujo principal
+   * (`pdf.destroy()`, `worker.terminate()`, `reader.cancel()`).
+   *
+   * Es el sustituto directo de `try { await x.destroy(); } catch {}`. Que la
+   * limpieza no pueda romper el flujo es correcto; que su fallo sea invisible no
+   * lo es: un `destroy()` que falla suele ser un worker o un handle que queda
+   * vivo, es decir, una fuga de memoria que solo se ve al rato.
+   *
+   * @param {string} label           Identificador del recurso (aparece en el log).
+   * @param {() => unknown} releaseFn Función de liberación (síncrona o async).
+   * @param {{ warn?: Function }} [logger] Logger estructurado; si se omite, no se registra.
+   * @returns {object|Promise<object>} `Result` del intento (awaitable si la limpieza era async).
+   */
+  function runCleanup(label, releaseFn, logger) {
+    const result = attempt(releaseFn, (thrown) => toAppError(thrown, `Limpieza de ${label} fallida`));
+    const report = (settled) => {
+      if (settled.isErr && logger && typeof logger.warn === 'function') {
+        logger.warn('cleanup_failed', {
+          resource: label,
+          code: settled.error.code,
+          reason: settled.error.message
+        });
+      }
+      return settled;
+    };
+    return result instanceof Promise ? result.then(report) : report(result);
+  }
+
+  /**
    * Convierte la respuesta del transporte en un `Result`.
    * El contrato histórico del puente admite tres formas: `{ok:true}`,
    * `{ok:false,error}` y `true`/falsy. Se normalizan aquí, una sola vez.
@@ -575,6 +604,7 @@
     newTraceId,
     createPersistenceController,
     normalizeSaveResponse,
-    formatSaveFailure
+    formatSaveFailure,
+    runCleanup
   });
 });

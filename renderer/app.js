@@ -6,12 +6,29 @@
 // resto de la aplicación no necesita saber dónde está corriendo.
 if (!window.lorevinci) {
   const WEB_STORAGE_KEY = 'lorevinci-data';
+  // Logger propio del puente: se crea antes que `appLogger` (que vive más abajo)
+  // para no depender del orden de declaración del fichero.
+  const bridgeLogger = window.LoreKernel.createLogger({ scope: 'lorevinci:bridge' });
   window.lorevinci = {
     loadData: async () => {
-      try {
+      const loaded = window.LoreKernel.attempt(() => {
         const raw = localStorage.getItem(WEB_STORAGE_KEY);
-        if (raw) return JSON.parse(raw);
-      } catch { /* almacenamiento no disponible o JSON corrupto: se usa la semilla */ }
+        return raw ? JSON.parse(raw) : null;
+      });
+      if (loaded.isOk && loaded.value) return loaded.value;
+      if (loaded.isErr) {
+        // Este era el `catch {}` más peligroso del renderer: un JSON corrupto en
+        // localStorage hacía que la app arrancara con la semilla, es decir, que
+        // la biblioteca del usuario desapareciera SIN NINGÚN aviso y que el
+        // siguiente guardado la sobrescribiera. Ahora queda constancia del nivel
+        // exacto: si fue lectura o parseo, y de cuántos bytes se descartaron.
+        bridgeLogger.error('local_load_failed', {
+          code: loaded.error.code,
+          reason: loaded.error.message,
+          stored_bytes: window.LoreKernel.attempt(() => String(localStorage.getItem(WEB_STORAGE_KEY) || '').length).unwrapOr(0),
+          consequence: 'Se arranca con la semilla; el siguiente guardado sobrescribe los datos no leídos.'
+        });
+      }
       // Semilla compartida con el proceso principal (renderer/seed-data.js).
       return window.LoreSeed ? window.LoreSeed.defaultData() : { settings: {}, stories: [], characters: [], globalDocs: [], collabNotes: [], activityLog: [], notifications: [] };
     },
@@ -522,14 +539,17 @@ function redoEditor() {
 // archivo —incluido el atajo Ctrl+S—, de modo que cualquier función podía dejar
 // la máquina de estados en una combinación imposible. Ahora el estado es privado
 // del controlador y lo único observable es un snapshot congelado.
-const saveLogger = window.LoreKernel.createLogger({ scope: 'lorevinci' });
+// Un logger raíz por ámbito; cada preocupación deriva un hijo que hereda el
+// trace_id. Todo sale como una línea JSON por evento.
+const appLogger = window.LoreKernel.createLogger({ scope: 'lorevinci' });
+const ingestLogger = appLogger.child('ingest');
 
 const persistence = window.LoreKernel.createPersistenceController({
   // Late binding a propósito: el puente puede sustituirse (y las pruebas lo hacen).
   save: (payload) => window.lorevinci.saveData(payload),
   getPayload: () => DATA,
   debounceMs: window.LoreKernel.PERSISTENCE.DEBOUNCE_MS,
-  logger: saveLogger,
+  logger: appLogger,
   // Observer: cualquier cambio invalida el índice de búsqueda global.
   onChange: () => { globalSearchIndex = []; },
   onStatus: (status, detail) => setSaveStatus(status, detail),
@@ -617,9 +637,19 @@ function isVisible(element) {
   return true;
 }
 
+/**
+ * Mueve el foco a un elemento sin desplazar la página.
+ * `preventScroll` no existe en todos los motores: se degrada a `focus()` plano.
+ * @param {HTMLElement|null} element
+ * @returns {boolean} true si el foco pudo colocarse de alguna forma.
+ */
 function focusElement(element) {
-  if (!element || typeof element.focus !== 'function') return;
-  try { element.focus({ preventScroll: true }); } catch { try { element.focus(); } catch { /* noop */ } }
+  if (!element || typeof element.focus !== 'function') return false;
+  const smooth = window.LoreKernel.attempt(() => element.focus({ preventScroll: true }));
+  if (smooth.isOk) return true;
+  const plain = window.LoreKernel.attempt(() => element.focus());
+  if (plain.isErr) ingestLogger.debug('focus_unavailable', { reason: plain.error.message });
+  return plain.isOk;
 }
 
 function modalFocusables(backdrop) {
@@ -1843,7 +1873,18 @@ Devuelve exactamente este JSON:
   return { ok: true, beat: parsed };
 }
 
-/** Extrae el primer objeto JSON de una respuesta, tolerando ```json y texto alrededor. */
+/**
+ * Extrae el primer objeto JSON de una respuesta, tolerando ```json y texto
+ * alrededor.
+ *
+ * Cadena de estrategias: cada intento devuelve un `Result` en vez de lanzar, y
+ * solo cuando TODAS fallan se registra un aviso con la causa de la última. Antes
+ * había dos `catch {}` seguidos: una respuesta malformada del modelo se perdía
+ * sin dejar rastro y el fallo se veía tres capas más arriba como "JSON vacío".
+ *
+ * @param {string} text Respuesta cruda del modelo.
+ * @returns {object|null} Objeto parseado o null si ninguna estrategia funcionó.
+ */
 function extractJsonObject(text) {
   if (!text) return null;
   let t = String(text).trim();
@@ -1853,9 +1894,22 @@ function extractJsonObject(text) {
   const end = t.lastIndexOf('}');
   if (start === -1 || end === -1 || end <= start) return null;
   const candidate = t.slice(start, end + 1);
-  try { return JSON.parse(candidate); } catch {}
-  // Segundo intento: limpiar comas colgantes típicas de los modelos.
-  try { return JSON.parse(candidate.replace(/,\s*([}\]])/g, '$1')); } catch {}
+
+  const direct = window.LoreKernel.attempt(() => JSON.parse(candidate));
+  if (direct.isOk) return direct.value;
+
+  // Segunda estrategia: limpiar las comas colgantes típicas de los modelos.
+  const repaired = window.LoreKernel.attempt(
+    () => JSON.parse(candidate.replace(/,\s*([}\]])/g, '$1'))
+  );
+  if (repaired.isOk) return repaired.value;
+
+  appLogger.warn('json_extraction_failed', {
+    strategies: 2,
+    reason: repaired.error.message,
+    candidate_head: candidate.slice(0, 120),
+    candidate_chars: candidate.length
+  });
   return null;
 }
 
@@ -2238,7 +2292,7 @@ async function extractPdfText(file, onPage) {
     if (onPage) onPage(i, total);
     if (pages.join('\n').length > MAX_DOC_CHARS * 1.5) break;
   }
-  try { await pdf.destroy(); } catch {}
+  await window.LoreKernel.runCleanup('pdfjs-document', () => pdf.destroy(), ingestLogger);
   return { text: pages.join('\n\n').trim(), pageCount: total };
 }
 
@@ -2291,12 +2345,18 @@ async function getOcrWorker(lang, onProgress) {
   return ocrWorkerPromise;
 }
 
+/**
+ * Libera el worker de Tesseract. Un worker sin terminar deja un hilo wasm vivo:
+ * el fallo de limpieza se registra en vez de tragarse.
+ * @returns {Promise<void>}
+ */
 async function terminateOcrWorker() {
   if (!ocrWorkerPromise) return;
-  try {
-    const worker = await ocrWorkerPromise;
-    await worker.terminate();
-  } catch {}
+  await window.LoreKernel.runCleanup(
+    'tesseract-worker',
+    async () => { const worker = await ocrWorkerPromise; await worker.terminate(); },
+    ingestLogger
+  );
   ocrWorkerPromise = null;
 }
 
@@ -2343,7 +2403,7 @@ async function ocrPdfFile(file, { lang = 'spa', onPage = null, signal = null } =
     await new Promise(r => setTimeout(r, 0));
   }
 
-  try { await pdf.destroy(); } catch {}
+  await window.LoreKernel.runCleanup('pdfjs-document-ocr', () => pdf.destroy(), ingestLogger);
   const avgConfidence = confidences.length
     ? Math.round(confidences.reduce((a, b) => a + b, 0) / confidences.length)
     : 0;
@@ -6021,11 +6081,16 @@ function insertIntoEditorAtCaret(blocks) {
   if (caretInEditor && typeof document.execCommand === 'function') {
     // insertParagraph + insertText respeta el punto de inserción del usuario.
     const text = blocks.join('\n\n');
-    try {
+    const inserted = window.LoreKernel.attempt(() => {
       document.execCommand('insertText', false, text);
       editor.dispatchEvent(new Event('input'));
       return true;
-    } catch { /* cae al modo manual */ }
+    });
+    if (inserted.isOk) return true;
+    // No es un fallo de la app: `execCommand` está deprecado y varios motores lo
+    // bloquean. Se cae al modo manual, pero se anota para poder correlacionar
+    // reportes de "el texto se insertó en el sitio equivocado".
+    ingestLogger.debug('insert_text_fallback', { reason: inserted.error.message, blocks: blocks.length });
   }
 
   // Sin selección utilizable (o execCommand no disponible): se inserta después
@@ -7536,14 +7601,33 @@ function trackWritingSession(delta) {
 }
 
 // ---- Instantáneas de capítulo (recuperación sin servidor) ----
+/**
+ * Lee el almacén de instantáneas de capítulo.
+ * @returns {object} Map de instantáneas; objeto vacío si no hay o está corrupto.
+ */
 function readSnapshotStore() {
-  try { return JSON.parse(localStorage.getItem(SNAPSHOT_STORAGE_KEY) || '{}') || {}; }
-  catch { return {}; }
+  const read = window.LoreKernel.attempt(() => JSON.parse(localStorage.getItem(SNAPSHOT_STORAGE_KEY) || '{}') || {});
+  if (read.isOk) return read.value;
+  ingestLogger.warn('snapshot_store_corrupt', { code: read.error.code, reason: read.error.message });
+  return {};
 }
 
+/**
+ * Persiste el almacén de instantáneas. Nunca bloquea la escritura principal: si
+ * la cuota está llena se pierde la capacidad de recuperación, no el capítulo.
+ * @param {object} store
+ * @returns {boolean} true si se pudo escribir.
+ */
 function writeSnapshotStore(store) {
-  try { localStorage.setItem(SNAPSHOT_STORAGE_KEY, JSON.stringify(store)); }
-  catch { /* cuota llena: las instantáneas son un extra, nunca bloquean la escritura */ }
+  const written = window.LoreKernel.attempt(() => localStorage.setItem(SNAPSHOT_STORAGE_KEY, JSON.stringify(store)));
+  if (written.isOk) return true;
+  // Cuota llena: la red de seguridad deja de existir y el usuario debe saberlo.
+  ingestLogger.warn('snapshot_write_failed', {
+    code: written.error.code,
+    reason: written.error.message,
+    retryable: written.error.retryable
+  });
+  return false;
 }
 
 /**
@@ -7655,13 +7739,30 @@ async function initApp() {
     // La clave ya no vive en el JSON: si viene de un respaldo antiguo, se migra
     // al almacén cifrado del sistema operativo.
     if (window.lorevinci.isDesktop && DATA.settings.ai.apiKey && window.lorevinci.secretsSet) {
-      try { await window.lorevinci.secretsSet(DATA.settings.ai.apiKey); } catch { /* sin secreto disponible */ }
+      // Migración de la clave al almacén cifrado del SO. Si falla, la clave sigue
+      // en el JSON: la app funciona, pero queda menos protegida de lo anunciado.
+      // `attempt` detecta que la función devuelve una promesa y entrega un
+      // `Promise<Result>`: el rechazo del IPC queda tipado en vez de propagarse.
+      const migrated = await window.LoreKernel.attempt(() => window.lorevinci.secretsSet(DATA.settings.ai.apiKey));
+      if (migrated.isErr) {
+        ingestLogger.warn('secret_migration_failed', {
+          code: migrated.error.code,
+          reason: migrated.error.message,
+          consequence: 'La API key permanece en el almacén JSON sin cifrar del SO.'
+        });
+      }
     }
     if (window.lorevinci.isDesktop && !DATA.settings.ai.apiKey && window.lorevinci.secretsGet) {
-      try {
-        const secret = await window.lorevinci.secretsGet();
-        if (secret && secret.ok && secret.apiKey) DATA.settings.ai.apiKey = secret.apiKey;
-      } catch { /* sin secreto disponible */ }
+      const restored = await window.LoreKernel.attempt(() => window.lorevinci.secretsGet());
+      const secret = restored.isOk ? restored.value : null;
+      if (secret && secret.ok && secret.apiKey) DATA.settings.ai.apiKey = secret.apiKey;
+      if (restored.isErr) {
+        ingestLogger.warn('secret_restore_failed', {
+          code: restored.error.code,
+          reason: restored.error.message,
+          consequence: 'El usuario deberá volver a pegar su API key en Ajustes > Muse AI.'
+        });
+      }
     }
 
     normalizeNarrativeModel();
