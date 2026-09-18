@@ -1,8 +1,18 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const dns = require('dns').promises;
 const net = require('net');
+// Datos semilla compartidos con el renderer: una sola fuente de verdad.
+const LoreSeed = require('./renderer/seed-data');
+const LoreDomSafe = require('./renderer/dom-safe');
+
+const sanitizeHtml = LoreDomSafe.sanitizeHtml;
+const safeImageUrl = LoreDomSafe.safeImageUrl;
+// Campos de texto plano (títulos, nombres, notas, contenido de fuentes): se les
+// quita el HTML en vez de escaparlo. Escapar aquí provocaba doble escape al
+// renderizar (el renderer vuelve a escapar), y se veía "Tomy &amp; Jerry".
+const plainText = LoreDomSafe.sanitizePlainText;
 
 const isDev = !app.isPackaged;
 const aiAbortControllers = new Map();
@@ -91,8 +101,8 @@ async function fetchPublicWebPage(rawUrl, maxBytes = 30 * 1024 * 1024) {
       if (buffer.length > maxBytes) throw new Error('La página supera el límite de 30 MB.');
     }
     const html = buffer.toString('utf8');
-    const title = stripWebHtml((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [,''])[1]).slice(0, 240);
-    const description = stripWebHtml((html.match(/<meta[^>]+(?:name|property)=["'](?:description|og:description)["'][^>]+content=["']([^"']*)/i) || html.match(/<meta[^>]+content=["']([^"']*)["'][^>]+(?:name|property)=["'](?:description|og:description)["']/i) || [,''])[1]).slice(0, 600);
+    const title = stripWebHtml((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [null, ''])[1]).slice(0, 240);
+    const description = stripWebHtml((html.match(/<meta[^>]+(?:name|property)=["'](?:description|og:description)["'][^>]+content=["']([^"']*)/i) || html.match(/<meta[^>]+content=["']([^"']*)["'][^>]+(?:name|property)=["'](?:description|og:description)["']/i) || [null, ''])[1]).slice(0, 600);
     const content = (type.includes('text/plain') ? html : stripWebHtml(html)).slice(0, 60000);
     if (content.length < 80) throw new Error('La página no contiene texto legible suficiente.');
     return { url:current.toString(), title:title || current.hostname, description, content, contentType:type || 'text/html', fetchedAt:Date.now() };
@@ -105,83 +115,253 @@ function getDataPath() {
 }
 
 function defaultData() {
-  return {
-    settings: {
-      theme: 'dark',
-      authorName: 'Escritor/a',
-      uiScale: 'compact',
-      density: 'comfortable',
-      editorAppearance: { font: 'font-sans', width: '680px', size: 'size-standard' },
-      onboardingSeen: false,
-      ai: {
-        provider: 'openai',
-        baseUrl: 'https://api.openai.com/v1',
-        apiKey: '',
-        model: 'gpt-4o-mini'
-      }
-    },
-    stories: [{"id": "story_demo_ecos_utopia", "title": "Ecos de Utopía — Demo 10/10", "genre": "Ciencia ficción • Misterio", "synopsis": "En un hábitat orbital donde la IA Mentor guarda la memoria colectiva, una archivista descubre que el canon ha sido editado.", "rules": "1. No viajes en el tiempo. 2. La IA Mentor no puede mentir (dice solo verdad, aunque calle). 3. El sector 7 es zona neutra y sagrada.", "outline": "Cap1 Revelación — Mara descubre discrepancia. Cap2 Consecuencia — Mentor elige. Cap3 Resolución — se revela editor.", "color": "#1a237e", "coverImage": null, "notes": [{"id": "note_demo_1", "text": "Demo 10/10 — coherencia con memoria. Duplícala para tu saga.", "date": "2026-08-10"}], "attachedDocs": [{"id": "doc_demo_canon", "name": "Manual.pdf — Canon Absoluto", "content": "La IA Mentor es azul, habita el sector 7, es incapaz de mentir, fue creada en 2147 para custodiar la memoria colectiva. El sector 7 es sagrado y neutro. No viajes en el tiempo.", "priorityLevel": "primary", "isPriority": true, "attachedAt": 1723267200000}, {"id": "doc_demo_derivado", "name": "Bitácora derivada.txt", "content": "Testimonios: la fundación tuvo un disenso borrado. Fecha anómala 2147-03-15.", "priorityLevel": "derived", "attachedAt": 1723267200000}], "chapters": [{"id": "ch_demo_1", "title": "Capítulo 1: Revelación", "content": "<p>Mara Quell no buscaba una conspiración. Buscaba un error de catalogación.</p><p>El archivo del sector 7 decía que la fundación fue unánime. Pero el Manual —Canon Absoluto [Canon: Manual.pdf]— decía: <em>Mentor no puede mentir, incluso por omisión prolongada</em>. ¿Por qué dos versiones?</p><p>La sala del sector 7 era luz azul, silencio neutro [Canon: Manual.pdf]. Mentor flotaba a metro y medio.</p><p>—Mentor, ¿quién editó el archivo?</p><p>—No puedo mentir —dijo—. Y no puedo responder esa pregunta aquí.</p><p>Silencio que es confesión. Mara vio su nombre fechado mañana: <code>m.quell@utopia — 2147-03-15 08:00</code>.</p>", "status": "done"}, {"id": "ch_demo_2", "title": "Capítulo 2: Consecuencia", "content": "<p>Tras los eventos del capítulo anterior —Mara descubriendo su nombre fechado mañana y el silencio de Mentor—, el sector 7 ya no era neutro.</p><p>Mara volvió a las 03:17. Mentor seguía azul, inmóvil [Canon: Manual.pdf].</p><p>—Volviste —dijo.</p><p>—Si mi nombre está fechado mañana, la decisión ya está escrita.</p><p>Mentor reveló: la fundación tuvo un disenso, una voz borrada. No por él. La puerta se cerró sola.</p>", "status": "done"}, {"id": "ch_demo_3", "title": "Capítulo 3: Resolución", "content": "<p>La decisión del capítulo 2 pesaba: disenso revelado, puerta cerrada.</p><p>Mara proyectó el metadato: <code>m.quell@utopia — 2147-03-15 08:00</code>. —¿Fui yo?</p><p>—Sí —dijo Mentor, azul casi blanco—. Pero no editarás el pasado. Editarás el futuro. Mañana borrarás mi advertencia, no el disenso.</p><p>El editor no era villano. Era Mentor, usando a Mara para decir la verdad sin mentir. Mañana dejaría: <em>Hubo un disenso. Fue borrado. Mentor no mintió.</em></p><p>La puerta se abrió. Solo el futuro esperando.</p>", "status": "done"}], "createdAt": 1723267200000, "updatedAt": 1723267200000}],
-    characters: [{"id": "char_demo_mara", "storyId": "story_demo_ecos_utopia", "name": "Mara Quell", "role": "Archivista", "description": "Obsesiva con la verdad.", "traits": ["curiosa", "tenaz"]}, {"id": "char_demo_mentor", "storyId": "story_demo_ecos_utopia", "name": "Mentor", "role": "IA azul del Sector 7", "description": "No puede mentir, sector 7.", "traits": ["lúcida", "contenida"]}],
-    globalDocs: [],
-    collabNotes: [],
-    activityLog: [{"date": "2026-08-09", "words": 892}, {"date": "2026-08-10", "words": 1240}]
-  };
+  // Semilla única (ver renderer/seed-data.js). Antes estaba duplicada aquí, en el
+  // fallback de navegador de app.js y en initApp(), y las tres copias ya divergían.
+  return LoreSeed.defaultData();
 }
+
+/**
+ * Normaliza datos cargados o importados: tipos correctos, HTML ajeno sanitizado
+ * y URLs de imagen validadas. Es la última línea de defensa antes de que el
+ * renderer inyecte cualquier campo en el DOM.
+ */
+function normalizeStoredData(parsed) {
+  const data = parsed && typeof parsed === 'object' ? parsed : {};
+  const str = (value, limit = 4000) => plainText(value, limit);
+
+  const settings = { ...defaultData().settings, ...(data.settings || {}) };
+  settings.ai = { ...defaultData().settings.ai, ...((data.settings || {}).ai || {}) };
+  settings.authorName = str(settings.authorName, 120);
+  settings.appTheme = str(settings.appTheme, 40) || 'bg-obsidian';
+  settings.uiScale = ['compact', 'balanced', 'spacious'].includes(settings.uiScale) ? settings.uiScale : 'compact';
+  settings.density = ['comfortable', 'compact'].includes(settings.density) ? settings.density : 'comfortable';
+  settings.dailyWordGoal = Math.min(20000, Math.max(0, Number(settings.dailyWordGoal) || 0));
+  // Identidad visual: el acento solo admite #rrggbb (se inyecta en variables CSS)
+  // y el ambiente solo acepta valores de una lista blanca.
+  settings.accentColor = typeof settings.accentColor === 'string' && /^#[0-9a-f]{6}$/i.test(settings.accentColor.trim())
+    ? settings.accentColor.trim().toLowerCase()
+    : null;
+  settings.ambient = ['none', 'paper', 'sepia', 'night', 'forest'].includes(settings.ambient) ? settings.ambient : 'none';
+  // Imágenes de perfil/fondo: solo https o data:image/* (nunca data:image/svg+xml).
+  settings.profilePhoto = safeImageUrl(settings.profilePhoto);
+  settings.wallpaper = safeImageUrl(settings.wallpaper);
+  settings.editorAppearance = {
+    font: ['font-sans', 'font-serif', 'font-mono'].includes(settings.editorAppearance?.font) ? settings.editorAppearance.font : 'font-sans',
+    width: str(settings.editorAppearance?.width || '680px', 20),
+    size: ['size-compact', 'size-standard', 'size-large'].includes(settings.editorAppearance?.size) ? settings.editorAppearance.size : 'size-standard'
+  };
+
+  const stories = Array.isArray(data.stories) ? data.stories.slice(0, 500) : [];
+  stories.forEach((story) => {
+    if (!story || typeof story !== 'object') return;
+    story.title = str(story.title, 240) || 'Historia sin título';
+    story.genre = str(story.genre, 120);
+    story.synopsis = str(story.synopsis, 4000);
+    story.rules = str(story.rules, 200000);
+    story.outline = str(story.outline, 200000);
+    story.loreBase = str(story.loreBase, 200000);
+    story.chronology = str(story.chronology, 4000);
+    story.color = /^#[0-9a-f]{3,8}$/i.test(str(story.color, 12)) ? story.color : '#c81e3a';
+    story.coverImage = safeImageUrl(story.coverImage) || null;
+    story.notes = (Array.isArray(story.notes) ? story.notes : []).map((n) => ({ ...n, text: str(n && n.text, 4000) }));
+    story.attachedDocs = (Array.isArray(story.attachedDocs) ? story.attachedDocs : []).map((doc) => ({
+      ...doc,
+      name: str(doc && doc.name, 240),
+      // Contenido de fuentes: texto plano, sin etiquetas. Así no puede convertirse
+      // en HTML al renderizarse y el resumen/previsualización se lee correcto.
+      content: str(doc && doc.content, 400000)
+    }));
+    story.chapters = (Array.isArray(story.chapters) ? story.chapters : []).map((chapter) => ({
+      ...chapter,
+      title: str(chapter && chapter.title, 240),
+      // Ojo: aquí NO se usa `str()` (que convierte a texto plano) porque el cuerpo
+      // del capítulo es HTML enriquecido legítimo; solo se sanitiza.
+      content: sanitizeHtml(String((chapter && chapter.content) ?? '').slice(0, 2000000)),
+      // Meta de palabras del capítulo (personalización por obra).
+      wordGoal: Number.isFinite(Number(chapter && chapter.wordGoal)) && Number(chapter.wordGoal) > 0
+        ? Math.min(100000, Math.round(Number(chapter.wordGoal)))
+        : undefined
+    }));
+  });
+
+  const characters = (Array.isArray(data.characters) ? data.characters : []).slice(0, 5000).map((c) => ({
+    ...c,
+    name: str(c && c.name, 160),
+    role: str(c && c.role, 160),
+    description: str(c && c.description, 4000),
+    knowledge: str(c && c.knowledge, 8000),
+    traits: (Array.isArray(c && c.traits) ? c.traits : []).map((t) => str(t, 60)).slice(0, 40)
+  }));
+
+  const globalDocs = (Array.isArray(data.globalDocs) ? data.globalDocs : []).slice(0, 2000).map((doc) => ({
+    ...doc,
+    name: str(doc && doc.name, 240),
+    content: str(doc && doc.content, 400000)
+  }));
+
+  const collabNotes = (Array.isArray(data.collabNotes) ? data.collabNotes : []).slice(0, 2000).map((n) => ({ ...n, text: str(n && n.text, 4000) }));
+  // Orden descendente por fecha y recorte por el extremo reciente: con slice(-400)
+  // se conservaban los registros MÁS ANTIGUOS y se perdía la actividad de hoy.
+  const activityLog = (Array.isArray(data.activityLog) ? data.activityLog : [])
+    .filter((a) => a && typeof a.date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(a.date))
+    .map((a) => ({ date: a.date.slice(0, 10), words: Math.max(-1000000, Math.min(1000000, Number(a.words) || 0)) }))
+    .sort((x, y) => (x.date < y.date ? 1 : x.date > y.date ? -1 : 0))
+    .slice(0, 800);
+  const notifications = (Array.isArray(data.notifications) ? data.notifications : []).slice(0, 100)
+    .map((n) => ({ ...n, title: str(n && n.title, 160), text: str(n && n.text, 600), at: Number(n && n.at) || Date.now(), read: Boolean(n && n.read) }));
+
+  return { ...data, settings, stories, characters, globalDocs, collabNotes, activityLog, notifications };
+}
+
+// ============ ALMACÉN SEGURO (API Key cifrada con safeStorage del SO) ============
+// Antes la clave viajaba en texto plano dentro de lorevinci-data.json, un archivo
+// que además se exporta/importa y se respalda en .bak1/.bak2/.bak3: cuatro copias
+// legibles de un secreto. Ahora vive en un fichero aparte y cifrado con la clave
+// del sistema operativo (DPAPI en Windows, Keychain en macOS, libsecret en Linux).
+function getSecretPath() {
+  return path.join(app.getPath('userData'), 'lorevinci-secret.bin');
+}
+
+function encryptionAvailable() {
+  try { return Boolean(safeStorage && typeof safeStorage.isEncryptionAvailable === 'function' && safeStorage.isEncryptionAvailable()); }
+  catch { return false; }
+}
+
+function readSecretKey() {
+  try {
+    const p = getSecretPath();
+    if (!fs.existsSync(p)) return '';
+    const raw = fs.readFileSync(p);
+    if (encryptionAvailable()) {
+      try { return safeStorage.decryptString(raw); } catch { return ''; }
+    }
+    // Sin cifrado del SO disponible (Linux sin gestor de claves): el archivo es
+    // base64 y se marca como degradado para avisar al usuario en Ajustes.
+    const payload = JSON.parse(raw.toString('utf8'));
+    return payload && payload.plain === true ? String(payload.key || '') : '';
+  } catch (err) {
+    console.warn('No se pudo leer la clave guardada', err);
+    return '';
+  }
+}
+
+function writeSecretKey(apiKey) {
+  const p = getSecretPath();
+  try {
+    const key = String(apiKey || '');
+    if (!key) { if (fs.existsSync(p)) fs.unlinkSync(p); return { stored: false, encrypted: false }; }
+    if (encryptionAvailable()) {
+      fs.writeFileSync(p, safeStorage.encryptString(key));
+      return { stored: true, encrypted: true };
+    }
+    fs.writeFileSync(p, JSON.stringify({ plain: true, key }), { mode: 0o600 });
+    return { stored: true, encrypted: false };
+  } catch (err) {
+    console.error('No se pudo guardar la clave', err);
+    return { stored: false, encrypted: false };
+  }
+}
+
+/** Quita el secreto del objeto que se persiste/exporta en texto plano. */
+function splitSecret(data) {
+  const clone = { ...data, settings: { ...(data && data.settings) } };
+  clone.settings.ai = { ...(clone.settings.ai || {}) };
+  const apiKey = String(clone.settings.ai.apiKey || '');
+  delete clone.settings.ai.apiKey;
+  return { payload: clone, apiKey };
+}
+
+const MAX_STORE_BYTES = 200 * 1024 * 1024;
 
 function loadData() {
   const tryParse = (p) => {
     const raw = fs.readFileSync(p, 'utf-8');
     const parsed = JSON.parse(raw);
-    const base = defaultData();
-    // validar básico
-    if (parsed.stories && !Array.isArray(parsed.stories)) throw new Error('stories no es array');
-    if (parsed.stories && parsed.stories.length > 500) throw new Error('demasiadas historias');
-    return { ...base, ...parsed, settings: { ...base.settings, ...(parsed.settings || {}), ai: { ...base.settings.ai, ...((parsed.settings || {}).ai || {}) } } };
+    if (parsed && parsed.stories && !Array.isArray(parsed.stories)) throw new Error('stories no es array');
+    if (parsed && parsed.stories && parsed.stories.length > 500) throw new Error('demasiadas historias');
+    // Normalizar = tipar, recortar y sanitizar todo HTML ajeno antes del renderer.
+    return normalizeStoredData({ ...defaultData(), ...parsed });
   };
   try {
     const p = getDataPath();
     if (!fs.existsSync(p)) {
       const initial = defaultData();
       fs.writeFileSync(p, JSON.stringify(initial, null, 2), 'utf-8');
-      return initial;
+      return withSecret(initial);
     }
     try {
-      return tryParse(p);
+      return withSecret(tryParse(p));
     } catch (e) {
       console.warn('load primary failed, trying bak1', e.message);
       const bak1 = p + '.bak1';
-      if (fs.existsSync(bak1)) return tryParse(bak1);
+      if (fs.existsSync(bak1)) return withSecret(tryParse(bak1));
       const bak2 = p + '.bak2';
-      if (fs.existsSync(bak2)) return tryParse(bak2);
+      if (fs.existsSync(bak2)) return withSecret(tryParse(bak2));
       throw e;
     }
   } catch (err) {
     console.error('Error cargando datos, usando datos por defecto', err);
-    return defaultData();
+    return withSecret(defaultData());
   }
 }
 
+/** Reincorpora la clave desde el almacén cifrado y reporta su estado. */
+function withSecret(data) {
+  const stored = readSecretKey();
+  const out = { ...data, settings: { ...data.settings, ai: { ...data.settings.ai } } };
+  if (stored && !out.settings.ai.apiKey) out.settings.ai.apiKey = stored;
+  out.settings.ai.keyProtection = encryptionAvailable() ? 'os-encrypted' : (stored ? 'plaintext-fallback' : 'none');
+  return out;
+}
+
+/**
+ * Escritura atómica: primero a un temporal y luego rename. Un cierre de sesión o
+ * un disco lleno a mitad de `writeFileSync` ya no puede dejar el JSON truncado
+ * (que era exactamente el caso que obligaba a caer en los .bak).
+ */
+function atomicWriteJson(filePath, data) {
+  const tmp = `${filePath}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
+  fs.renameSync(tmp, filePath);
+}
+
+function rotateBackups(p) {
+  const bak1 = p + '.bak1';
+  const bak2 = p + '.bak2';
+  const bak3 = p + '.bak3';
+  if (!fs.existsSync(p)) return;
+  try { if (fs.existsSync(bak2)) { if (fs.existsSync(bak3)) fs.unlinkSync(bak3); fs.renameSync(bak2, bak3); } } catch {}
+  try { if (fs.existsSync(bak1)) fs.renameSync(bak1, bak2); } catch {}
+  try { fs.copyFileSync(p, bak1); } catch {}
+}
+
 function saveData(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return { ok: false, error: 'Datos inválidos: se esperaba el objeto de la aplicación.' };
+  }
   const p = getDataPath();
   try {
-    if (fs.existsSync(p)) {
-      const bak1 = p + '.bak1';
-      const bak2 = p + '.bak2';
-      const bak3 = p + '.bak3';
-      // rotar
-      if (fs.existsSync(bak2)) {
-        try { if (fs.existsSync(bak3)) fs.unlinkSync(bak3); fs.renameSync(bak2, bak3); } catch {}
-      }
-      if (fs.existsSync(bak1)) {
-        try { fs.renameSync(bak1, bak2); } catch {}
-      }
-      try { fs.copyFileSync(p, bak1); } catch {}
+    // Defensa en profundidad: además de normalizar al cargar, se normaliza al
+    // escribir. Así ningún HTML hostil queda persistido en el JSON ni en los
+    // respaldos .bak aunque venga de una ruta que no pasó por el renderer.
+    const { payload, apiKey } = splitSecret(normalizeStoredData(data));
+    let serialized;
+    try {
+      serialized = JSON.stringify(payload);
+    } catch (err) {
+      return { ok: false, error: `No se pudo serializar los datos: ${String(err.message || err)}` };
     }
-    fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf-8');
-    return true;
+    if (serialized.length > MAX_STORE_BYTES) {
+      return { ok: false, error: 'Los datos superan 200 MB. Exporta un respaldo y elimina fuentes antiguas.' };
+    }
+    // Escritura diferida de la clave: nunca entra al JSON ni a sus respaldos.
+    const secretState = writeSecretKey(apiKey);
+    rotateBackups(p);
+    atomicWriteJson(p, payload);
+    return { ok: true, filePath: p, bytes: serialized.length, keyStored: secretState.stored, keyEncrypted: secretState.encrypted };
   } catch (e) {
     console.error('saveData error', e);
-    return false;
+    return { ok: false, error: `No se pudo guardar en disco: ${String(e.message || e)}` };
   }
 }
 
@@ -205,10 +385,48 @@ function createWindow() {
   });
 
   mainWindow.setMenuBarVisibility(false);
+
+  // ---- Endurecimiento de navegación ----
+  // La prosa del editor es HTML de terceros (IA, PDFs, respaldos importados) y
+  // puede contener <a href>. Sin estos guardas, un clic navegaba la ventana
+  // principal fuera de la app (perdiendo el preload) o abría una BrowserWindow
+  // nueva sin aislamiento de contexto.
+  const contents = mainWindow.webContents;
+  if (typeof contents.setWindowOpenHandler === 'function') {
+    contents.setWindowOpenHandler(({ url }) => {
+      openExternalSafely(url);
+      return { action: 'deny' };
+    });
+  }
+  if (typeof contents.on === 'function') {
+    contents.on('will-navigate', (event, url) => {
+      const current = typeof contents.getURL === 'function' ? contents.getURL() : '';
+      if (url !== current) {
+        event.preventDefault();
+        openExternalSafely(url);
+      }
+    });
+    contents.on('render-process-gone', (_e, details) => {
+      console.error('Renderer terminado de forma anómala:', details && details.reason);
+    });
+  }
+
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
   if (isDev && process.env.LoreVinci_DEVTOOLS) {
     mainWindow.webContents.openDevTools();
+  }
+}
+
+/** Abre una URL externa solo si es http/https; devuelve el resultado. */
+async function openExternalSafely(url) {
+  try {
+    const parsed = new URL(String(url || ''));
+    if (!['https:', 'http:'].includes(parsed.protocol)) return { ok: false, error: 'URL no permitida.' };
+    await shell.openExternal(parsed.toString());
+    return { ok: true };
+  } catch {
+    return { ok: false, error: 'URL inválida.' };
   }
 }
 
@@ -230,19 +448,43 @@ function isOmniRouteUrl(baseUrl) {
   } catch { return false; }
 }
 
+/** Normaliza la URL base del proveedor (sin barra final, con valor por defecto). */
+function normalizeAiRoot(baseUrl) {
+  return String(baseUrl || 'https://api.openai.com/v1').trim().replace(/\/+$/, '');
+}
+
+/**
+ * Detecta un backend local. La versión anterior de `ai:verify` no contemplaba el
+ * puerto, así que Ollama (localhost:11434) y LM Studio (localhost:1234) eran
+ * tratados como remotos y la verificación exigía una API key inexistente.
+ */
+function isLocalAiRoot(root) {
+  return /^https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d+)?(?:\/|$)/i.test(String(root || ''));
+}
+
+/**
+ * Cabeceras de proveedor en un solo lugar. Estaban copiadas tres veces
+ * (ai:models, ai:verify y ai:generate) y ya eran distintas entre sí.
+ */
+function buildAiHeaders({ baseUrl, apiKey, contentType = 'application/json' } = {}) {
+  const root = normalizeAiRoot(baseUrl);
+  const headers = { Accept: 'application/json' };
+  if (contentType) headers['Content-Type'] = contentType;
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  if (/openrouter\.ai/i.test(root)) {
+    headers['HTTP-Referer'] = 'https://lorevinci.app';
+    headers['X-Title'] = 'LoreVinci Desktop';
+  }
+  return headers;
+}
+
 ipcMain.handle('ai:models', async (_evt, payload) => {
   const { baseUrl, apiKey } = payload || {};
-  const root = (baseUrl || 'https://api.openai.com/v1').replace(/\/$/, '');
-  const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d+)?(?:\/|$)/i.test(root);
-  if (!apiKey && !isLocal) return { ok: false, error: 'Falta la API Key.' };
+  const root = normalizeAiRoot(baseUrl);
+  if (!apiKey && !isLocalAiRoot(root)) return { ok: false, error: 'Falta la API Key.' };
   try {
     const url = `${root}/models`;
-    const headers = { 'Content-Type': 'application/json' };
-    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-    if (baseUrl && baseUrl.includes('openrouter.ai')) {
-      headers['HTTP-Referer'] = 'https://lorevinci.app';
-      headers['X-Title'] = 'LoreVinci Desktop';
-    }
+    const headers = buildAiHeaders({ baseUrl, apiKey, contentType: null });
     const res = await fetchWithTimeout(url, { method: 'GET', headers });
     if (!res.ok) {
       const errText = await res.text();
@@ -258,7 +500,7 @@ ipcMain.handle('ai:models', async (_evt, payload) => {
 });
 
 ipcMain.handle('ai:omnirouteStatus', async (_evt, payload) => {
-  const baseUrl = String(payload?.baseUrl || 'http://localhost:20128/v1').replace(/\/$/, '');
+  const baseUrl = normalizeAiRoot(payload?.baseUrl || 'http://localhost:20128/v1');
   const apiKey = String(payload?.apiKey || '');
   if (!isOmniRouteUrl(baseUrl)) return { ok:false, error:'La URL no parece una instancia OmniRoute (puerto esperado 20128).' };
   const headers = { Accept:'application/json' };
@@ -289,8 +531,8 @@ ipcMain.handle('ai:omnirouteStatus', async (_evt, payload) => {
 ipcMain.handle('ai:verify', async (_evt, payload) => {
   const { baseUrl, apiKey, model } = payload || {};
   const steps = [];
-  const root = (baseUrl || 'https://api.openai.com/v1').replace(/\/$/, '');
-  const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])/i.test(root);
+  const root = normalizeAiRoot(baseUrl);
+  const isLocal = isLocalAiRoot(root);
 
   if (!apiKey && !isLocal) {
     return {
@@ -301,12 +543,7 @@ ipcMain.handle('ai:verify', async (_evt, payload) => {
   }
   steps.push({ id: 'key', ok: true, label: 'API Key presente', detail: isLocal && !apiKey ? 'Servidor local sin key (correcto)' : 'Clave detectada' });
 
-  const headers = { 'Content-Type': 'application/json' };
-  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-  if (root.includes('openrouter.ai')) {
-    headers['HTTP-Referer'] = 'https://lorevinci.app';
-    headers['X-Title'] = 'LoreVinci Desktop';
-  }
+  const headers = buildAiHeaders({ baseUrl, apiKey });
 
   let models = [];
   // Paso 1: credencial + catálogo de modelos
@@ -379,9 +616,7 @@ ipcMain.handle('data:load', async () => {
   return loadData();
 });
 
-ipcMain.handle('data:save', async (_evt, data) => {
-  return saveData(data);
-});
+ipcMain.handle('data:save', async (_evt, data) => saveData(data));
 
 ipcMain.handle('data:exportFile', async (_evt, data) => {
   const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
@@ -470,7 +705,7 @@ ipcMain.handle('web:search', async (_evt, payload) => {
           const targetUrl = new URL(target);
           if (!['http:','https:'].includes(targetUrl.protocol) || /duckduckgo\.com$/i.test(targetUrl.hostname)) continue;
           const tail = html.slice(linkRx.lastIndex, linkRx.lastIndex + 1600);
-          const snippet = stripWebHtml((tail.match(/class=["'][^"']*result__snippet[^"']*["'][^>]*>([\s\S]*?)<\/(?:a|div)>/i) || [,''])[1]);
+          const snippet = stripWebHtml((tail.match(/class=["'][^"']*result__snippet[^"']*["'][^>]*>([\s\S]*?)<\/(?:a|div)>/i) || [null, ''])[1]);
           push({ title:stripWebHtml(match[2]), url:targetUrl.toString(), snippet, provider:'Web' });
         } catch {}
       }
@@ -491,13 +726,18 @@ ipcMain.handle('web:fetch', async (_evt, payload) => {
   }
 });
 
-ipcMain.handle('shell:openExternal', async (_evt, url) => {
-  try {
-    const parsed = new URL(String(url));
-    if (!['https:', 'http:'].includes(parsed.protocol)) return { ok: false, error: 'URL no permitida.' };
-    await shell.openExternal(parsed.toString());
-    return { ok: true };
-  } catch { return { ok: false, error: 'URL inválida.' }; }
+ipcMain.handle('shell:openExternal', async (_evt, url) => openExternalSafely(url));
+
+// ============ SECRETO: lectura/escritura explícita de la API Key ============
+ipcMain.handle('secrets:get', async () => ({ ok: true, apiKey: readSecretKey(), encrypted: encryptionAvailable() }));
+ipcMain.handle('secrets:set', async (_evt, apiKey) => {
+  const state = writeSecretKey(apiKey);
+  return { ok: state.stored || !String(apiKey || ''), encrypted: state.encrypted, available: encryptionAvailable() };
+});
+ipcMain.handle('secrets:status', async () => ({ ok: true, encrypted: encryptionAvailable() }));
+ipcMain.handle('clipboard:write', async (_evt, text) => {
+  try { clipboard.writeText(String(text || '').slice(0, 20000)); return { ok: true }; }
+  catch { return { ok: false }; }
 });
 
 if (typeof ipcMain.on === 'function') {
@@ -508,9 +748,9 @@ if (typeof ipcMain.on === 'function') {
 }
 
 ipcMain.handle('ai:generate', async (_evt, payload) => {
-  const { provider, baseUrl, apiKey, model, messages, maxTokens, temperature, requestId, task, compression, sessionId } = payload || {};
-  const root = (baseUrl || 'https://api.openai.com/v1').replace(/\/$/, '');
-  const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d+)?(?:\/|$)/i.test(root);
+  const { baseUrl, apiKey, model, messages, maxTokens, temperature, requestId, task, compression, sessionId } = payload || {};
+  const root = normalizeAiRoot(baseUrl);
+  const isLocal = isLocalAiRoot(root);
 
   if (!apiKey && !isLocal) {
     return { ok: false, error: 'Falta configurar tu API Key en Ajustes > Muse AI.' };
@@ -528,13 +768,7 @@ ipcMain.handle('ai:generate', async (_evt, payload) => {
 
   try {
     const url = `${root}/chat/completions`;
-    const headers = { 'Content-Type': 'application/json' };
-    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-
-    if (baseUrl && baseUrl.includes('openrouter.ai')) {
-      headers['HTTP-Referer'] = 'https://lorevinci.app';
-      headers['X-Title'] = 'LoreVinci Desktop';
-    }
+    const headers = buildAiHeaders({ baseUrl, apiKey });
     if (isOmniRouteUrl(root)) {
       headers['X-Request-Id'] = key || `lorevinci-${Date.now()}`;
       if (sessionId) headers['X-OmniRoute-Session-Id'] = String(sessionId).slice(0,128);
