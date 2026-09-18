@@ -92,6 +92,17 @@ function reporter(name) {
   const t = [];
   return {
     ok(label, cond, extra = '') { t.push(`${cond ? 'PASS' : 'FAIL'} — ${label}${!cond && extra ? ' :: ' + extra : ''}`); },
+    /**
+     * Cierra la suite en rojo cuando revienta a mitad. Sin esto, una excepción
+     * no capturada dejaba el recuento intacto y la suite podía reportarse en
+     * verde habiendo ejecutado la mitad de las aserciones.
+     * @param {unknown} error
+     */
+    crash(error) {
+      const detail = (error && error.stack) ? String(error.stack).split('\n').slice(0, 4).join(' | ') : String(error);
+      t.push(`FAIL — la suite reventó antes de terminar :: ${detail}`);
+      this.done();
+    },
     done() {
       const fails = t.filter(x => x.startsWith('FAIL'));
       console.log(t.join('\n'));
@@ -126,4 +137,57 @@ function writePdf(filePath, lines) {
   return filePath;
 }
 
-module.exports = { makeApp, makeSeed, reporter, writePdf, loadNodePdfjs, ROOT, P };
+// ------------------------------------------------------------
+// Reloj falso determinista. El controlador de persistencia recibe los timers por
+// inyección, así que las pruebas de carga no necesitan dormir ni depender de la
+// puntualidad del planificador: se avanza el tiempo a voluntad y el resultado es
+// reproducible ejecución tras ejecución.
+// ------------------------------------------------------------
+function makeClock(startMs = 0) {
+  const tasks = new Map();
+  let seq = 0;
+  let nowMs = startMs;
+  return {
+    setTimeout: (fn, ms) => { seq += 1; tasks.set(seq, { fn, at: nowMs + (Number(ms) || 0) }); return seq; },
+    clearTimeout: (id) => { tasks.delete(id); },
+    advance(ms) {
+      const target = nowMs + ms;
+      for (;;) {
+        const due = Array.from(tasks.entries())
+          .filter(([, t]) => t.at <= target)
+          .sort((a, b) => a[1].at - b[1].at || a[0] - b[0])[0];
+        if (!due) break;
+        const [id, task] = due;
+        tasks.delete(id);
+        nowMs = task.at;
+        task.fn();
+      }
+      nowMs = target;
+      return nowMs;
+    },
+    pending: () => tasks.size,
+    now: () => nowMs
+  };
+}
+
+// Drena microtareas con un timer REAL (el reloj falso solo vive en el controlador).
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+async function settleDeep(times = 6) {
+  for (let i = 0; i < times; i += 1) await settle();
+}
+
+// PRNG determinista (mulberry32): las pruebas de carga que necesitan azar —por
+// ejemplo un transporte que falla el 30 % de las veces— deben poder reproducir
+// exactamente el mismo escenario si algo se rompe.
+function makeRandom(seed = 1) {
+  let a = seed >>> 0;
+  return function next() {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+module.exports = { makeApp, makeSeed, reporter, writePdf, loadNodePdfjs, makeClock, settle, settleDeep, makeRandom, ROOT, P };

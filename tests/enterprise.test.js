@@ -10,46 +10,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const Module = require('module');
-const { makeApp, makeSeed, reporter, ROOT, P } = require('./harness');
+const { makeApp, makeSeed, reporter, makeClock, settleDeep, ROOT, P } = require('./harness');
 
 const R = reporter('enterprise');
 const ok = R.ok;
 const K = require(path.join(P, 'app-kernel.js'));
-
-// Reloj falso determinista: el controlador recibe los timers por inyección, así
-// que no hay que dormir en los tests ni depender de la puntualidad del evento.
-function makeClock() {
-  const tasks = new Map();
-  let seq = 0;
-  let nowMs = 0;
-  return {
-    setTimeout: (fn, ms) => { seq += 1; tasks.set(seq, { fn, at: nowMs + (Number(ms) || 0) }); return seq; },
-    clearTimeout: (id) => { tasks.delete(id); },
-    advance(ms) {
-      const target = nowMs + ms;
-      for (;;) {
-        const due = Array.from(tasks.entries())
-          .filter(([, t]) => t.at <= target)
-          .sort((a, b) => a[1].at - b[1].at || a[0] - b[0])[0];
-        if (!due) break;
-        const [id, task] = due;
-        tasks.delete(id);
-        nowMs = task.at;
-        task.fn();
-      }
-      nowMs = target;
-      return nowMs;
-    },
-    pending: () => tasks.size,
-    now: () => nowMs
-  };
-}
-
-// Drena microtareas con un timer REAL (el reloj falso solo vive en el controlador).
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
-async function settleDeep(times = 6) {
-  for (let i = 0; i < times; i += 1) await settle();
-}
 
 // ============================================================
 // 1. Result<T, E> — el error es un valor
@@ -178,6 +143,22 @@ async function settleDeep(times = 6) {
 }
 
 // ============================================================
+// 5a. createStatusPublisher — el indicador no se reescribe si no cambia
+// ============================================================
+{
+  const published = [];
+  const publish = K.createStatusPublisher({ onStatus: (status, message) => published.push([status, message]) });
+  ok('publica el primer estado', publish('saving') === true && published.length === 1);
+  ok('NO repite un estado idéntico', publish('saving') === false && published.length === 1);
+  ok('publica cuando el estado cambia', publish('saved') === true && published.length === 2);
+  ok('vuelve a publicar un estado ya visto si hubo otro en medio', publish('saving') === true && published.length === 3);
+  ok('un error con mensaje distinto sí se publica', publish('error', 'disco lleno') === true && published.length === 4);
+  ok('otro error con otro mensaje también', publish('error', 'permiso denegado') === true && published.length === 5);
+  ok('el mismo error con el mismo mensaje no se repite', publish('error', 'permiso denegado') === false && published.length === 5);
+  ok('devuelve false sin publicar cuando filtra', publish('error', 'permiso denegado') === false);
+}
+
+// ============================================================
 // 5b. runCleanup — limpieza de recursos sin catch silencioso
 // ============================================================
 {
@@ -241,6 +222,7 @@ async function controllerTests() {
 
     for (let i = 1; i <= 50; i += 1) { payload = { n: i }; controller.schedule(); }
     ok('I1 · ninguna escritura síncrona al editar', writes.length === 0);
+    ok('I1 · 50 ediciones emiten UN SOLO aviso de "guardando", no 50', statuses.filter((s) => s === K.PERSISTENCE.STATUS.SAVING).length === 1, String(statuses.length));
     ok('I1 · el estado queda "saving" mientras hay debounce', statuses[statuses.length - 1] === K.PERSISTENCE.STATUS.SAVING);
     ok('I1 · hay un temporizador pendiente', controller.getState().pending === true && clock.pending() === 1);
     clock.advance(399);

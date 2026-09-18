@@ -2,13 +2,15 @@
 // Ejecuta todas las suites y resume el resultado.
 const { execFileSync } = require('child_process');
 const path = require('path');
-// Suites funcionales + las cinco suites de la auditoría (seguridad, accesibilidad,
-// UX, rendimiento y personalización).
+// Suites funcionales + las suites de la auditoría (seguridad, accesibilidad, UX,
+// rendimiento, personalización), la enterprise y la de estrés (volumen, velocidad,
+// entradas hostiles y fugas).
 const suites = [
   'core.test.js','ingest.test.js','generation.test.js','api.test.js','marathon.test.js','ocr.test.js',
   'rpg.test.js','rpg-adversarial.test.js','rpg-loop.test.js','web.test.js','language.test.js',
   'campaign-systems.test.js','visual.test.js','omniroute.test.js',
-  'security.test.js','accessibility.test.js','ux.test.js','perf.test.js','personalization.test.js','regression.test.js','enterprise.test.js'
+  'security.test.js','accessibility.test.js','ux.test.js','perf.test.js','personalization.test.js','regression.test.js','enterprise.test.js',
+  'stress.test.js'
 ];
 let total = 0, passed = 0, failedSuites = [];
 for (const s of suites) {

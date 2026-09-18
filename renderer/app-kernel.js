@@ -508,14 +508,45 @@
    * @param {object} deps Ver {@link resolvePersistenceController}.
    * @returns {Readonly<{ schedule: Function, flush: Function, cancel: Function, getState: Function, config: object }>}
    */
+  /**
+   * Publica el estado del indicador de guardado SOLO cuando cambia de verdad.
+   *
+   * Sin esta deduplicación cada pulsación de tecla emitía un aviso idéntico
+   * ("Guardando…") y el renderer reescribía el mismo texto en el DOM. Medido en
+   * la suite de estrés: 5000 ediciones dentro de una misma ventana de debounce
+   * provocaban 5001 avisos para UNA sola escritura, es decir ~25 000 mutaciones
+   * de DOM inútiles (2 classList.toggle + setAttribute + textContent + title por
+   * aviso). Re-fijar `aria-live` en cada pulsación además agita a los lectores
+   * de pantalla, que reanuncian un estado que no ha cambiado.
+   *
+   * La clave incluye el detalle: dos errores con mensajes distintos SÍ se
+   * publican, porque el usuario debe ver el motivo actualizado.
+   *
+   * @param {{ onStatus: Function }} deps
+   * @returns {(status: string, message?: string) => boolean} true si publicó.
+   */
+  function createStatusPublisher(deps) {
+    let lastKey = null;
+    return function publishStatus(status, message = '') {
+      const key = `${status}\u0000${message}`;
+      if (key === lastKey) return false;
+      lastKey = key;
+      deps.onStatus(status, message);
+      return true;
+    };
+  }
+
   function createPersistenceController(deps) {
     const resolved = resolvePersistenceDeps(deps);
+    // Se sustituye onStatus por el publicador con deduplicación: ni el ejecutor
+    // ni el planificador tienen que saber que los avisos repetidos se filtran.
+    const observable = Object.freeze({ ...resolved, onStatus: createStatusPublisher(resolved) });
     const state = createPersistenceState();
     // Enlace tardío: ejecutor y planificador se necesitan mutuamente (el
     // ejecutor rearma la cola; el planificador dispara el ejecutor).
     const link = { schedule: () => {} };
-    const executor = createWriteExecutor(resolved, state, link);
-    const scheduler = createWriteScheduler(resolved, state, executor);
+    const executor = createWriteExecutor(observable, state, link);
+    const scheduler = createWriteScheduler(observable, state, executor);
     link.schedule = scheduler.schedule;
 
     return Object.freeze({
@@ -605,6 +636,7 @@
     createPersistenceController,
     normalizeSaveResponse,
     formatSaveFailure,
-    runCleanup
+    runCleanup,
+    createStatusPublisher
   });
 });

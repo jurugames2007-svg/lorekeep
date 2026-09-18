@@ -834,6 +834,42 @@ ipcMain.handle('ai:generate', async (_evt, payload) => {
   if (!apiKey && !isLocal) {
     return { ok: false, error: 'Falta configurar tu API Key en Ajustes > Muse AI.' };
   }
+  // Validación ESTRUCTURAL del prompt. Sin ella, un `messages` malformado viajaba
+  // hasta el proveedor y el fallo volvía disfrazado de error de red: el usuario
+  // leía "no se pudo conectar" cuando el problema era el payload. Rechazar antes
+  // es más barato (no quema una llamada) y el mensaje dice qué pasó de verdad.
+  // Se mide con `attempt` para que ni un Proxy ni un getter hostil puedan lanzar
+  // fuera del handler.
+  const shape = LoreKernel.attempt(() => {
+    if (!Array.isArray(messages) || messages.length === 0) return { valid: false, reason: 'vacio' };
+    const idx = messages.findIndex((m) => !m || typeof m !== 'object'
+      || (typeof m.content !== 'string' && !Array.isArray(m.content)));
+    return idx === -1 ? { valid: true } : { valid: false, reason: 'malformado', index: idx };
+  });
+  if (shape.isErr) {
+    mainLogger.error('prompt_shape_unreadable', {
+      code: shape.error.code,
+      reason: shape.error.message,
+      model: String(model || ''),
+      task: String(task || '')
+    });
+    return { ok: false, error: 'El prompt no se pudo inspeccionar (estructura ilegible). Vuelve a intentarlo.' };
+  }
+  if (!shape.unwrap().valid) {
+    const detail = shape.unwrap();
+    mainLogger.warn('prompt_messages_invalid', {
+      reason: detail.reason,
+      index: typeof detail.index === 'number' ? detail.index : null,
+      task: String(task || '')
+    });
+    return {
+      ok: false,
+      error: detail.reason === 'vacio'
+        ? 'El prompt está vacío. Escribe algo o adjunta una fuente antes de generar.'
+        : `El mensaje nº ${detail.index + 1} del prompt no tiene texto. Revisa las fuentes adjuntas.`
+    };
+  }
+
   // Validación de mensajes para evitar prompt injection extremo: limitar tamaño.
   //
   // El `catch {}` que había aquí dejaba el control FALLANDO ABIERTO: si

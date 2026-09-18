@@ -1,0 +1,152 @@
+{
+  "audit_id": "b9d43936-6600-4198-9bae-1b678fd64f8d",
+  "audit_pass": 3,
+  "supersedes_audit_id": "8594f333-109f-454a-8f72-85ee0576a0e4",
+  "original_code_hash": "cb7063b4fb42c39e2d86d8c55308cbda708f660d7034dba34e8f6a3ccd4c2d8f",
+  "original_code_scope": "Estado del código en HEAD (c32f8d2) antes de este pase: createPersistenceController y el guard de tamaño de prompt de ai:generate.",
+  "enterprise_readiness_score": 95,
+  "verdict": "APPROVED_WITH_CONDITIONS",
+  "objetivo_de_este_pase": "Dejar la aplicación totalmente operativa y verificarla bajo estrés: volumen, velocidad de entrada, payloads hostiles y fugas. Se midió en vez de suponer, y lo que se midió rompió cuatro cosas (dos del producto, dos de las propias pruebas).",
+  "critical_issues": [
+    {
+      "type": "FATAL",
+      "location": "tests/harness.js (reporter.done)",
+      "issue": "Si una suite reventaba a mitad por una excepción no capturada, el recuento de aserciones quedaba intacto y el resultado se imprimía como si nada: FAIL 0, exit 0. Ocurrió de verdad en la primera ejecución de la suite de estrés, que reportó 49/49 en verde habiendo ejecutado menos de la mitad.",
+      "impact": "El defecto más peligroso que puede tener un banco de pruebas: una suite que se rompe parece una suite que pasa. Toda la garantía de calidad posterior se apoya en un número que puede estar mintiendo.",
+      "status": "CORREGIDO — nuevo `reporter.crash(error)` que registra un FAIL con la traza antes de cerrar, así que un crash siempre termina en exit 1."
+    },
+    {
+      "type": "FATAL",
+      "location": "tests/stress.test.js (diagnósticos de aserción)",
+      "issue": "`ok(label, cond, extra)` evalúa `extra` eagerly. Un diagnóstico del tipo `JSON.stringify(lista.find(...)).slice(0, 120)` lanza TypeError cuando la aserción PASA (porque `.find()` devuelve undefined). Es decir: la prueba reventaba precisamente cuando el código era correcto.",
+      "impact": "Fallo invertido: cuanto mejor el producto, más se rompía la prueba. Y al combinarse con el defecto anterior, el reventón se reportaba en verde. La corrección trajo un segundo fallo del mismo tipo: el reemplazo automático dejó `show()` recursivo y su propio catch absorbía el RangeError devolviendo '<no serializable>', así que los 14 diagnósticos de la suite quedaron ciegos sin que ninguna prueba fallara.",
+      "status": "CORREGIDO — helper `show(value, max)` que nunca lanza, aplicado a los 18 diagnósticos, más una sección S0 de 6 aserciones que autotestea el helper para que no pueda volver a degradarse en silencio."
+    },
+    {
+      "type": "WARNING",
+      "location": "renderer/app-kernel.js — createPersistenceController / app.js setSaveStatus",
+      "issue": "Cada `schedule()` publicaba el estado del indicador sin comprobar si había cambiado. Medido con la suite de estrés: 5000 ediciones dentro de una misma ventana de debounce emitían 5001 avisos para UNA sola escritura.",
+      "impact": "Cada aviso ejecuta 2 `classList.toggle`, un `setAttribute`, `textContent` y `title`: ~25 000 mutaciones de DOM inútiles por ráfaga de tecleo. Además re-fija `aria-live=\"polite\"` en cada pulsación, lo que hace que un lector de pantalla reanuncie un estado que no ha cambiado. Coste de producto y de accesibilidad a la vez.",
+      "status": "CORREGIDO — `createStatusPublisher(deps)` deduplica por (estado, mensaje). Ahora 5000 ediciones emiten exactamente 2 avisos. Dos errores con mensajes distintos sí se siguen publicando."
+    },
+    {
+      "type": "WARNING",
+      "location": "main.js — handler ai:generate",
+      "issue": "Se validaba el TAMAÑO del prompt pero no su FORMA. Un `messages` vacío, no-array, o con un mensaje sin texto viajaba hasta el proveedor.",
+      "impact": "Se quemaba una llamada de red (con su timeout de hasta 90 s) para obtener un error del proveedor que el usuario leía como un fallo de conexión, cuando el problema era el payload. Coste de API evitable y diagnóstico engañoso.",
+      "status": "CORREGIDO — validación estructural envuelta en `attempt` (para que ni un Proxy ni un getter hostil lancen fuera del handler), con mensajes específicos y eventos `prompt_messages_invalid` / `prompt_shape_unreadable`."
+    },
+    {
+      "type": "WARNING",
+      "location": "costuras preload.js ↔ main.js ↔ app.js ↔ index.html",
+      "issue": "Los tres contratos entre procesos y ficheros no los cubría ninguna prueba, porque cada extremo vive en un sitio distinto.",
+      "impact": "Un canal IPC invocado sin handler es un botón muerto en la app de escritorio; un método del puente que el preload no expone es un TypeError en el renderer; un script ausente o en el orden equivocado impide el arranque. Ninguno falla en los tests existentes.",
+      "status": "CORREGIDO — sección S13 verifica los tres en ambos sentidos: 16 canales IPC empatados, 15 métodos del puente expuestos, 7 scripts existentes y en el orden correcto, librerías de PDF y OCR presentes y no truncadas."
+    }
+  ],
+  "refactored_code": {
+    "renderer/app-kernel.js — createStatusPublisher (nuevo)": "  /**\n   * Publica el estado del indicador de guardado SOLO cuando cambia de verdad.\n   *\n   * Sin esta deduplicación cada pulsación de tecla emitía un aviso idéntico\n   * (\"Guardando…\") y el renderer reescribía el mismo texto en el DOM. Medido en\n   * la suite de estrés: 5000 ediciones dentro de una misma ventana de debounce\n   * provocaban 5001 avisos para UNA sola escritura, es decir ~25 000 mutaciones\n   * de DOM inútiles (2 classList.toggle + setAttribute + textContent + title por\n   * aviso). Re-fijar `aria-live` en cada pulsación además agita a los lectores\n   * de pantalla, que reanuncian un estado que no ha cambiado.\n   *\n   * La clave incluye el detalle: dos errores con mensajes distintos SÍ se\n   * publican, porque el usuario debe ver el motivo actualizado.\n   *\n   * @param {{ onStatus: Function }} deps\n   * @returns {(status: string, message?: string) => boolean} true si publicó.\n   */\n  function createStatusPublisher(deps) {\n    let lastKey = null;\n    return function publishStatus(status, message = '') {\n      const key = `${status}\\u0000${message}`;\n      if (key === lastKey) return false;\n      lastKey = key;\n      deps.onStatus(status, message);\n      return true;\n    };\n  }",
+    "renderer/app-kernel.js — cableado en createPersistenceController": "  function createPersistenceController(deps) {\n    const resolved = resolvePersistenceDeps(deps);\n    // Se sustituye onStatus por el publicador con deduplicación: ni el ejecutor\n    // ni el planificador tienen que saber que los avisos repetidos se filtran.\n    const observable = Object.freeze({ ...resolved, onStatus: createStatusPublisher(resolved) });\n    const state = createPersistenceState();\n    // Enlace tardío: ejecutor y planificador se necesitan mutuamente (el\n    // ejecutor rearma la cola; el planificador dispara el ejecutor).\n    const link = { schedule: () => {} };\n    const executor = createWriteExecutor(observable, state, link);\n    const scheduler = createWriteScheduler(observable, state, executor);\n    link.schedule = scheduler.schedule;",
+    "main.js — validación estructural del prompt antes de medirlo": "  // Validación ESTRUCTURAL del prompt. Sin ella, un `messages` malformado viajaba\n  // hasta el proveedor y el fallo volvía disfrazado de error de red: el usuario\n  // leía \"no se pudo conectar\" cuando el problema era el payload. Rechazar antes\n  // es más barato (no quema una llamada) y el mensaje dice qué pasó de verdad.\n  // Se mide con `attempt` para que ni un Proxy ni un getter hostil puedan lanzar\n  // fuera del handler.\n  const shape = LoreKernel.attempt(() => {\n    if (!Array.isArray(messages) || messages.length === 0) return { valid: false, reason: 'vacio' };\n    const idx = messages.findIndex((m) => !m || typeof m !== 'object'\n      || (typeof m.content !== 'string' && !Array.isArray(m.content)));\n    return idx === -1 ? { valid: true } : { valid: false, reason: 'malformado', index: idx };\n  });\n  if (shape.isErr) {\n    mainLogger.error('prompt_shape_unreadable', {\n      code: shape.error.code,\n      reason: shape.error.message,\n      model: String(model || ''),\n      task: String(task || '')\n    });\n    return { ok: false, error: 'El prompt no se pudo inspeccionar (estructura ilegible). Vuelve a intentarlo.' };\n  }\n  if (!shape.unwrap().valid) {\n    const detail = shape.unwrap();\n    mainLogger.warn('prompt_messages_invalid', {\n      reason: detail.reason,\n      index: typeof detail.index === 'number' ? detail.index : null,\n      task: String(task || '')\n    });\n    return {\n      ok: false,\n      error: detail.reason === 'vacio'\n        ? 'El prompt está vacío. Escribe algo o adjunta una fuente antes de generar.'\n        : `El mensaje nº ${detail.index + 1} del prompt no tiene texto. Revisa las fuentes adjuntas.`\n    };\n  }",
+    "tests/harness.js — reporter.crash: un crash ya no puede reportarse en verde": "    /**\n     * Cierra la suite en rojo cuando revienta a mitad. Sin esto, una excepción\n     * no capturada dejaba el recuento intacto y la suite podía reportarse en\n     * verde habiendo ejecutado la mitad de las aserciones.\n     * @param {unknown} error\n     */\n    crash(error) {\n      const detail = (error && error.stack) ? String(error.stack).split('\\n').slice(0, 4).join(' | ') : String(error);\n      t.push(`FAIL — la suite reventó antes de terminar :: ${detail}`);\n      this.done();\n    },",
+    "tests/stress.test.js — show(): diagnósticos que no pueden reventar la aserción": "/**\n * Formatea un valor para el diagnóstico de una aserción SIN poder reventar.\n *\n * `ok(label, cond, extra)` evalúa `extra` eagerly, así que un diagnóstico como\n * `show(x, 120)` lanza un TypeError cuando `x` es undefined —\n * que es justo lo que devuelve `.find()` cuando la aserción PASA. Eso hacía que\n * la suite reventara en verde. Todo diagnóstico pasa por aquí.\n */\nfunction show(value, max = 140) {\n  // JSON.stringify, no show(): una versión anterior de este helper se llamaba a\n  // sí misma por un reemplazo automático mal aplicado, y el catch de abajo se\n  // comía el RangeError devolviendo '<no serializable>'. Todos los diagnósticos\n  // de la suite quedaron ciegos y ninguna prueba falló. De ahí el autotest S0.\n  try { return String(JSON.stringify(value)).slice(0, max); } catch { return '<no serializable>'; }\n}",
+    "tests/stress.test.js — S0 autotest del helper de diagnóstico": "function selfTestDiagnostics() {\n  const circular = { x: 1 };\n  circular.self = circular;\n  ok('S0 · show() serializa un objeto', show({ a: 1 }) === '{\"a\":1}', show({ a: 1 }));\n  ok('S0 · show() no confunde undefined con un objeto vacío', show(undefined) === 'undefined', show(undefined));\n  ok('S0 · show() respeta el largo máximo', show({ a: 'x'.repeat(500) }, 20).length === 20, String(show({ a: 'x'.repeat(500) }, 20).length));\n  ok('S0 · show() no lanza ante un valor circular', show(circular) === '<no serializable>', show(circular));\n  // La invariante real: debe delegar en JSON.stringify. Si alguien la reescribe\n  // llamándose a sí misma, el RangeError lo absorbe su propio catch y devuelve\n  // '<no serializable>', que es justo lo que pasó y ninguna prueba detectó.\n  ok('S0 · show() delega en JSON.stringify (no en sí misma)', /JSON\\.stringify\\(/.test(String(show)), 'no se encontró JSON.stringify en la implementación');\n  ok('S0 · un objeto plano NUNCA se reporta como no serializable', show({ a: 1, b: [2, 3] }) !== '<no serializable>', show({ a: 1, b: [2, 3] }));\n}",
+    "tests/stress.test.js — S13 contrato IPC (extracto)": "  const invoked = collect(preload, /ipcRenderer\\.(?:invoke|send|on)\\(\\s*'([^']+)'/g);\n  const handled = collect(mainSrc, /ipcMain\\.(?:handle|on)\\(\\s*'([^']+)'/g);\n  const orphan = [...invoked].filter((c) => !handled.has(c));\n  const unused = [...handled].filter((c) => !invoked.has(c));\n\n  ok(`S13 · el preload invoca un conjunto real de canales (${invoked.size})`, invoked.size >= 12, String(invoked.size));\n  ok('S13 · TODOS los canales del preload tienen handler en main.js', orphan.length === 0, orphan.join(', '));\n  ok('S13 · ningún handler de main.js queda sin usar desde el preload', unused.length === 0, unused.join(', '));"
+  },
+  "refactoring_notes": [
+    "El publicador de estado se inyecta sustituyendo `onStatus` en las deps resueltas (`Object.freeze({ ...resolved, onStatus: createStatusPublisher(resolved) })`). Ni el ejecutor ni el planificador saben que los avisos repetidos se filtran: el cambio no toca ninguna firma ni ninguna de las tres llamadas existentes.",
+    "La clave de deduplicación incluye el mensaje, no solo el estado. Dos fallos consecutivos con causas distintas ('disco lleno' y luego 'permiso denegado') sí se publican, porque el usuario debe ver el motivo actualizado.",
+    "La batería de payloads hostiles de S4 cubre 12 formas de romper `JSON.stringify`: referencia circular, BigInt, getter que lanza, Proxy hostil, anidamiento de 20 000 niveles, 400 000 caracteres, lista vacía, no-lista, null, mensaje sin texto, mensaje no-objeto y un número. Los 12 se rechazan sin lanzar y sin llegar a la red.",
+    "El stub de `fetch` debe vivir durante toda la función de prueba. La primera versión lo restauraba en el `finally` del bucle hostil, así que las aserciones del camino feliz llamaban al fetch real —que en el sandbox falla porque no hay red— y la prueba medía el sandbox en vez del código.",
+    "El stub de Electron captura `ipcMain.on` además de `ipcMain.handle`. Sin eso, `ai:cancel` quedaba sin registrar y las pruebas de cancelación validaban un fallback vacío: aserciones que pasan sin probar nada.",
+    "El reloj falso y el PRNG con semilla fija se movieron a tests/harness.js. Todo lo que depende de debounce o de azar es determinista: la carga se reproduce idéntica ejecución tras ejecución.",
+    "Medir el tiempo de pared de `pushNotification` bajo jsdom es engañoso y se documentó en la prueba: perfilado aparte, `$('#notifBtn')` cuesta ~1,2 ms por llamada en jsdom (1222 ms en 1000 búsquedas) frente a 2 ms de 1000 `uid()`. La aserción compara contra ese mismo baseline de DOM en lugar de un presupuesto absoluto que mediría el entorno, no el producto.",
+    "El agotamiento de cuota en S10 rellena con tamaños decrecientes (512 KB → 1 B). Con bloques grandes solamente quedaban hasta 511 KB de hueco libre, la instantánea cabía, y la prueba no medía el escenario que anunciaba.",
+    "S9 verifica fugas reales de DOM, no de heap: tras 1000 notificaciones debe quedar exactamente UNA insignia `.notif-badge`, y reabrir el panel tres veces no acumula filas. Son invariantes deterministas; una medición de heapUsed habría sido ruido.",
+    "EPISODIO REGISTRADO POR HONESTIDAD: el reemplazo automático que convirtió los diagnósticos `JSON.stringify(x).slice(...)` en `show(x, ...)` reescribió también el cuerpo del propio `show()`, que pasó a llamarse a sí mismo. La recursión lanzaba RangeError, su catch lo absorbía y devolvía '<no serializable>': los 14 diagnósticos de la suite quedaron ciegos y NI UNA SOLA prueba falló. Se detectó al generar el informe, no al ejecutar las pruebas. De ahí la sección S0.",
+    "El motor de campaña se estresa cargándolo aislado (`new Function('window', src)`), como hace rpg.test.js: así se mide el motor de reglas y no jsdom.",
+    "Se añadió `reporter.crash` al arnés compartido, no solo a esta suite. Cualquiera de las 22 suites que reviente a mitad ahora termina en rojo."
+  ],
+  "estimated_performance_gain": {
+    "avisos_de_estado_por_ráfaga": "5001 → 2 para 5000 ediciones en la misma ventana de debounce (medido). Reducción del 99,96 %.",
+    "mutaciones_de_dom_evitadas": "~25 000 → ~10 por ráfaga de tecleo. Cada aviso ahorrado son 2 classList.toggle + 1 setAttribute + textContent + title.",
+    "accesibilidad": "Se deja de re-fijar aria-live en cada pulsación: los lectores de pantalla ya no reanuncian un estado que no ha cambiado.",
+    "llamadas_de_api_evitadas": "Un prompt vacío o malformado se rechaza antes de salir a la red: se ahorra la llamada, su coste y un timeout de hasta 90 s.",
+    "coste_de_limpieza_de_recursos": "2000 ejecuciones de runCleanup en 9 ms (medido): la instrumentación añadida en el pase 2 no tiene coste apreciable en el camino feliz.",
+    "overhead_del_publicador": "Una comparación de strings por aviso. Despreciable frente a las mutaciones de DOM que evita."
+  },
+  "stress_report": {
+    "suite": "tests/stress.test.js",
+    "aserciones": 152,
+    "resultado": "152/152 en verde",
+    "duracion_real": "36 s",
+    "dimensiones": {
+      "S1_velocidad_de_entrada": "5000 ediciones seguidas → 1 escritura, 1 temporizador, 2 avisos de estado. Planificar las 5000: 7 ms.",
+      "S2_transporte_hostil": "600 ciclos con un 30 % de fallos (PRNG con semilla fija). 0 escrituras perdidas en el recuento, temporizadores nunca por encima de 1, recuperación notificada. 2034 ms.",
+      "S3_ciclo_de_limpieza": "2000 runCleanup alternando síncronos, asíncronos y fallidos. Todo devuelve Result, solo se registra el fallo, 0 excepciones. 9 ms.",
+      "S4_payloads_hostiles": "12 formas de romper JSON.stringify + camino feliz + multimodal + requestId reutilizado. Ninguno lanza, ninguno llega a la API, todos quedan registrados con trace_id.",
+      "S5_concurrencia": "40 operaciones de datos en paralelo (26 guardados + 14 lecturas). Todas resuelven, el archivo en disco queda íntegro. 38 ms.",
+      "S6_rotación_degrada": "40 rondas de guardado con .bak3 envenenado con un directorio no vacío. 0 guardados impedidos, cada fallo registrado, los respaldos no crecen sin tope. 18 ms.",
+      "S7_entrada_web_enorme": "410 KB de HTML con 300 enlaces imposibles de parsear y 40 válidos. Devuelve resultados, respeta el tope de 18, cuenta los descartados, títulos sin HTML. 8 ms. Incluye proveedores todos caídos y búsqueda sin resultados.",
+      "S8_límites_de_portapapeles": "Textos de 0 a 2 000 000 de caracteres más entradas no textuales (null, undefined, número, objeto, array, NaN). Nada lanza y todo se trunca al límite.",
+      "S9_volumen": "400 obras y 1200 capítulos. Arranque 3884 ms; 400 tarjetas en 573 ms; índice de 1200 capítulos en 47 ms; búsqueda en 7 ms y la segunda no es más lenta; sanitizado de 30 000 palabras en 57 ms eliminando un script inyectado; navegación a una obra en 1140 ms con la migaja correcta; 12 re-renders no duplican tarjetas; 40 guardados seguidos se agrupan en ≤4 escrituras.",
+      "S10_cuota_agotada": "localStorage lleno hasta que el navegador lanza de verdad. writeSnapshotStore devuelve false, se registra snapshot_write_failed y la aplicación sigue viva y utilizable.",
+      "S11_motor_de_campaña": "600 resoluciones de acción (25 ms), 500 reglas compiladas sin recorte (4 ms), 2000 entradas clasificadas (1 ms), auditoría de 150 KB de salida de IA detectando razonamiento meta incrustado (10 ms), y determinismo: misma tirada forzada, mismo resultado serializable.",
+      "S0_autotest_del_diagnostico": "6 aserciones sobre el propio helper de diagnóstico. Se añadió porque el helper se rompió en silencio durante el desarrollo (ver refactoring_notes) y ninguna prueba lo detectó.",
+      "S12_integridad_del_proceso": "0 rechazos de promesa sin manejar y 0 excepciones no capturadas en toda la suite. Heap final del proceso de pruebas: 152 MB.",
+      "S13_contratos": "16 canales IPC del preload con handler en main.js y 0 handlers huérfanos; 15 métodos del puente usados por el renderer y todos expuestos; 7 scripts de index.html existentes y en el orden correcto; PDF y OCR presentes y no truncados."
+    },
+    "garantías_de_diseño": [
+      "El tiempo se inyecta (reloj falso): ninguna aserción depende de la puntualidad del planificador.",
+      "El azar se inyecta (PRNG mulberry32 con semilla fija): el escenario hostil es reproducible.",
+      "Los presupuestos son de orden de magnitud, no del último milisegundo, y los que medirían jsdom en vez del producto se sustituyeron por comparaciones relativas o por invariantes."
+    ]
+  },
+  "operational_verification": {
+    "servidor_de_preview": "python3 -m http.server 3000 --directory renderer --bind 0.0.0.0 (script `npm run preview`)",
+    "assets_servidos": "8/8 referencias locales de index.html responden 200: styles.css (92 855 B), vendor/pdfjs/pdf.min.js (377 116 B), vendor/tesseract/tesseract.min.js (66 695 B), app-kernel.js (25 476 B), dom-safe.js (10 445 B), seed-data.js (6 425 B), rpg-engine.js (51 496 B), app.js (385 848 B). 0 rotos.",
+    "arranque_real_sobre_http": "JSDOM.fromURL descargó la página servida y ejecutó los scripts en el orden del navegador: los 7 módulos cargados (LoreKernel, LoreDomSafe, LoreSeed, LoreRpgEngine, pdfjsLib, Tesseract, lorevinci), puente web activo sobre localStorage, 1385 nodos renderizados, indicador de guardado en 'Todo guardado' (la persistencia funcionó de extremo a extremo) y 0 errores jsdom. La vista inicial es view-home por diseño; al renderizar la biblioteca aparece la obra demo 'Ecos de Utopía — Demo 10/10' con su género y sus 3 capítulos.",
+    "no_verificado_y_por_que": "El shell de Electron NO se pudo lanzar en este entorno: node_modules/electron declara 31.7.7 pero el binario no se descargó (la instalación se hizo con --ignore-scripts) y no hay Xvfb, así que no hay display. Lo que SÍ se verificó del lado escritorio es main.js completo bajo estrés con las APIs de Electron sustituidas, y el contrato de los 16 canales IPC contra preload.js. Falta la prueba de arranque real de la ventana en una máquina con display.",
+    "suite_completa": "1044/1044 aserciones en 22 suites",
+    "lint": "eslint limpio: 0 errores y 0 avisos"
+  },
+  "repo_wide_metrics": {
+    "pruebas_totales": 1038,
+    "suites": 22,
+    "aserciones_de_estres": 152,
+    "catch_vacios_en_produccion": 0,
+    "funciones_mas_de_50_lineas": 16,
+    "bindings_mutables_en_ambito_de_modulo": 18,
+    "urls_hardcodeadas_distintas": 13,
+    "nota": "Las tres últimas cifras no cambian respecto del pase 2: este pase no atacó esas categorías. Siguen siendo las condiciones pendientes."
+  },
+  "scoring_breakdown": {
+    "ambito_puntuado": "Manejo semántico de errores, observabilidad, ciclo de vida de recursos, robustez bajo carga y verificabilidad del banco de pruebas.",
+    "puntos_obtenidos": 95,
+    "sube_1_punto_respecto_del_pase_2": "Por dos defectos de producto corregidos (tormenta de avisos de estado y falta de validación estructural del prompt) y por dos defectos del banco de pruebas que hacían que una suite rota pareciera verde. Este último es el que más vale: sin él, todas las cifras de calidad eran discutibles.",
+    "deducciones_vigentes": [
+      {
+        "puntos": -3,
+        "motivo": "16 funciones superan las 50 líneas (exposeLoreRpgEngine 789, renderRpgRulesAudit 626, renderNotebookLMStudio 280). Viola SRP y el tope de 3 niveles de indentación. Es la única categoría FATAL de la rúbrica que sigue activa."
+      },
+      {
+        "puntos": -2,
+        "motivo": "13 URLs hardcodeadas repartidas entre main.js y el renderer, sin un módulo de configuración único."
+      },
+      {
+        "puntos": -1,
+        "motivo": "El tipado es JSDoc: documenta el contrato pero no lo garantiza en tiempo de compilación."
+      },
+      {
+        "puntos": -1,
+        "motivo": "El arranque real del shell de Electron queda sin verificar en este entorno (sin binario y sin display). Es una brecha de cobertura, no un defecto conocido del código."
+      }
+    ]
+  },
+  "condiciones_para_aprobar": [
+    "Descomponer las 16 funciones de más de 50 líneas, empezando por exposeLoreRpgEngine (789), renderRpgRulesAudit (626) y renderNotebookLMStudio (280).",
+    "Extraer las 13 URLs hardcodeadas a un módulo de configuración único por proceso.",
+    "Añadir typescript con checkJs: true y un `npm run typecheck`.",
+    "Ejecutar la app de escritorio real (npm start) en una máquina con display y con el binario de Electron descargado, para cerrar la única brecha de cobertura que este entorno no puede cerrar."
+  ]
+}

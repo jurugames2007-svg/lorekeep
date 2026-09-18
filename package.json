@@ -17,6 +17,7 @@
     "test:personalization": "node tests/personalization.test.js",
     "test:regression": "node tests/regression.test.js",
     "test:enterprise": "node tests/enterprise.test.js",
+    "test:stress": "node tests/stress.test.js",
     "lint": "eslint .",
     "verify": "npm run lint && npm test"
   },
