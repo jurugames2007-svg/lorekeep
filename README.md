@@ -260,6 +260,60 @@ clave, la URL o el modelo, la verificación se invalida y hay que repetirla.
 > Ajustes: no había OAuth real detrás y estorbaba. Toda la conexión se gestiona ahora
 > desde el panel de verificación de Ajustes.
 
+## Personalización
+
+Además de tema, escala global, densidad, tipografía/ancho/tamaño del editor, modo máquina
+de escribir, meta diaria, foto de perfil, fondo propio e insignias, hay tres ajustes que
+cambian cómo se *siente* escribir:
+
+- **Color de acento propio** (Ajustes → Identidad visual). Reescribe `--accent` y sus
+  variantes, así que lo hereda toda la interfaz: botones, enlaces, barras de progreso y
+  foco visible. El texto que va *sobre* el acento se recalcula con luminancia WCAG para
+  que nunca pierda legibilidad, y solo se acepta `#rrggbb` (cualquier otro valor se
+  descarta antes de tocar una variable CSS). El botón "Volver al color del tema" restaura.
+- **Ambientes de fondo**: papel cálido, sepia, noche azul y bosque. No son filtros opacos
+  encima de la interfaz: reescriben las variables de superficie, de modo que nada tapa el
+  contenido y el contraste se mantiene. Conviven con el tema, la escala, la densidad y el
+  modo Zen sin pisarlos.
+- **Meta de palabras por capítulo** (🎯 en la barra del editor). La meta diaria mide la
+  sesión; esta mide la obra. El progreso se actualiza mientras escribes (`1.240/2.500
+  (50%)`), la barra se marca en verde al cumplirse y se celebra una sola vez. Pon `0` para
+  desactivarla. Se guarda por capítulo y viaja con tus respaldos.
+
+## Calidad de código
+
+```bash
+npm run lint       # ESLint 9 (configuración plana en eslint.config.js)
+npm run typecheck  # tsc --checkJs sobre el JavaScript de producción
+npm run verify     # lint + typecheck + las 22 suites
+npm run test:launch  # abre una ventana REAL de Electron y comprueba que arranca
+```
+
+Dos garantías están activas como reglas, no como convención:
+
+- **Ninguna función del código de producción supera las 50 líneas.** La regla
+  `max-lines-per-function` aplica a `main.js`, `preload.js`, `renderer/*.js` y
+  `scripts/`. Mide código, no documentación (`skipBlankLines`, `skipComments`): un
+  JSDoc que explique por qué una función hace lo que hace no cuenta en su contra.
+  Los envoltorios de módulo quedan exentos (`IIFEs: false`) porque su largo es el
+  del fichero y no indica acoplamiento. Las únicas cuatro supresiones del proyecto
+  son las fábricas UMD, están justificadas en el propio fuente y la sección S15 de
+  la suite `stress` verifica que no aparezca ninguna más, que ninguna quede
+  obsoleta y que la regla señale de verdad una función de 60 líneas.
+  `tests/` queda fuera a propósito: sus suites son guiones lineales que montan un
+  escenario, lo ejercitan y afirman sobre él; partirlos dispersaría cada escenario
+  entre varios cuerpos.
+- **Los tipos se verifican sobre el JavaScript real** (`checkJs: true` en
+  `tsconfig.json`), con los cinco módulos propios tipados como
+  `typeof import(...)` y no como `any`.
+
+`npm run test:launch` es la única comprobación que abre una ventana de verdad:
+lanza Electron, espera a que el renderer termine de arrancar y verifica que el
+puente `window.lorevinci` esté expuesto y que la biblioteca haya pintado
+historias. Termina en `SKIP` (no en fallo) si el entorno no puede lanzar
+Electron —binario no descargado o sin servidor gráfico— e indica el comando que lo
+resolvería; en Linux sin escritorio, `xvfb-run -a npm run test:launch`.
+
 ## Pruebas
 
 ```bash
@@ -267,17 +321,51 @@ npm install
 npm test
 ```
 
-Catorce suites, 409 comprobaciones: núcleo y seguridad, ingesta multi-PDF con extracción
-real, motor de generación, handlers del proceso principal, OCR, Mesa RPG, una batería
-adversarial basada en la retroalimentación beta, investigación web segura y un **maratón
-de 30 capítulos** contra un modelo simulado adverso (que trunca, devuelve JSON roto,
-falla la red y filtra texto del asistente). Las suites RPG verifican reglamentos de 100
-puntos, fórmulas, D20 animado, registro incremental, fuentes seleccionadas, reparación
-de salidas inglesas y que el chat nunca cree capítulos por accidente. La suite OmniRoute
-verifica detección, modelos `auto/*`, perfiles por tarea, fallback/directo y telemetría.
+Veintidós suites, 1.137 comprobaciones: núcleo, ingesta multi-PDF con extracción real, motor de
+generación, handlers del proceso principal, OCR, Mesa RPG, una batería adversarial basada
+en la retroalimentación beta, investigación web segura y un **maratón de 30 capítulos**
+contra un modelo simulado adverso (que trunca, devuelve JSON roto, falla la red y filtra
+texto del asistente). Las suites RPG verifican reglamentos de 100 puntos, fórmulas, D20
+animado, registro incremental, fuentes seleccionadas, reparación de salidas inglesas y que
+el chat nunca cree capítulos por accidente. La suite OmniRoute verifica detección, modelos
+`auto/*`, perfiles por tarea, fallback/directo y telemetría.
+
+A esas se suman seis suites de la auditoría:
+
+| Suite | Comprobaciones | Qué fija |
+|---|---:|---|
+| `security` | 60 | XSS por lista blanca, inyección CSS/SVG, enlaces endurecidos, clave fuera del JSON, IPC real de `main.js` con Electron simulado, importaciones hostiles |
+| `accessibility` | 41 | skip-link, `lang`, nombres accesibles, ARIA de diálogos, regiones `aria-live`, `combobox`/`listbox`, Escape, foco atrapado, `prefers-reduced-motion` |
+| `ux` | 48 | deshacer/rehacer por capítulo, inserción en el cursor, mensajes veraces, búsqueda dentro del texto, centro de actividad, racha en fecha local, estados de guardado |
+| `perf` | 35 | tiempos con 200 capítulos, debounce y coalescencia de guardado, caché de conteo, índice perezoso, topes de snapshots/notificaciones/bitácora |
+| `personalization` | 53 | acento y contraste, ambientes, meta por capítulo, persistencia y normalización en ambos procesos |
+| `regression` | 53 | prosa→párrafos válidos, deduplicación con motivo y salida, validación real de imágenes, `getChapter` defensivo, avisos de variantes, clasificación de verso |
+| `enterprise` | 194 | contratos entre procesos, límites de entrada, rotación de respaldos, telemetría estructurada y regresiones de la auditoría |
+| `stress` | 240 | volumen (400 obras), velocidad de tecleo, payloads hostiles, concurrencia, contratos IPC, verificación de tipos ejecutada, longitud de función (S15), rutas reales del lanzamiento de Electron (S16) y autoprueba del modo humo (S17) |
+
+Las secciones S16 y S17 de `stress` cierran un hueco que las demás suites no
+podían ver: todas cargan `main.js` con Electron simulado y un `loadFile()` que no
+hace nada, así que ejercitan los handlers IPC pero nunca las rutas del arranque.
+Si alguien renombraba `renderer/index.html` o movía `preload.js`, las 22 suites
+seguían en verde y la aplicación lanzaba una ventana en blanco. S16 resuelve
+`whenReady()` de verdad contra un stub que registra lo que `main.js` le pasa y
+comprueba que existen el punto de entrada, el preload, el HTML cargado y el
+icono, además de la postura de seguridad y del endurecimiento de navegación.
+S17 ejercita los cuatro desenlaces del modo humo —aprobado, banner de error de
+arranque, `did-fail-load` y arranque incompleto— y fija la propiedad más
+peligrosa: sin la variable de entorno, `main.js` no entra en modo humo, porque si
+lo hiciera la aplicación real se cerraría sola al arrancar.
 
 ## Dónde se guardan tus datos
 
 La app guarda un archivo `lorevinci-data.json` en la carpeta de datos de usuario de tu
-sistema operativo (gestionada automáticamente por Electron). Puedes hacer respaldo o
-restaurar tus datos completos desde **Settings → Datos → Exportar/Importar**.
+sistema operativo (gestionada automáticamente por Electron), con rotación de respaldos
+`.bak1/.bak2/.bak3` y escritura atómica. Puedes hacer respaldo o restaurar tus datos
+completos desde **Settings → Datos → Exportar/Importar**.
+
+**Tu clave de Muse AI no vive ahí.** Antes viajaba en texto plano dentro del JSON y, como
+ese archivo se exporta y se respalda, llegaba a haber cuatro copias legibles del secreto.
+Ahora se guarda aparte, en `lorevinci-secret.bin`, cifrada con el almacén seguro del
+sistema operativo (DPAPI en Windows, Keychain en macOS, libsecret en Linux) y se elimina
+de los datos al normalizar. Consecuencia práctica: un respaldo exportado **no** contiene tu
+clave, y al restaurarlo en otro equipo hay que volver a pegarla en Ajustes.

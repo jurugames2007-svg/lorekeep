@@ -221,46 +221,77 @@
     try { const value = sum(); return i === tokens.length && Number.isFinite(value) ? value : null; } catch { return null; }
   }
 
-  function evaluateFormula(formula, player, options = {}) {
-    if (!formula) return { ok: false, reason: 'Fórmula ausente' };
-    const d = derivedStats(player);
-    const a = d.attributes;
-    const formulaName = normalize(formula.name);
-    if (formulaName.includes('estado en la zona')) return { ok:true, value:1.2, detail:'multiplicador temporal de Control y Flujo' };
+  /**
+   * @typedef {{ ok: boolean, value?: number, detail?: string, reason?: string }} FormulaResult
+   */
+
+  /**
+   * Fórmulas con nombre propio del reglamento: su valor no sale de evaluar una
+   * expresión aritmética sino de aplicar una regla concreta (el Destello Negro
+   * exige un 20 natural, el choque de Dominios compara dos tiradas, la
+   * dificultad común es una tabla de cuatro niveles).
+   *
+   * @param {string} formulaName Nombre ya normalizado.
+   * @param {Record<string, any>} player
+   * @param {Record<string, number>} a Atributos derivados.
+   * @param {Record<string, any>} options
+   * @returns {FormulaResult|null} null si el nombre no coincide con ninguna.
+   */
+  function evaluateNamedFormula(formulaName, player, a, options) {
+    const hasNaturalRoll = () => Number.isFinite(Number(options.roll));
+
+    if (formulaName.includes('estado en la zona')) {
+      return { ok: true, value: 1.2, detail: 'multiplicador temporal de Control y Flujo' };
+    }
     if (formulaName.includes('probabilidad de destello negro')) {
-      if (!Number.isFinite(Number(options.roll))) return { ok:false, reason:'Requiere el D20 natural' };
-      return { ok:true, value:Number(options.roll) === 20 ? 1 : 0, detail:Number(options.roll) === 20 ? 'activado' : 'no activado' };
+      if (!hasNaturalRoll()) return { ok: false, reason: 'Requiere el D20 natural' };
+      return { ok: true, value: Number(options.roll) === 20 ? 1 : 0, detail: Number(options.roll) === 20 ? 'activado' : 'no activado' };
     }
     if (formulaName.includes('pifia critica en combate')) {
-      if (!Number.isFinite(Number(options.roll))) return { ok:false, reason:'Requiere el D20 natural' };
-      if (Number(options.roll) !== 1) return { ok:true, value:0, detail:'sin pifia' };
-      if (!Number.isFinite(Number(options.totalDamage))) return { ok:false, reason:'Requiere el daño del ataque para calcular la mitad' };
-      return { ok:true, value:Number(options.totalDamage) / 2, detail:'daño propio' };
+      if (!hasNaturalRoll()) return { ok: false, reason: 'Requiere el D20 natural' };
+      if (Number(options.roll) !== 1) return { ok: true, value: 0, detail: 'sin pifia' };
+      if (!Number.isFinite(Number(options.totalDamage))) return { ok: false, reason: 'Requiere el daño del ataque para calcular la mitad' };
+      return { ok: true, value: Number(options.totalDamage) / 2, detail: 'daño propio' };
     }
     if (formulaName.includes('requisito de activacion de dominio')) {
       const allowed = gradeCanUseDomain(player.grade) && a.control > 15;
-      return { ok:true, value:allowed ? 1 : 0, detail:allowed ? 'requisitos cumplidos' : 'requiere Grado 1/Especial y Control > 15' };
+      return { ok: true, value: allowed ? 1 : 0, detail: allowed ? 'requisitos cumplidos' : 'requiere Grado 1/Especial y Control > 15' };
     }
     if (formulaName.includes('resolucion de choque de dominios')) {
-      if (![options.roll, options.rivalRoll, options.rivalControl].every(v => Number.isFinite(Number(v)))) return { ok:false, reason:'Requiere D20 y Control de ambos contendientes' };
-      const own = Number(options.roll) + a.control, rival = Number(options.rivalRoll) + Number(options.rivalControl);
-      return { ok:true, value:own - rival, detail:own === rival ? 'empate' : own > rival ? 'gana el jugador' : 'gana el rival' };
+      if (![options.roll, options.rivalRoll, options.rivalControl].every((v) => Number.isFinite(Number(v)))) {
+        return { ok: false, reason: 'Requiere D20 y Control de ambos contendientes' };
+      }
+      const own = Number(options.roll) + a.control;
+      const rival = Number(options.rivalRoll) + Number(options.rivalControl);
+      return { ok: true, value: own - rival, detail: own === rival ? 'empate' : own > rival ? 'gana el jugador' : 'gana el rival' };
     }
-    if (formulaName.includes('quemadura de tecnica post dominio')) return { ok:true, value:3, detail:'turnos de bloqueo' };
-    if (formulaName.includes('sacrificio temporal')) return { ok:true, value:5, detail:'bonificador a cambio de -20 Vida' };
-    if (formulaName.includes('costo de mantenimiento de shikigami')) return { ok:true, value:5, detail:'PEM por turno' };
+    if (formulaName.includes('quemadura de tecnica post dominio')) return { ok: true, value: 3, detail: 'turnos de bloqueo' };
+    if (formulaName.includes('sacrificio temporal')) return { ok: true, value: 5, detail: 'bonificador a cambio de -20 Vida' };
+    if (formulaName.includes('costo de mantenimiento de shikigami')) return { ok: true, value: 5, detail: 'PEM por turno' };
     if (formulaName.includes('dificultad de accion comun')) {
-      const levels = { facil:10, media:15, dificil:20, heroica:25 };
+      const levels = { facil: 10, media: 15, dificil: 20, heroica: 25 };
       const value = levels[normalize(options.difficulty)];
-      return value ? { ok:true, value, detail:`CD ${options.difficulty}` } : { ok:false, reason:'Elige dificultad: fácil, media, difícil o heroica' };
+      return value ? { ok: true, value, detail: `CD ${options.difficulty}` } : { ok: false, reason: 'Elige dificultad: fácil, media, difícil o heroica' };
     }
-    let expression = decode(formula.expression);
-    if (/solo |requiere|meta fija|tirada enfrentada|si el dado|respecto al valor|por cada turno/i.test(expression)) {
-      return { ok: false, reason: 'Requiere condición o decisión de juego' };
-    }
-    expression = expression.replace(/Atributo Fuerza o Agilidad/gi, String(Math.max(a.strength, a.agility)));
+    return null;
+  }
+
+  /**
+   * Tabla de etiquetas reconocidas en una expresión → su valor numérico.
+   *
+   * Varias etiquetas apuntan al mismo atributo a propósito ("Atributo Control
+   * del Creador" y "Atributo Control del Usuario" son el mismo Control): el
+   * reglamento las nombra distinto según quién conjure la técnica, y ambas deben
+   * resolverse.
+   *
+   * @param {Record<string, any>} player
+   * @param {Record<string, number>} a
+   * @param {Record<string, any>} options
+   * @returns {Record<string, number>}
+   */
+  function buildFormulaValues(player, a, options) {
     const gradeValue = (grade) => String(grade).toLowerCase() === 'special' ? 5 : Number(grade);
-    const values = {
+    return {
       'PEM Actuales del Jugador': player.resources.pemCurrent,
       'Atributo Control del Creador': a.control, 'Atributo Control del Usuario': a.control,
       'Atributo Resistencia': a.resistance, 'Atributo Agilidad': a.agility,
@@ -281,21 +312,77 @@
       'Grado Actual': Number.isFinite(Number(options.currentGrade)) ? Number(options.currentGrade) : gradeValue(player.grade),
       'Grado de la Misión': Number(options.missionGrade)
     };
+  }
+
+  /**
+   * Sustituye cada etiqueta por su valor numérico.
+   *
+   * Se recorre de la etiqueta MÁS LARGA a la más corta: "Atributo Control del
+   * Creador" contiene "Atributo Control", y en el otro orden la corta se
+   * comería el principio de la larga dejando basura sin evaluar.
+   *
+   * @param {string} expression
+   * @param {Record<string, number>} values
+   * @returns {string}
+   */
+  function substituteFormulaValues(expression, values) {
+    let out = expression;
     Object.entries(values).sort((x, y) => y[0].length - x[0].length).forEach(([label, value]) => {
       if (!Number.isFinite(Number(value))) return;
       const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      expression = expression.replace(new RegExp(`\\[?${escaped}\\]?`, 'gi'), String(value));
+      out = out.replace(new RegExp(`\\[?${escaped}\\]?`, 'gi'), String(value));
     });
-    if (Number.isFinite(Number(options.allies))) {
-      expression = expression.replace(/2\s+por cada aliado/gi, `2 * ${Number(options.allies)}`);
-    }
-    expression = expression
+    return out;
+  }
+
+  /**
+   * Retira de la expresión lo que es prosa del reglamento y no aritmética:
+   * unidades, la palabra "Fijo" y los prefijos declarativos.
+   * @param {string} expression
+   * @returns {string}
+   */
+  function cleanFormulaExpression(expression) {
+    return expression
       .replace(/^Costo de\s+(\d+(?:\.\d+)?)\s+PEM.*$/i, '$1')
       .replace(/^Atributos iguales al\s*/i, '')
       .replace(/\(Fijo\)/gi, '')
       .replace(/\b(PEM|metros?|Puntos? de Estructura|Puntos? Libres|Turnos? de Combate Activos|turnos?|XP|USD)\b/gi, '')
-      .replace(/\s+/g, ' ').trim();
-    const value = safeMath(expression);
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /**
+   * Evalúa una fórmula del reglamento contra la ficha.
+   *
+   * Eran 77 líneas con dos mecanismos distintos entrelazados: el despacho por
+   * nombre de regla y la sustitución de etiquetas en una expresión aritmética.
+   * Ahora cada uno tiene su función y el orquestador muestra el orden real:
+   * primero se busca una regla con nombre, y solo si no la hay se evalúa la
+   * expresión.
+   *
+   * @param {{ name?: string, expression?: string }} formula
+   * @param {Record<string, any>} player
+   * @param {Record<string, any>} [options]
+   * @returns {FormulaResult}
+   */
+  function evaluateFormula(formula, player, options = {}) {
+    if (!formula) return { ok: false, reason: 'Fórmula ausente' };
+    const a = derivedStats(player).attributes;
+
+    const named = evaluateNamedFormula(normalize(formula.name), player, a, options);
+    if (named) return named;
+
+    let expression = decode(formula.expression);
+    if (/solo |requiere|meta fija|tirada enfrentada|si el dado|respecto al valor|por cada turno/i.test(expression)) {
+      return { ok: false, reason: 'Requiere condición o decisión de juego' };
+    }
+    expression = expression.replace(/Atributo Fuerza o Agilidad/gi, String(Math.max(a.strength, a.agility)));
+    expression = substituteFormulaValues(expression, buildFormulaValues(player, a, options));
+    if (Number.isFinite(Number(options.allies))) {
+      expression = expression.replace(/2\s+por cada aliado/gi, `2 * ${Number(options.allies)}`);
+    }
+
+    const value = safeMath(cleanFormulaExpression(expression));
     return value === null ? { ok: false, reason: 'Contiene variables todavía no definidas' } : { ok: true, value };
   }
 
@@ -341,14 +428,40 @@
     return out;
   }
 
-  function resolveAction(story, parsedInput, options = {}) {
-    ensureStory(story);
-    const player = story.rpg.player;
-    const derived = syncResourceBounds(player);
-    const a = derived.attributes;
-    const session = story.rpg.session;
-    const text = normalize(parsedInput.text);
-    const resolution = {
+  /**
+   * @typedef {Object} Intent
+   * @property {boolean} isDomain
+   * @property {boolean} isRest
+   * @property {boolean} isHide
+   * @property {boolean} isTobari
+   * @property {boolean} isShikigami
+   * @property {boolean} isRcrt
+   * @property {boolean} isExtension
+   * @property {boolean} isCursed
+   * @property {boolean} isDefense
+   * @property {boolean} isInitiative
+   * @property {boolean} isAttack
+   * @property {boolean} isRanged
+   * @property {boolean} revealsTechnique
+   * @property {boolean} combinesTechniques
+   * @property {boolean} temporalSacrifice
+   * @property {number} teamAllies
+   * @property {boolean} isCurseOccupation
+   */
+
+  /**
+   * Sobre de resolución en su estado inicial.
+   *
+   * Los veinte campos estaban literales en mitad de `resolveAction`, de modo que
+   * leer la lógica de reglas exigía saltar la construcción del objeto. Tener la
+   * forma en una función aparte también fija el contrato: quien consume una
+   * resolución sabe qué campos existen siempre.
+   *
+   * @param {{ type: string, text: string }} parsedInput
+   * @returns {Record<string, any>}
+   */
+  function createResolution(parsedInput) {
+    return {
       possible: true, needsAi: parsedInput.type !== 'ooc', type: parsedInput.type,
       roll: null, rolls: [], naturalRoll: null, modifier: 0, total: null, cd: null,
       advantage: false, disadvantage: false, damage: null, damageFormula: '',
@@ -356,10 +469,22 @@
       reasons: [], ruleNumbers: relevantRuleNumbers(parsedInput.text),
       updates: { pemDelta: 0, hpDelta: 0, combatTurnsDelta: 0, conditionsAdd: [], conditionsRemove: [] }
     };
-    if (parsedInput.type === 'empty') { resolution.possible = false; resolution.needsAi = false; resolution.reasons.push('Escribe una acción, diálogo o consulta.'); return resolution; }
-    if (parsedInput.type === 'ooc') { resolution.needsAi = true; resolution.formula = 'Consulta fuera de personaje: sin tirada ni gasto.'; return resolution; }
-    if (parsedInput.type === 'dialogue') { resolution.formula = 'Diálogo: no requiere tirada salvo engaño, persuasión o amenaza explícita.'; return resolution; }
+  }
 
+  /**
+   * Clasifica la intención del jugador a partir del texto normalizado.
+   *
+   * `isAttack` no es solo un patrón: es el caso por defecto de una técnica
+   * maldita que no encaja en ninguna de las especializaciones, y por eso depende
+   * de las demás banderas. Esa dependencia estaba implícita en una expresión de
+   * seis negaciones dentro de un bloque de veinte `const`; al aislarla queda a la
+   * vista que el orden de evaluación importa.
+   *
+   * @param {string} text   Texto ya normalizado (sin acentos, en minúsculas).
+   * @param {Record<string, any>} player
+   * @returns {Intent}
+   */
+  function classifyIntent(text, player) {
     const isDomain = /expansion de dominio|abrir (?:mi |el )?dominio|activo (?:mi |el )?dominio/.test(text);
     const isRest = /descans|recuper|medit|reposo/.test(text);
     const isHide = /ocult|borro mi rastro|escondo mi energia/.test(text);
@@ -370,180 +495,290 @@
     const isCursed = /tecnica|maldit|pem|energia|flujo|hechizo/.test(text);
     const isDefense = /esquiv|defiend|bloque|resist/.test(text);
     const isInitiative = /iniciativa|quien ataca primero/.test(text);
-    const isAttack = /atac|golpe|corto|disparo|peleo|embisto|lanzo/.test(text) || (isCursed && !isRcrt && !isDomain && !isHide && !isTobari && !isShikigami && !isRest);
-    const isRanged = /distancia|disparo|arco|proyectil/.test(text);
-    const revealsTechnique = /revelo|revelar|explico (?:mi |la )?tecnica/.test(text);
-    const combinesTechniques = /sinergia de tecnicas|combino (?:mi |la )?tecnica|tecnicas afines/.test(text);
-    const temporalSacrifice = /sacrificio temporal|sacrifico 20|cambio 20 de vida/.test(text);
+    const isSpecialized = isRcrt || isDomain || isHide || isTobari || isShikigami || isRest;
+    const isAttack = /atac|golpe|corto|disparo|peleo|embisto|lanzo/.test(text) || (isCursed && !isSpecialized);
     const allyMatch = text.match(/(\d+)\s+aliad/);
-    const teamAllies = allyMatch ? Math.max(0, Number(allyMatch[1]) || 0) : (/con mi aliado|junto a mi aliado/.test(text) ? 1 : 0);
-    const isCurseOccupation = /maldicion/.test(normalize(player.occupation));
 
-    if (isRcrt && !isCurseOccupation && !player.hasRcrt) {
-      resolution.possible = false; resolution.needsAi = false;
-      resolution.reasons.push('RCRT bloqueada: la ficha no declara el talento médico raro de Técnica Inversa.');
-      return resolution;
+    return {
+      isDomain,
+      isRest,
+      isHide,
+      isTobari,
+      isShikigami,
+      isRcrt,
+      isExtension,
+      isCursed,
+      isDefense,
+      isInitiative,
+      isAttack,
+      isRanged: /distancia|disparo|arco|proyectil/.test(text),
+      revealsTechnique: /revelo|revelar|explico (?:mi |la )?tecnica/.test(text),
+      combinesTechniques: /sinergia de tecnicas|combino (?:mi |la )?tecnica|tecnicas afines/.test(text),
+      temporalSacrifice: /sacrificio temporal|sacrifico 20|cambio 20 de vida/.test(text),
+      teamAllies: allyMatch ? Math.max(0, Number(allyMatch[1]) || 0) : (/con mi aliado|junto a mi aliado/.test(text) ? 1 : 0),
+      isCurseOccupation: /maldicion/.test(normalize(player.occupation))
+    };
+  }
+
+  /**
+   * Motivo por el que la acción queda bloqueada antes de calcular nada, o null.
+   *
+   * @param {Record<string, any>} player
+   * @param {Intent} intent
+   * @param {Record<string, any>} session
+   * @returns {string|null}
+   */
+  function blockingReason(player, intent, session) {
+    if (intent.isRcrt && !intent.isCurseOccupation && !player.hasRcrt) {
+      return 'RCRT bloqueada: la ficha no declara el talento médico raro de Técnica Inversa.';
     }
-    if (player.heavenlyRestriction && isCursed) {
-      resolution.possible = false; resolution.needsAi = false;
-      resolution.reasons.push('La Restricción Celestial fija el PEM en 0: no puedes activar técnicas que gasten energía maldita.');
-      return resolution;
+    if (player.heavenlyRestriction && intent.isCursed) {
+      return 'La Restricción Celestial fija el PEM en 0: no puedes activar técnicas que gasten energía maldita.';
     }
-    if (isCursed && player.conditions.includes('burnout-domain') && !isRcrt) {
-      resolution.possible = false; resolution.needsAi = false;
-      resolution.reasons.push(`Quemadura post-Dominio activa: la Técnica Innata sigue bloqueada ${session.burnoutTurnsRemaining || 3} turno(s).`);
-      return resolution;
+    if (intent.isCursed && player.conditions.includes('burnout-domain') && !intent.isRcrt) {
+      return `Quemadura post-Dominio activa: la Técnica Innata sigue bloqueada ${session.burnoutTurnsRemaining || 3} turno(s).`;
     }
-    if (isDomain) {
+    return null;
+  }
+
+  /**
+   * Coste en PEM y fórmula visible de la técnica activada.
+   *
+   * Es una cadena if/else-if y el orden ES la regla: el Dominio se evalúa antes
+   * que la técnica básica porque ambas coinciden en el texto, y el descanso
+   * termina la resolución sin tirada. Devuelve 'finished' cuando la rama agota la
+   * acción, para que el orquestador sepa que no debe seguir.
+   *
+   * @param {Record<string, any>} resolution
+   * @param {Record<string, any>} player
+   * @param {Record<string, any>} derived
+   * @param {Intent} intent
+   * @param {string} text
+   * @returns {'finished'|'continue'}
+   */
+  function applyTechniqueCost(resolution, player, derived, intent, text) {
+    const a = derived.attributes;
+
+    if (intent.isDomain) {
       resolution.pemCost = Math.ceil(player.resources.pemCurrent * 0.80);
       resolution.formula = `Costo = PEM actuales (${player.resources.pemCurrent}) × 0,80 = ${resolution.pemCost} PEM.`;
       if (!gradeCanUseDomain(player.grade)) resolution.reasons.push('Requisito incumplido: solo Grado 1 o Especial puede manifestar un Dominio.');
       if (a.control <= 15) resolution.reasons.push(`Requisito incumplido: Control ${a.control}; la fórmula exige Control > 15.`);
       if (player.conditions.includes('burnout-domain')) resolution.reasons.push('La técnica innata sigue quemada tras un Dominio anterior.');
-      if (resolution.reasons.length) { resolution.possible = false; resolution.needsAi = false; return resolution; }
+      if (resolution.reasons.length) { resolution.possible = false; resolution.needsAi = false; return 'finished'; }
       resolution.updates.conditionsAdd.push('dominio-activo');
-    } else if (isRest) {
+    } else if (intent.isRest) {
       resolution.pemRecovery = derived.recoveryPem;
       resolution.formula = `Recuperación = 15 + Reserva (${(player.attributes || {}).reserve || 0}) = ${resolution.pemRecovery} PEM.`;
       resolution.updates.pemDelta = resolution.pemRecovery;
       resolution.needsAi = true;
-      return resolution;
-    } else if (isHide) {
+      return 'finished';
+    } else if (intent.isHide) {
       resolution.pemCost = 5; resolution.formula = 'Ocultamiento = 5 PEM por turno.';
-    } else if (isTobari) {
+    } else if (intent.isTobari) {
       resolution.pemCost = 20; resolution.formula = `Tobari = 20 PEM; estructura = Control (${a.control}) × 50 = ${a.control * 50}.`;
-    } else if (isShikigami) {
+    } else if (intent.isShikigami) {
       resolution.pemCost = 5; resolution.formula = 'Mantenimiento de Shikigami = 5 PEM por turno.';
-    } else if (isRcrt) {
+    } else if (intent.isRcrt) {
       const healMatch = text.match(/(?:sano|curo|regenero|recupero)\s*(\d+)/);
       const heal = healMatch ? Number(healMatch[1]) : 10;
       const healsAlly = /aliad|companero|compañero|otra persona/.test(text);
-      resolution.pemCost = isCurseOccupation ? heal : healsAlly ? Math.ceil(heal * 4) : Math.ceil(heal * 3);
-      resolution.formula = isCurseOccupation
+      resolution.pemCost = intent.isCurseOccupation ? heal : healsAlly ? Math.ceil(heal * 4) : Math.ceil(heal * 3);
+      resolution.formula = intent.isCurseOccupation
         ? `Regeneración de maldición: ${heal} de Vida cuesta ${resolution.pemCost} PEM (1 a 1).`
         : healsAlly
           ? `Curación a aliado: sanar ${heal} de Vida cuesta ${resolution.pemCost} PEM (4 por punto).`
           : `RCRT: sanar ${heal} de Vida cuesta ${resolution.pemCost} PEM (3 por punto).`;
       // La Vida solo se suma a esta ficha si el objetivo es el propio personaje.
       if (!healsAlly) resolution.updates.hpDelta = heal;
-    } else if (isExtension) {
+    } else if (intent.isExtension) {
       const extraMatch = text.match(/dano extra\s*(\d+)/);
       const extraDamage = extraMatch ? Number(extraMatch[1]) : 0;
       resolution.pemCost = 20 + extraDamage * 2;
       resolution.formula = `Técnica de Extensión = 20 PEM + daño extra (${extraDamage}) × 2 = ${resolution.pemCost} PEM.`;
-    } else if (isCursed) {
+    } else if (intent.isCursed) {
       resolution.pemCost = 10; resolution.formula = 'Técnica básica = 10 PEM; tirada = D20 + Flujo + Control.';
     }
+    return 'continue';
+  }
 
+  /**
+   * Comprobación de PEM y efectos de coste fijo que no llevan tirada.
+   *
+   * @param {Record<string, any>} resolution
+   * @param {Record<string, any>} player
+   * @param {Intent} intent
+   * @returns {'finished'|'continue'}
+   */
+  function applyFixedCostEffects(resolution, player, intent) {
     if (resolution.pemCost > player.resources.pemCurrent) {
       resolution.possible = false; resolution.needsAi = false;
       resolution.reasons.push(`PEM insuficiente: necesitas ${resolution.pemCost} y tienes ${player.resources.pemCurrent}.`);
-      return resolution;
+      return 'finished';
     }
-    if (isDomain) {
-      // Manifestar el Dominio tiene requisitos y coste, pero no una tirada de activación.
-      // Las tiradas aparecen solo en un Choque de Dominios explícito.
+    if (intent.isDomain) {
+      // Manifestar el Dominio tiene requisitos y coste, pero no una tirada de
+      // activación: las tiradas aparecen solo en un Choque de Dominios explícito.
       resolution.updates.pemDelta = -resolution.pemCost;
       resolution.updates.combatTurnsDelta = 1;
       resolution.reasons.push('Dominio manifestado: dura hasta 3 turnos y después aplica quemadura de técnica por 3 turnos.');
-      return resolution;
+      return 'finished';
     }
-    if (isRcrt || isTobari || isHide || isShikigami) {
+    if (intent.isRcrt || intent.isTobari || intent.isHide || intent.isShikigami) {
       resolution.updates.pemDelta = -resolution.pemCost;
       resolution.updates.combatTurnsDelta = 1;
       resolution.reasons.push('Efecto activado con su coste fijo; no corresponde inventar una tirada adicional.');
-      return resolution;
+      return 'finished';
     }
+    return 'continue';
+  }
 
-    if (temporalSacrifice) {
-      if (player.resources.hpCurrent <= 20) {
-        resolution.possible = false; resolution.needsAi = false;
-        resolution.reasons.push('Vida insuficiente para el Sacrificio Temporal de 20 puntos.');
-        return resolution;
-      }
-      resolution.hpCost = 20;
-      resolution.updates.hpDelta = (resolution.updates.hpDelta || 0) - 20;
-      resolution.reasons.push('Sacrificio Temporal: -20 Vida y +5 a esta acción.');
+  /**
+   * Sacrificio Temporal: cambia 20 puntos de Vida por +5 a esta acción.
+   * @param {Record<string, any>} resolution
+   * @param {Record<string, any>} player
+   * @param {Intent} intent
+   * @returns {'finished'|'continue'}
+   */
+  function applyTemporalSacrifice(resolution, player, intent) {
+    if (!intent.temporalSacrifice) return 'continue';
+    if (player.resources.hpCurrent <= 20) {
+      resolution.possible = false; resolution.needsAi = false;
+      resolution.reasons.push('Vida insuficiente para el Sacrificio Temporal de 20 puntos.');
+      return 'finished';
     }
+    resolution.hpCost = 20;
+    resolution.updates.hpDelta = (resolution.updates.hpDelta || 0) - 20;
+    resolution.reasons.push('Sacrificio Temporal: -20 Vida y +5 a esta acción.');
+    return 'continue';
+  }
 
+  /**
+   * Atributo que modifica la tirada, según la intención declarada.
+   *
+   * La cadena de prioridad es la regla y su orden importa: iniciativa antes que
+   * defensa, defensa con bloqueo usa Resistencia y sin bloqueo Agilidad, etc.
+   *
+   * @param {Record<string, number>} a Atributos derivados.
+   * @param {Intent} intent
+   * @param {string} text
+   * @returns {number}
+   */
+  function resolveModifier(a, intent, text) {
+    if (intent.isInitiative) return a.agility;
+    if (intent.isDefense && /bloque|resist/.test(text)) return a.resistance;
+    if (intent.isDefense) return a.agility;
+    if (intent.isCursed) return a.flow + a.control;
+    if (intent.isAttack) return Math.max(a.strength, a.agility);
+    if (/fuerza|romp|levanto|empujo/.test(text)) return a.strength;
+    if (/agil|corro|salto|sigilo/.test(text)) return a.agility;
+    if (/resist|aguanto/.test(text)) return a.resistance;
+    if (/percib|detecto|siento|investig/.test(text)) return a.control;
+    return Math.max(a.agility, a.control);
+  }
+
+  /**
+   * Ejecuta la tirada (o tiradas, con ventaja/desventaja) y rellena el sobre.
+   *
+   * @param {Record<string, any>} resolution
+   * @param {string} text
+   * @param {{ forcedRoll?: number|null, forcedRolls?: number[], randomFn?: () => number }} options
+   * @returns {number} El dado natural elegido.
+   */
+  function performRoll(resolution, text, options) {
     resolution.advantage = /ventaja|emboscada|posicion ideal/.test(text) && !/desventaja/.test(text);
     resolution.disadvantage = /desventaja|a ciegas|herido/.test(text);
+
     const supplied = Array.isArray(options.forcedRolls) ? options.forcedRolls.slice(0, 2) : [];
     if (options.forcedRoll != null) supplied.unshift(options.forcedRoll);
     const rollOne = () => clamp(supplied.length ? supplied.shift() : secureD20(options.randomFn), 1, 20);
+
     const firstRoll = rollOne();
     const secondRoll = (resolution.advantage || resolution.disadvantage) ? rollOne() : null;
-    const natural = resolution.advantage ? Math.max(firstRoll, secondRoll) : resolution.disadvantage ? Math.min(firstRoll, secondRoll) : firstRoll;
+    const natural = resolution.advantage ? Math.max(firstRoll, secondRoll)
+      : resolution.disadvantage ? Math.min(firstRoll, secondRoll) : firstRoll;
     resolution.rolls = secondRoll == null ? [firstRoll] : [firstRoll, secondRoll];
-    let modifier = 0;
-    if (isInitiative) modifier = a.agility;
-    else if (isDefense && /bloque|resist/.test(text)) modifier = a.resistance;
-    else if (isDefense) modifier = a.agility;
-    else if (isCursed) modifier = a.flow + a.control;
-    else if (isAttack) modifier = Math.max(a.strength, a.agility);
-    else if (/fuerza|romp|levanto|empujo/.test(text)) modifier = a.strength;
-    else if (/agil|corro|salto|sigilo/.test(text)) modifier = a.agility;
-    else if (/resist|aguanto/.test(text)) modifier = a.resistance;
-    else if (/percib|detecto|siento|investig/.test(text)) modifier = a.control;
-    else modifier = Math.max(a.agility, a.control);
-    modifier += teamAllies * 2;
-    if (temporalSacrifice) modifier += 5;
-
     resolution.naturalRoll = natural;
-    resolution.modifier = modifier;
-    resolution.total = natural + modifier;
-    const cdMatch = parsedInput.text.match(/\bCD\s*[:=]?\s*(\d+)/i);
-    resolution.cd = cdMatch ? Number(cdMatch[1]) : 15;
-    const diceLabel = secondRoll == null ? `D20 (${natural})` : `${resolution.advantage ? 'Ventaja' : 'Desventaja'} D20 (${firstRoll}, ${secondRoll}) → ${natural}`;
-    resolution.roll = `${diceLabel} + ${modifier} = ${resolution.total} vs CD ${resolution.cd}`;
-    if (!resolution.formula) resolution.formula = 'Acción dudosa = D20 + atributo pertinente.';
-    if (isAttack) {
-      const weaponMatch = parsedInput.text.match(/(?:arma|modificador)\s*\+\s*(\d+)/i);
-      const weaponModifier = weaponMatch ? Number(weaponMatch[1]) : 0;
-      let baseDamage;
-      if (isExtension) {
-        baseDamage = a.flow * 4 + resolution.pemCost;
-        resolution.damageFormula = `Extensión: Flujo (${a.flow}) × 4 + PEM (${resolution.pemCost})`;
-      } else if (isCursed) {
-        baseDamage = a.flow * 3 + resolution.pemCost / 2;
-        resolution.damageFormula = `Técnica básica: Flujo (${a.flow}) × 3 + PEM/2 (${resolution.pemCost / 2})`;
-      } else if (isRanged) {
-        baseDamage = a.agility * 1.5 + weaponModifier;
-        resolution.damageFormula = `Distancia: Agilidad (${a.agility}) × 1,5 + arma (${weaponModifier})`;
-      } else {
-        baseDamage = a.strength * 2 + weaponModifier;
-        resolution.damageFormula = `Melee: Fuerza (${a.strength}) × 2 + arma (${weaponModifier})`;
-      }
-      if (revealsTechnique && isCursed) {
-        baseDamage *= 1.30;
-        resolution.damageFormula += ' × 1,30 por revelar la técnica';
-      }
-      if (combinesTechniques && isCursed) {
-        baseDamage *= 2;
-        resolution.damageFormula += ' × 2 por sinergia de técnicas afines';
-      }
-      if (natural === 20) {
-        baseDamage *= 2.5;
-        resolution.damageFormula += ' × 2,5 por Destello Negro';
-      }
-      const targetsCurse = /maldicion/.test(text);
-      const hasCursedWeapon = /maldit|imbuid/.test(normalize(`${player.equipment || ''} ${parsedInput.text}`));
-      if (targetsCurse && !isCursed && !hasCursedWeapon) {
-        resolution.damage = 0;
-        resolution.damageFormula += '; arma sin PEM contra una maldición';
-        resolution.reasons.push('El impacto puede alterar el entorno, pero un arma sin PEM no inflige daño permanente a una maldición.');
-      } else {
-        resolution.damage = Math.round(baseDamage * 100) / 100;
-      }
+    return natural;
+  }
+
+  /**
+   * Daño del impacto y su fórmula trazable.
+   *
+   * Los multiplicadores se aplican en un orden fijo (base → revelación →
+   * sinergia → Destello Negro) y cada uno deja rastro en `damageFormula`, que es
+   * lo que el jugador lee para auditar el número.
+   *
+   * @param {Record<string, any>} resolution
+   * @param {Record<string, any>} player
+   * @param {Intent} intent
+   * @param {Record<string, number>} a
+   * @param {{ text: string }} parsedInput
+   * @param {string} text
+   * @param {number} natural
+   * @returns {void}
+   */
+  function computeDamage(resolution, player, intent, a, parsedInput, text, natural) {
+    const weaponMatch = parsedInput.text.match(/(?:arma|modificador)\s*\+\s*(\d+)/i);
+    const weaponModifier = weaponMatch ? Number(weaponMatch[1]) : 0;
+    let baseDamage;
+
+    if (intent.isExtension) {
+      baseDamage = a.flow * 4 + resolution.pemCost;
+      resolution.damageFormula = `Extensión: Flujo (${a.flow}) × 4 + PEM (${resolution.pemCost})`;
+    } else if (intent.isCursed) {
+      baseDamage = a.flow * 3 + resolution.pemCost / 2;
+      resolution.damageFormula = `Técnica básica: Flujo (${a.flow}) × 3 + PEM/2 (${resolution.pemCost / 2})`;
+    } else if (intent.isRanged) {
+      baseDamage = a.agility * 1.5 + weaponModifier;
+      resolution.damageFormula = `Distancia: Agilidad (${a.agility}) × 1,5 + arma (${weaponModifier})`;
+    } else {
+      baseDamage = a.strength * 2 + weaponModifier;
+      resolution.damageFormula = `Melee: Fuerza (${a.strength}) × 2 + arma (${weaponModifier})`;
+    }
+
+    if (intent.revealsTechnique && intent.isCursed) {
+      baseDamage *= 1.30;
+      resolution.damageFormula += ' × 1,30 por revelar la técnica';
+    }
+    if (intent.combinesTechniques && intent.isCursed) {
+      baseDamage *= 2;
+      resolution.damageFormula += ' × 2 por sinergia de técnicas afines';
     }
     if (natural === 20) {
-      if (isAttack) {
+      baseDamage *= 2.5;
+      resolution.damageFormula += ' × 2,5 por Destello Negro';
+    }
+
+    const targetsCurse = /maldicion/.test(text);
+    const hasCursedWeapon = /maldit|imbuid/.test(normalize(`${player.equipment || ''} ${parsedInput.text}`));
+    if (targetsCurse && !intent.isCursed && !hasCursedWeapon) {
+      resolution.damage = 0;
+      resolution.damageFormula += '; arma sin PEM contra una maldición';
+      resolution.reasons.push('El impacto puede alterar el entorno, pero un arma sin PEM no inflige daño permanente a una maldición.');
+    } else {
+      resolution.damage = Math.round(baseDamage * 100) / 100;
+    }
+  }
+
+  /**
+   * Consecuencias del dado natural: 20 (Destello Negro), 1 (pifia) o normal.
+   * @param {Record<string, any>} resolution
+   * @param {number} natural
+   * @param {Intent} intent
+   * @returns {void}
+   */
+  function applyNaturalOutcome(resolution, natural, intent) {
+    if (natural === 20) {
+      if (intent.isAttack) {
         resolution.reasons.push('20 natural en ataque: Destello Negro ×2,5 y estado En la Zona por 3 turnos.');
         resolution.updates.conditionsAdd.push('zone-3');
       } else {
         resolution.reasons.push('20 natural: éxito crítico con información o efecto adicional, sin forzar un Destello Negro.');
       }
-    } else if (natural === 1) {
+      return;
+    }
+    if (natural === 1) {
       if (resolution.damage != null) {
         const selfDamage = Math.round(resolution.damage / 2 * 100) / 100;
         resolution.updates.hpDelta -= selfDamage;
@@ -551,24 +786,109 @@
       } else {
         resolution.reasons.push('1 natural: pifia crítica; el GM debe aplicar una consecuencia catastrófica coherente.');
       }
-    } else {
-      resolution.reasons.push(resolution.total >= resolution.cd ? 'La tirada supera la dificultad.' : 'La tirada no alcanza la dificultad.');
+      return;
     }
-    if (isAttack && !isCursed && resolution.total < resolution.cd && !player.heavenlyRestriction) {
+    resolution.reasons.push(resolution.total >= resolution.cd ? 'La tirada supera la dificultad.' : 'La tirada no alcanza la dificultad.');
+  }
+
+  /**
+   * Efectos de cierre: coste, avance de turno de combate y fatiga.
+   * @param {Record<string, any>} resolution
+   * @param {Record<string, any>} player
+   * @param {Record<string, any>} session
+   * @param {Intent} intent
+   * @param {string} text
+   * @returns {void}
+   */
+  function applyAftermath(resolution, player, session, intent, text) {
+    if (intent.isAttack && !intent.isCursed && resolution.total < resolution.cd && !player.heavenlyRestriction) {
       const concentrationLoss = Math.min(5, player.resources.pemCurrent);
       resolution.updates.pemDelta -= concentrationLoss;
       resolution.reasons.push(`Ataque físico fallido por desconcentración: -${concentrationLoss} PEM.`);
     }
-    if (isAttack && /area|explosion|onda expansiva/.test(text) && /aliad|companero|compañero|equipo/.test(text)) {
+    if (intent.isAttack && /area|explosion|onda expansiva/.test(text) && /aliad|companero|compañero|equipo/.test(text)) {
       resolution.reasons.push('Fuego amigo activo: la técnica de área también amenaza a los aliados dentro del espacio declarado.');
     }
     resolution.updates.pemDelta -= resolution.pemCost;
-    if (isAttack || isDefense || isDomain) resolution.updates.combatTurnsDelta = 1;
+    if (intent.isAttack || intent.isDefense || intent.isDomain) resolution.updates.combatTurnsDelta = 1;
+
     const nextCombatTurn = session.combatTurns + resolution.updates.combatTurnsDelta;
     if (nextCombatTurn >= 5 && !player.conditions.includes('fatiga-10')) {
       resolution.updates.conditionsAdd.push('fatiga-10');
       resolution.reasons.push('Fatiga: tras 5 turnos de combate, los atributos físicos bajan un 10%.');
     }
+  }
+
+  /**
+   * Resuelve una acción del jugador contra las reglas del sistema.
+   *
+   * Eran 221 líneas con la clasificación de intención, los bloqueos de ficha, la
+   * tabla de costes por técnica, la tirada, el cálculo de daño con sus
+   * multiplicadores, las consecuencias del natural y el cierre de turno todo en
+   * el mismo cuerpo. Ahora es un orquestador: cada fase es una función con
+   * contrato propio, y el flujo se lee como lo que es, una secuencia de reglas
+   * donde algunas fases pueden terminar la resolución antes de tiempo.
+   *
+   * @param {Record<string, any>} story
+   * @param {{ type: string, text: string }} parsedInput
+   * @param {{ forcedRoll?: number|null, forcedRolls?: number[], randomFn?: () => number }} [options]
+   * @returns {Record<string, any>}
+   */
+  function resolveAction(story, parsedInput, options = {}) {
+    ensureStory(story);
+    const player = story.rpg.player;
+    const derived = syncResourceBounds(player);
+    const session = story.rpg.session;
+    const text = normalize(parsedInput.text);
+    const resolution = createResolution(parsedInput);
+
+    if (parsedInput.type === 'empty') {
+      resolution.possible = false; resolution.needsAi = false;
+      resolution.reasons.push('Escribe una acción, diálogo o consulta.');
+      return resolution;
+    }
+    if (parsedInput.type === 'ooc') {
+      resolution.needsAi = true;
+      resolution.formula = 'Consulta fuera de personaje: sin tirada ni gasto.';
+      return resolution;
+    }
+    if (parsedInput.type === 'dialogue') {
+      resolution.formula = 'Diálogo: no requiere tirada salvo engaño, persuasión o amenaza explícita.';
+      return resolution;
+    }
+
+    const intent = classifyIntent(text, player);
+
+    const blocked = blockingReason(player, intent, session);
+    if (blocked) {
+      resolution.possible = false; resolution.needsAi = false;
+      resolution.reasons.push(blocked);
+      return resolution;
+    }
+
+    if (applyTechniqueCost(resolution, player, derived, intent, text) === 'finished') return resolution;
+    if (applyFixedCostEffects(resolution, player, intent) === 'finished') return resolution;
+    if (applyTemporalSacrifice(resolution, player, intent) === 'finished') return resolution;
+
+    const natural = performRoll(resolution, text, options);
+    let modifier = resolveModifier(derived.attributes, intent, text);
+    modifier += intent.teamAllies * 2;
+    if (intent.temporalSacrifice) modifier += 5;
+
+    resolution.modifier = modifier;
+    resolution.total = natural + modifier;
+    const cdMatch = parsedInput.text.match(/\bCD\s*[:=]?\s*(\d+)/i);
+    resolution.cd = cdMatch ? Number(cdMatch[1]) : 15;
+
+    const diceLabel = resolution.rolls.length < 2
+      ? `D20 (${natural})`
+      : `${resolution.advantage ? 'Ventaja' : 'Desventaja'} D20 (${resolution.rolls[0]}, ${resolution.rolls[1]}) → ${natural}`;
+    resolution.roll = `${diceLabel} + ${modifier} = ${resolution.total} vs CD ${resolution.cd}`;
+    if (!resolution.formula) resolution.formula = 'Acción dudosa = D20 + atributo pertinente.';
+
+    if (intent.isAttack) computeDamage(resolution, player, intent, derived.attributes, parsedInput, text, natural);
+    applyNaturalOutcome(resolution, natural, intent);
+    applyAftermath(resolution, player, session, intent, text);
     return resolution;
   }
 
@@ -649,62 +969,256 @@
     return `Mundo: ${story.rpg.campaign.referenceWork}\nUbicación: ${s.location}\nReloj: ${s.clock}\nMisiones: ${s.quests.filter(q=>q.status !== 'completed' && q.status !== 'failed').length} activas\nFacciones: ${s.factions.length}\nInventario: ${s.inventory.length} objetos\nPistas: ${s.clues.length}\nHeridas: ${s.wounds.filter(w=>w.status !== 'healed').length}\nConsecuencias: ${s.consequences.length}`;
   }
 
+  /**
+   * @typedef {Object} CampaignCtx
+   * @property {Record<string, any>} story
+   * @property {{ handled: boolean, command?: string, args?: string, ok?: boolean, error?: string }} parsed
+   *   `parseCampaignCommand` devuelve varias formas según el caso (comando no
+   *   reconocido, error de sintaxis, comando válido), así que solo `handled` es
+   *   obligatorio. Tiparlo como `{ command: string, args: string }` —la forma del
+   *   caso feliz— hacía que el compilador rechazara la llamada legítima.
+   * @property {Record<string, any>} s `worldState` de la campaña.
+   * @property {string} text Argumentos del comando, ya recortados.
+   * @property {(collection: string, item: Record<string, any>) => void} add
+   * @property {() => CampaignCommandResult|null} directorOnly
+   */
+
+  /**
+   * @typedef {Object} CampaignCommandResult
+   * @property {boolean} handled
+   * @property {boolean} [ok]
+   * @property {boolean} [changed] True si el comando modificó el estado del mundo.
+   * @property {string} command
+   * @property {string} message
+   */
+
+  /**
+   * Contexto que comparten los manejadores de comandos de campaña.
+   *
+   * `add` y `directorOnly` vivían como dos flechas locales dentro del switch; al
+   * sacarlas aquí cada manejador recibe lo mismo y la regla de permisos —los
+   * cambios directos del mundo son del Director— queda escrita una sola vez.
+   *
+   * @param {Record<string, any>} story Ya validado por `ensureStory`.
+   * @param {CampaignCtx['parsed']} parsed
+   */
+  function createCampaignContext(story, parsed) {
+    const s = story.rpg.worldState;
+    return {
+      story,
+      parsed,
+      s,
+      text: parsed.args,
+      add: (collection, item) => { s[collection].push({ id:campaignId(collection.slice(0,-1)), createdAt:now(), ...item }); },
+      directorOnly: () => story.rpg.role === 'director' ? null : { handled:true, ok:false, command:parsed.command, message:'Este cambio directo del mundo requiere modo Director. En modo Jugador, decláralo como acción para que el GM resuelva sus consecuencias.' }
+    };
+  }
+
+  /**
+   * Lista de comandos disponibles.
+   *
+   * Acepta: `/ayuda`, `/help`.
+   *
+   * @param {CampaignCtx} ctx
+   * @returns {CampaignCommandResult}
+   */
+  function cmdAyuda(ctx) {
+    const { parsed } = ctx;
+    return { handled:true, ok:true, command:parsed.command, message:'Comandos: /estado, /reloj, /inventario, /mision, /faccion, /relacion, /pista, /herida, /rumor, /tiempo. Usa “+ texto” para añadir y “- texto” para retirar cuando corresponda.' };
+  }
+
+  /**
+   * Resumen del estado de la campaña.
+   *
+   * Acepta: `/estado`, `/status`.
+   *
+   * @param {CampaignCtx} ctx
+   * @returns {CampaignCommandResult}
+   */
+  function cmdEstado(ctx) {
+    const { story, parsed } = ctx;
+    return { handled:true, ok:true, command:parsed.command, message:campaignStatus(story) };
+  }
+
+  /**
+   * Relojes de presión: sin argumentos lista, con “nombre +N/-N” avanza, con “+ nombre [v/m]” crea.
+   *
+   * Acepta: `/reloj`.
+   *
+   * @param {CampaignCtx} ctx
+   * @returns {CampaignCommandResult}
+   */
+  function cmdReloj(ctx) {
+    const { s, text, add, directorOnly } = ctx;
+    {
+    if (!text) return { handled:true, ok:true, command:'reloj', message:s.clocks.length ? s.clocks.map(c=>`${c.name}: ${c.value}/${c.max}`).join('\n') : 'No hay relojes activos.' };
+    const tick = text.match(/^(.+?)\s+([+-]\d+)$/);
+    if (tick) {
+      const guard=directorOnly(); if(guard)return guard;
+      const clock=s.clocks.find(c=>normalize(c.name)===normalize(tick[1])); if(!clock)return{handled:true,ok:false,command:'reloj',message:'No existe ese reloj.'};
+      clock.value=clamp(clock.value+Number(tick[2]),0,clock.max); clock.updatedAt=now();
+      return {handled:true,ok:true,changed:true,command:'reloj',message:`${clock.name}: ${clock.value}/${clock.max}`};
+    }
+    const create=text.match(/^\+?\s*(.+?)(?:\s+(\d+)\/(\d+))?$/); const guard=directorOnly(); if(guard)return guard;
+    add('clocks',{name:create[1].trim(),value:Number(create[2])||0,max:Number(create[3])||6});
+    return {handled:true,ok:true,changed:true,command:'reloj',message:`Reloj creado: ${create[1].trim()}.`};
+  }
+  }
+
+  /**
+   * Inventario del grupo: sin argumentos lista, “- nombre” retira y “+ nombre” añade.
+   *
+   * Acepta: `/inventario`.
+   *
+   * @param {CampaignCtx} ctx
+   * @returns {CampaignCommandResult}
+   */
+  function cmdInventario(ctx) {
+    const { story, s, text, add, directorOnly } = ctx;
+    {
+    if (!text) return {handled:true,ok:true,command:'inventario',message:s.inventory.length?s.inventory.map(i=>`${i.quantity||1}× ${i.name}`).join('\n'):'Inventario vacío.'};
+    const guard=directorOnly(); if(guard)return guard;
+    if (/^-\s*/.test(text)) { const name=text.replace(/^-\s*/,''); const i=s.inventory.findIndex(x=>normalize(x.name)===normalize(name)); if(i<0)return{handled:true,ok:false,command:'inventario',message:'Objeto no encontrado.'}; s.inventory.splice(i,1); return{handled:true,ok:true,changed:true,command:'inventario',message:`Retirado: ${name}.`}; }
+    const name=text.replace(/^\+\s*/,''); add('inventory',{name,quantity:1,owner:story.rpg.player.name||'grupo'}); return{handled:true,ok:true,changed:true,command:'inventario',message:`Añadido al inventario: ${name}.`};
+  }
+  }
+
+  /**
+   * Misiones: sin argumentos lista, “completar X” cierra y “+ título” registra una nueva.
+   *
+   * Acepta: `/mision`, `/misión`.
+   *
+   * @param {CampaignCtx} ctx
+   * @returns {CampaignCommandResult}
+   */
+  function cmdMision(ctx) {
+    const { s, text, add, directorOnly } = ctx;
+    {
+    if (!text) return {handled:true,ok:true,command:'mision',message:s.quests.length?s.quests.map(q=>`[${q.status}] ${q.title}`).join('\n'):'No hay misiones.'};
+    const guard=directorOnly(); if(guard)return guard;
+    const done=text.match(/^(?:completar|complete)\s+(.+)$/i); if(done){const q=s.quests.find(x=>normalize(x.id)===normalize(done[1])||normalize(x.title)===normalize(done[1]));if(!q)return{handled:true,ok:false,command:'mision',message:'Misión no encontrada.'};q.status='completed';q.updatedAt=now();return{handled:true,ok:true,changed:true,command:'mision',message:`Misión completada: ${q.title}.`};}
+    const title=text.replace(/^\+\s*/,''); add('quests',{title,status:'active',objective:title}); return{handled:true,ok:true,changed:true,command:'mision',message:`Misión registrada: ${title}.`};
+  }
+  }
+
+  /**
+   * Facciones: sin argumentos lista, “+ nombre | objetivo” crea una.
+   *
+   * Acepta: `/faccion`, `/facción`.
+   *
+   * @param {CampaignCtx} ctx
+   * @returns {CampaignCommandResult}
+   */
+  function cmdFaccion(ctx) {
+    const { s, text, add, directorOnly } = ctx;
+    {
+    if (!text) return {handled:true,ok:true,command:'faccion',message:s.factions.length?s.factions.map(f=>`${f.name}: ${f.goal} (${f.progress||0}%)`).join('\n'):'No hay facciones.'};
+    const guard=directorOnly(); if(guard)return guard;
+    const [name,goal='Objetivo por definir']=text.replace(/^\+\s*/,'').split('|').map(x=>x.trim()); add('factions',{name,goal,progress:0,attitude:0,resources:'No especificados'}); return{handled:true,ok:true,changed:true,command:'faccion',message:`Facción creada: ${name}.`};
+  }
+  }
+
+  /**
+   * Relaciones con PNJ: sin argumentos lista, “Nombre +N/-N” ajusta el valor.
+   *
+   * Acepta: `/relacion`, `/relación`.
+   *
+   * @param {CampaignCtx} ctx
+   * @returns {CampaignCommandResult}
+   */
+  function cmdRelacion(ctx) {
+    const { s, text, directorOnly } = ctx;
+    {
+    if (!text) return {handled:true,ok:true,command:'relacion',message:Object.keys(s.relationships).length?Object.entries(s.relationships).map(([n,v])=>`${n}: ${v}`).join('\n'):'No hay relaciones registradas.'};
+    const guard=directorOnly(); if(guard)return guard;
+    const m=text.match(/^(.+?)\s+([+-]\d+)$/); if(!m)return{handled:true,ok:false,command:'relacion',message:'Usa /relacion Nombre +2 o -1.'}; const key=m[1].trim();s.relationships[key]=clamp((Number(s.relationships[key])||0)+Number(m[2]),-100,100);return{handled:true,ok:true,changed:true,command:'relacion',message:`Relación con ${key}: ${s.relationships[key]}.`};
+  }
+  }
+
+  /**
+   * Registros breves del Director: pistas, heridas y rumores comparten el mismo mecanismo.
+   *
+   * Acepta: `/pista`, `/herida`, `/rumor`.
+   *
+   * @param {CampaignCtx} ctx
+   * @returns {CampaignCommandResult}
+   */
+  function cmdNota(ctx) {
+    const { parsed, text, add, directorOnly } = ctx;
+    {
+    const guard=directorOnly(); if(guard)return guard;
+    const map={pista:'clues',herida:'wounds',rumor:'rumors'}; const collection=map[parsed.command]; const value=text.replace(/^\+\s*/,''); if(!value)return{handled:true,ok:false,command:parsed.command,message:'Escribe el contenido a registrar.'}; add(collection,collection==='wounds'?{name:value,status:'active',severity:'moderate'}:{text:value,status:'active'});return{handled:true,ok:true,changed:true,command:parsed.command,message:`${parsed.command} registrada: ${value}.`};
+  }
+  }
+
+  /**
+   * Reloj narrativo libre de la campaña.
+   *
+   * Acepta: `/tiempo`.
+   *
+   * @param {CampaignCtx} ctx
+   * @returns {CampaignCommandResult}
+   */
+  function cmdTiempo(ctx) {
+    const { s, text, directorOnly } = ctx;
+    {
+    const guard=directorOnly(); if(guard)return guard;
+    if(!text)return{handled:true,ok:true,command:'tiempo',message:s.clock}; s.clock=text;return{handled:true,ok:true,changed:true,command:'tiempo',message:`Tiempo actualizado: ${text}.`};
+  }
+  }
+
+  /**
+   * Tabla de despacho de comandos de campaña.
+   *
+   * Es un `Map` y no un objeto literal a propósito: la clave viene del texto que
+   * escribe el usuario, y sobre un objeto ordinario `/constructor` o `/toString`
+   * resolverían a una función heredada de `Object.prototype` en vez de caer en el
+   * "comando desconocido". Con `Map` no hay prototipo que consultar.
+   *
+   * @type {ReadonlyMap<string, (ctx: any) => any>}
+   */
+  const CAMPAIGN_COMMANDS = new Map([
+  ['ayuda', cmdAyuda],
+  ['help', cmdAyuda],
+  ['estado', cmdEstado],
+  ['status', cmdEstado],
+  ['reloj', cmdReloj],
+  ['inventario', cmdInventario],
+  ['mision', cmdMision],
+  ['misión', cmdMision],
+  ['faccion', cmdFaccion],
+  ['facción', cmdFaccion],
+  ['relacion', cmdRelacion],
+  ['relación', cmdRelacion],
+  ['pista', cmdNota],
+  ['herida', cmdNota],
+  ['rumor', cmdNota],
+  ['tiempo', cmdTiempo]
+  ]);
+
+
+  /**
+   * Ejecuta un comando de campaña (/reloj, /mision, /pista…) sobre el estado del
+   * mundo.
+   *
+   * Era un switch de 57 líneas con nueve ramas que compartían cuatro variables
+   * locales. Cada rama es ahora un manejador con nombre y la tabla de despacho
+   * hace visible de un vistazo qué alias acepta cada uno.
+   *
+   * @param {Record<string, any>} story
+   * @param {string} raw
+   * @returns {Record<string, any>}
+   */
   function executeCampaignCommand(story, raw) {
     const parsed = parseCampaignCommand(raw);
     if (!parsed.handled) return parsed;
     ensureStory(story);
-    const s = story.rpg.worldState;
-    const text = parsed.args;
-    const add = (collection, item) => { s[collection].push({ id:campaignId(collection.slice(0,-1)), createdAt:now(), ...item }); };
-    const directorOnly = () => story.rpg.role === 'director' ? null : { handled:true, ok:false, command:parsed.command, message:'Este cambio directo del mundo requiere modo Director. En modo Jugador, decláralo como acción para que el GM resuelva sus consecuencias.' };
-    switch (parsed.command) {
-      case 'ayuda': case 'help': return { handled:true, ok:true, command:parsed.command, message:'Comandos: /estado, /reloj, /inventario, /mision, /faccion, /relacion, /pista, /herida, /rumor, /tiempo. Usa “+ texto” para añadir y “- texto” para retirar cuando corresponda.' };
-      case 'estado': case 'status': return { handled:true, ok:true, command:parsed.command, message:campaignStatus(story) };
-      case 'reloj': {
-        if (!text) return { handled:true, ok:true, command:'reloj', message:s.clocks.length ? s.clocks.map(c=>`${c.name}: ${c.value}/${c.max}`).join('\n') : 'No hay relojes activos.' };
-        const tick = text.match(/^(.+?)\s+([+-]\d+)$/);
-        if (tick) {
-          const guard=directorOnly(); if(guard)return guard;
-          const clock=s.clocks.find(c=>normalize(c.name)===normalize(tick[1])); if(!clock)return{handled:true,ok:false,command:'reloj',message:'No existe ese reloj.'};
-          clock.value=clamp(clock.value+Number(tick[2]),0,clock.max); clock.updatedAt=now();
-          return {handled:true,ok:true,changed:true,command:'reloj',message:`${clock.name}: ${clock.value}/${clock.max}`};
-        }
-        const create=text.match(/^\+?\s*(.+?)(?:\s+(\d+)\/(\d+))?$/); const guard=directorOnly(); if(guard)return guard;
-        add('clocks',{name:create[1].trim(),value:Number(create[2])||0,max:Number(create[3])||6});
-        return {handled:true,ok:true,changed:true,command:'reloj',message:`Reloj creado: ${create[1].trim()}.`};
-      }
-      case 'inventario': {
-        if (!text) return {handled:true,ok:true,command:'inventario',message:s.inventory.length?s.inventory.map(i=>`${i.quantity||1}× ${i.name}`).join('\n'):'Inventario vacío.'};
-        const guard=directorOnly(); if(guard)return guard;
-        if (/^-\s*/.test(text)) { const name=text.replace(/^-\s*/,''); const i=s.inventory.findIndex(x=>normalize(x.name)===normalize(name)); if(i<0)return{handled:true,ok:false,command:'inventario',message:'Objeto no encontrado.'}; s.inventory.splice(i,1); return{handled:true,ok:true,changed:true,command:'inventario',message:`Retirado: ${name}.`}; }
-        const name=text.replace(/^\+\s*/,''); add('inventory',{name,quantity:1,owner:story.rpg.player.name||'grupo'}); return{handled:true,ok:true,changed:true,command:'inventario',message:`Añadido al inventario: ${name}.`};
-      }
-      case 'mision': case 'misión': {
-        if (!text) return {handled:true,ok:true,command:'mision',message:s.quests.length?s.quests.map(q=>`[${q.status}] ${q.title}`).join('\n'):'No hay misiones.'};
-        const guard=directorOnly(); if(guard)return guard;
-        const done=text.match(/^(?:completar|complete)\s+(.+)$/i); if(done){const q=s.quests.find(x=>normalize(x.id)===normalize(done[1])||normalize(x.title)===normalize(done[1]));if(!q)return{handled:true,ok:false,command:'mision',message:'Misión no encontrada.'};q.status='completed';q.updatedAt=now();return{handled:true,ok:true,changed:true,command:'mision',message:`Misión completada: ${q.title}.`};}
-        const title=text.replace(/^\+\s*/,''); add('quests',{title,status:'active',objective:title}); return{handled:true,ok:true,changed:true,command:'mision',message:`Misión registrada: ${title}.`};
-      }
-      case 'faccion': case 'facción': {
-        if (!text) return {handled:true,ok:true,command:'faccion',message:s.factions.length?s.factions.map(f=>`${f.name}: ${f.goal} (${f.progress||0}%)`).join('\n'):'No hay facciones.'};
-        const guard=directorOnly(); if(guard)return guard;
-        const [name,goal='Objetivo por definir']=text.replace(/^\+\s*/,'').split('|').map(x=>x.trim()); add('factions',{name,goal,progress:0,attitude:0,resources:'No especificados'}); return{handled:true,ok:true,changed:true,command:'faccion',message:`Facción creada: ${name}.`};
-      }
-      case 'relacion': case 'relación': {
-        if (!text) return {handled:true,ok:true,command:'relacion',message:Object.keys(s.relationships).length?Object.entries(s.relationships).map(([n,v])=>`${n}: ${v}`).join('\n'):'No hay relaciones registradas.'};
-        const guard=directorOnly(); if(guard)return guard;
-        const m=text.match(/^(.+?)\s+([+-]\d+)$/); if(!m)return{handled:true,ok:false,command:'relacion',message:'Usa /relacion Nombre +2 o -1.'}; const key=m[1].trim();s.relationships[key]=clamp((Number(s.relationships[key])||0)+Number(m[2]),-100,100);return{handled:true,ok:true,changed:true,command:'relacion',message:`Relación con ${key}: ${s.relationships[key]}.`};
-      }
-      case 'pista': case 'herida': case 'rumor': {
-        const guard=directorOnly(); if(guard)return guard;
-        const map={pista:'clues',herida:'wounds',rumor:'rumors'}; const collection=map[parsed.command]; const value=text.replace(/^\+\s*/,''); if(!value)return{handled:true,ok:false,command:parsed.command,message:'Escribe el contenido a registrar.'}; add(collection,collection==='wounds'?{name:value,status:'active',severity:'moderate'}:{text:value,status:'active'});return{handled:true,ok:true,changed:true,command:parsed.command,message:`${parsed.command} registrada: ${value}.`};
-      }
-      case 'tiempo': {
-        const guard=directorOnly(); if(guard)return guard;
-        if(!text)return{handled:true,ok:true,command:'tiempo',message:s.clock}; s.clock=text;return{handled:true,ok:true,changed:true,command:'tiempo',message:`Tiempo actualizado: ${text}.`};
-      }
-      default:return{handled:true,ok:false,command:parsed.command,message:`Comando desconocido: /${parsed.command}. Usa /ayuda.`};
+
+    const handler = CAMPAIGN_COMMANDS.get(parsed.command);
+    if (!handler) {
+    return{handled:true,ok:false,command:parsed.command,message:`Comando desconocido: /${parsed.command}. Usa /ayuda.`};
     }
+    return handler(createCampaignContext(story, parsed));
   }
 
   function auditModelOutput(text, options = {}) {
@@ -721,7 +1235,6 @@
     ];
     const leaks = patterns.filter(rx => rx.test(raw)).map(rx => rx.source);
     const startsEnglish = /^(?:The|I |Let |Key |Current |However,|Looking )/i.test(raw);
-    const words = normalize(raw).split(/\s+/).filter(Boolean);
     const englishWords = new Set(['the','and','you','your','with','from','that','this','into','when','what','where','does','do','is','are','was','were','can','will','would','should','rain','soldier','character','player','story','continue','attack','move','stop','right','there','put','hands','run','east','forest','river','now','here','come','get','out','stay','back','down','open','door']);
     const spanishWords = new Set(['el','la','los','las','y','que','con','desde','cuando','donde','es','son','fue','puede','hara','debes','lluvia','soldado','personaje','jugador','historia','continua','ataca','alto','aqui','corre','bosque','rio','ahora','manos','puerta']);
     const languageScore = (fragment) => {

@@ -25,5 +25,19 @@ contextBridge.exposeInMainWorld('lorevinci', {
   omniRouteStatus: (payload) => ipcRenderer.invoke('ai:omnirouteStatus', payload),
   webSearch: (payload) => ipcRenderer.invoke('web:search', payload),
   webFetch: (payload) => ipcRenderer.invoke('web:fetch', payload),
+  // La API Key ya no vive en el JSON de datos: se guarda cifrada con safeStorage
+  // del sistema operativo y el renderer la pide/suelta por estos canales.
+  secretsGet: () => ipcRenderer.invoke('secrets:get'),
+  secretsSet: (apiKey) => ipcRenderer.invoke('secrets:set', apiKey),
+  secretsStatus: () => ipcRenderer.invoke('secrets:status'),
+  clipboardWrite: (text) => ipcRenderer.invoke('clipboard:write', text),
+  // Permite a la UI informar el estado real del almacenamiento del secreto.
+  onAppEvent: (channel, callback) => {
+    const allowed = ['app:save-failed', 'app:navigation-blocked'];
+    if (!allowed.includes(channel)) return () => {};
+    const listener = (_evt, payload) => callback(payload);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.removeListener(channel, listener);
+  },
   isDesktop: true
 });

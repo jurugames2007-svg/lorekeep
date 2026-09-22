@@ -19,6 +19,9 @@ Module._load = orig;
 
 const R = reporter('api');
 let mode = 'ok', finish = 'stop';
+// Cuerpo de la última petición a /chat/completions. Permite afirmar lo que el
+// proceso principal ENVÍA, en vez de cómo está escrita la línea que lo construye.
+let lastBody = '';
 const srv = http.createServer((req, res) => {
   const send = (c, o) => { res.writeHead(c, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
   if (mode === 'badkey') return send(401, { error: { message: 'Invalid API key' } });
@@ -26,6 +29,7 @@ const srv = http.createServer((req, res) => {
   if (req.url.endsWith('/chat/completions')) {
     if (mode === 'nogen') return send(402, { error: { message: 'Insufficient credits' } });
     let b = ''; req.on('data', d => b += d); req.on('end', () => {
+      lastBody = b;
       const reply = () => { if (!res.destroyed) send(200, {
         choices: [{ message: { content: 'OPERATIVO' }, finish_reason: finish }],
         usage: { prompt_tokens: 1234, completion_tokens: 567, total_tokens: 1801 }
@@ -105,9 +109,49 @@ srv.listen(0, '127.0.0.1', async () => {
   ok('truncated=true con length', g.truncated === true);
   ok('texto devuelto aun truncado', g.text === 'OPERATIVO');
 
+  // El techo de max_tokens se comprueba sobre la petición real.
+  //
+  // Antes era un regex contra el texto de main.js (`/Math\.min\(32000, maxTokens/`),
+  // es decir verificaba CÓMO estaba escrita una línea y no lo que el código hacía.
+  // En cuanto el cuerpo se extrajo a `buildGenerationBody(options)` el regex dejó
+  // de encontrar la cadena y el test falló sin que existiera ningún defecto: un
+  // test que se rompe al refactorizar código correcto es ruido, no seguridad.
+  const overCap = await gen(null, { baseUrl: base, apiKey: KEY, model: 'gpt-4o', messages: [{ role: 'user', content: 'hi' }], maxTokens: 999999 });
+  ok('techo max_tokens 32k', overCap.ok === true && JSON.parse(lastBody).max_tokens === 32000,
+    `max_tokens=${JSON.parse(lastBody || '{}').max_tokens}`);
+
+  await gen(null, { baseUrl: base, apiKey: KEY, model: 'gpt-4o', messages: [{ role: 'user', content: 'hi' }], maxTokens: 2000 });
+  ok('un max_tokens dentro del techo se respeta tal cual', JSON.parse(lastBody).max_tokens === 2000,
+    `max_tokens=${JSON.parse(lastBody || '{}').max_tokens}`);
+
+  await gen(null, { baseUrl: base, apiKey: KEY, model: 'gpt-4o', messages: [{ role: 'user', content: 'hi' }] });
+  ok('sin max_tokens se aplica el valor por defecto (500)', JSON.parse(lastBody).max_tokens === 500,
+    `max_tokens=${JSON.parse(lastBody || '{}').max_tokens}`);
+
+  await gen(null, { baseUrl: base, apiKey: KEY, model: 'gpt-4o', messages: [{ role: 'user', content: 'hi' }], maxTokens: 'no-es-numero' });
+  ok('un max_tokens no numérico no produce NaN en la petición', Number.isFinite(JSON.parse(lastBody).max_tokens),
+    `max_tokens=${JSON.parse(lastBody || '{}').max_tokens}`);
+  // El límite de prompt también se comprueba por comportamiento: un prompt por
+  // encima del tope debe rechazarse ANTES de llegar al proveedor, sin quemar una
+  // llamada. La versión anterior de este test buscaba la cadena "120000" en el
+  // fuente, que es otra forma de no probar nada.
+  const oversized = await gen(null, {
+    baseUrl: base, apiKey: KEY, model: 'gpt-4o',
+    messages: [{ role: 'user', content: 'x'.repeat(130000) }]
+  });
+  ok('límite de prompt 120k: se rechaza antes de llamar al proveedor',
+    oversized.ok === false && /demasiado largo/i.test(String(oversized.error)), String(oversized.error).slice(0, 80));
+  const withinLimit = await gen(null, {
+    baseUrl: base, apiKey: KEY, model: 'gpt-4o',
+    messages: [{ role: 'user', content: 'x'.repeat(1000) }]
+  });
+  ok('un prompt dentro del límite sí llega al proveedor', withinLimit.ok === true);
+
+  // Los tests que siguen verifican el TEXTO de preload.js y main.js a propósito:
+  // afirman ausencia (que el AbortSignal no se serialice) o un literal de
+  // configuración cuyo efecto no es observable desde aquí sin montar un
+  // servidor de 30 MB. Se deja constancia de que la elección es deliberada.
   const src = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
-  ok('techo max_tokens 32k', /Math\.min\(32000, maxTokens/.test(src));
-  ok('límite de prompt 120k', /120000/.test(src));
   const preloadSrc = fs.readFileSync(path.join(ROOT, 'preload.js'), 'utf8');
   ok('preload no intenta serializar AbortSignal por IPC', /const \{ signal, \.\.\.serializable \}/.test(preloadSrc));
   ok('preload enlaza AbortSignal con ai:cancel', /ipcRenderer\.send\('ai:cancel'/.test(preloadSrc));

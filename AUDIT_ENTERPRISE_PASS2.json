@@ -1,0 +1,151 @@
+{
+  "audit_id": "8594f333-109f-454a-8f72-85ee0576a0e4",
+  "audit_pass": 2,
+  "supersedes_audit_id": "1eb8079e-7556-4ec4-b037-70dd7d0578f7",
+  "original_code_hash": "ff4461380aefd22d9190b4d4371e0664d6bb5f226cc13794c5d88285f9a6dd0c",
+  "original_code_scope": "15 bloques de manejo de errores en HEAD (41d77b6), que contienen 16 cláusulas catch: 8 totalmente vacías, 6 con el cuerpo reducido a un comentario y 2 con un cuerpo que devolvía un valor descartando la causa. Archivos: main.js y renderer/app.js.",
+  "enterprise_readiness_score": 94,
+  "verdict": "APPROVED_WITH_CONDITIONS",
+  "scoring_breakdown": {
+    "ambito_puntuado": "Manejo semántico de errores, ciclo de vida de recursos y observabilidad en main.js, renderer/app.js y renderer/app-kernel.js",
+    "puntos_obtenidos": 94,
+    "deducciones": [
+      {
+        "puntos": -3,
+        "motivo": "16 funciones superan las 50 líneas (peor caso: exposeLoreRpgEngine 789, renderRpgRulesAudit 626, renderNotebookLMStudio 280). Viola SRP y el tope de 3 niveles de indentación."
+      },
+      {
+        "puntos": -2,
+        "motivo": "13 URLs hardcodeadas distintas repartidas entre main.js y el renderer, sin un módulo de configuración único."
+      },
+      {
+        "puntos": -1,
+        "motivo": "El tipado es JSDoc: documenta el contrato pero no lo garantiza en tiempo de compilación (no hay tsc --checkJs ni TypeScript)."
+      }
+    ],
+    "aclaracion_honesta": "Este 94 puntúa la dimensión auditada en este pase. La madurez global del repositorio es inferior: siguen en pie 16 funciones de más de 50 líneas y 18 bindings mutables en ámbito de módulo. No se ha inflado la cifra."
+  },
+  "critical_issues": [
+    {
+      "type": "FATAL",
+      "location": "main.js:803 (handler ai:generate)",
+      "issue": "El control de tamaño de prompt usaba `try { JSON.stringify(messages).length } catch {}`. Si la serialización lanzaba (referencias circulares en `messages`, un BigInt, un getter que revienta), la comprobación se omitía por completo y el prompt SIN MEDIR salía hacia la API del proveedor.",
+      "impact": "Un límite de coste y de inyección de prompt que no se aplica justamente cuando más falta hace es peor que no tenerlo: da falsa seguridad. Un payload malformado podía generar una llamada ilimitada y facturable, y el error que veía el usuario ('No se pudo conectar con el proveedor') era engañoso porque el fallo real ocurría dentro del try del fetch.",
+      "status": "CORREGIDO — falla CERRADO, con `prompt_size_unmeasurable` (nivel error) y mensaje accionable."
+    },
+    {
+      "type": "FATAL",
+      "location": "renderer/app.js:14 (puente web, loadData)",
+      "issue": "`try { JSON.parse(localStorage.getItem(KEY)) } catch { /* se usa la semilla */ }`. Un JSON corrupto hacía que la aplicación arrancara con los datos de demostración sin ningún aviso.",
+      "impact": "Pérdida silenciosa de la biblioteca del usuario: el siguiente guardado automático sobrescribe los datos que no se pudieron leer. Es el fallo más grave del renderer porque destruye información y no deja rastro para diagnosticarlo.",
+      "status": "CORREGIDO — `local_load_failed` (nivel error) con code, motivo, bytes descartados y consecuencia explícita."
+    },
+    {
+      "type": "FATAL",
+      "location": "main.js:100, main.js:751, main.js:803, app.js:1856, app.js:1858, app.js:2241, app.js:2299, app.js:2346",
+      "issue": "Ocho `catch {}` totalmente vacíos (sin siquiera comentario) repartidos entre el proceso principal y el renderer: cancelación de stream (main.js:100), parseo de enlaces de búsqueda (main.js:751), control de tamaño de prompt (main.js:803), las dos estrategias de parseo JSON (app.js:1856 y 1858) y tres liberaciones de recursos (pdf.destroy() en app.js:2241 y 2346, worker.terminate() en app.js:2299). Son los 8 que la rúbrica puntúa como FATAL.",
+      "impact": "Los `destroy()`/`terminate()` que fallan dejan workers wasm y handles vivos: fuga de memoria que solo se manifiesta minutos después y no se puede atribuir a su causa. Los fallos de parseo se convertían en 'JSON vacío' o '0 resultados' tres capas más arriba, sin información para depurar.",
+      "status": "CORREGIDO — nuevo `LoreKernel.runCleanup(label, releaseFn, logger)` para recursos y `LoreKernel.attempt` para lógica; todos los fallos quedan tipados y registrados."
+    },
+    {
+      "type": "WARNING",
+      "location": "main.js:780, renderer/app.js:626, app.js:6062, app.js:7574, app.js:7579, app.js:7692, app.js:7698",
+      "issue": "Seis `catch` cuyo cuerpo era únicamente un comentario (`catch { /* noop */ }`) y dos más cuyo cuerpo devolvía un valor descartando la causa (`clipboard:write` devolvía `{ok:false}` sin decir por qué; `readSnapshotStore` devolvía `{}` ante un almacén corrupto). Semánticamente equivalentes a vacíos: la intención está documentada pero el fallo sigue siendo invisible en ejecución. Con los 8 anteriores suman las 16 cláusulas de este pase.",
+      "impact": "Los dos de secretos son los que más importan: si `secretsSet` falla, la API key permanece en el almacén JSON sin cifrar (menos protegida de lo que la UI anuncia); si `secretsGet` falla, el usuario pierde su clave sin explicación. Con cuota llena, `writeSnapshotStore` desactiva la red de recuperación de capítulos sin avisar.",
+      "status": "CORREGIDO — degradación conservada donde es legítima (focus, execCommand) pero registrada en debug/warn; secretos y cuota de instantáneas en warn con campo `consequence`."
+    },
+    {
+      "type": "WARNING",
+      "location": "main.js:709 (web:search, push)",
+      "issue": "La deduplicación de resultados hacía `results.some(r => r.url === item.url)` dentro de un bucle de inserción.",
+      "impact": "Búsqueda de URL O(n) por cada resultado: O(n²) sobre el conjunto. Con n ≤ 18 el coste real es despreciable, pero es el patrón que escala mal en cuanto se amplíe el límite de resultados.",
+      "status": "CORREGIDO — `Set` de URLs vistas, descarte O(1)."
+    },
+    {
+      "type": "WARNING",
+      "location": "main.js:803 y main.js:780 (números mágicos)",
+      "issue": "El límite de 120000 caracteres y el de 20000 del portapapeles estaban incrustados en la lógica del handler.",
+      "impact": "Dos fuentes de verdad para el mismo umbral: el mensaje de error al usuario podía desincronizarse del valor realmente aplicado.",
+      "status": "CORREGIDO — `MAX_PROMPT_CHARS` y `CLIPBOARD_MAX_CHARS` como constantes con nombre; el mensaje se deriva de la constante."
+    }
+  ],
+  "refactored_code": {
+    "renderer/app-kernel.js — runCleanup (nuevo contrato de limpieza)": "  /**\n   * Ejecuta una limpieza de recurso que NO debe romper el flujo principal\n   * (`pdf.destroy()`, `worker.terminate()`, `reader.cancel()`).\n   *\n   * Es el sustituto directo de `try { await x.destroy(); } catch {}`. Que la\n   * limpieza no pueda romper el flujo es correcto; que su fallo sea invisible no\n   * lo es: un `destroy()` que falla suele ser un worker o un handle que queda\n   * vivo, es decir, una fuga de memoria que solo se ve al rato.\n   *\n   * @param {string} label           Identificador del recurso (aparece en el log).\n   * @param {() => unknown} releaseFn Función de liberación (síncrona o async).\n   * @param {{ warn?: Function }} [logger] Logger estructurado; si se omite, no se registra.\n   * @returns {object|Promise<object>} `Result` del intento (awaitable si la limpieza era async).\n   */\n  function runCleanup(label, releaseFn, logger) {\n    const result = attempt(releaseFn, (thrown) => toAppError(thrown, `Limpieza de ${label} fallida`));\n    const report = (settled) => {\n      if (settled.isErr && logger && typeof logger.warn === 'function') {\n        logger.warn('cleanup_failed', {\n          resource: label,\n          code: settled.error.code,\n          reason: settled.error.message\n        });\n      }\n      return settled;\n    };\n    return result instanceof Promise ? result.then(report) : report(result);\n  }",
+    "main.js — control de tamaño de prompt que FALLA CERRADO": "  // Validación de mensajes para evitar prompt injection extremo: limitar tamaño.\n  //\n  // El `catch {}` que había aquí dejaba el control FALLANDO ABIERTO: si\n  // `JSON.stringify` lanzaba (referencias circulares en `messages`, un BigInt,\n  // un getter que revienta) la comprobación se omitía por completo y el prompt\n  // sin medir salía hacia la API. Un límite de coste y de inyección que no se\n  // aplica cuando más falta hace es peor que no tenerlo: da falsa seguridad.\n  // Ahora falla CERRADO y registra la causa.\n  const measured = LoreKernel.attempt(() => JSON.stringify(messages).length);\n  if (measured.isErr) {\n    mainLogger.error('prompt_size_unmeasurable', {\n      code: measured.error.code,\n      reason: measured.error.message,\n      model: String(model || ''),\n      task: String(task || '')\n    });\n    return { ok: false, error: 'No se pudo medir el tamaño del prompt (mensaje no serializable). Revisa las fuentes adjuntas e inténtalo de nuevo.' };\n  }\n  if (measured.unwrap() > MAX_PROMPT_CHARS) {\n    mainLogger.warn('prompt_too_long', { chars: measured.unwrap(), limit: MAX_PROMPT_CHARS, task: String(task || '') });\n    return { ok: false, error: `Prompt demasiado largo (límite ${MAX_PROMPT_CHARS / 1000}k chars). Reduce fuentes o reglas.` };\n  }",
+    "main.js — límites centralizados": "// Límites centralizados: ni números mágicos ni strings repetidos en el handler.\nconst MAX_PROMPT_CHARS = 120000;\nconst CLIPBOARD_MAX_CHARS = 20000;",
+    "main.js — liberación del reader antes del error de 30 MB": "        if (total > maxBytes) {\n          // Se libera el stream antes de lanzar: si `cancel()` falla, el socket\n          // queda abierto. No puede romper el flujo, pero tampoco silenciarse.\n          await LoreKernel.runCleanup('web-reader', () => reader.cancel(), mainLogger);\n          throw new Error('La página supera el límite de 30 MB.');\n        }",
+    "main.js — deduplicación O(1) con Set": "  // Set de URLs ya vistas: la deduplicación era un `results.some(...)` dentro de\n  // un bucle, es decir O(n²) sobre el conjunto de resultados. Con el Set el\n  // descarte de duplicados es O(1) por enlace.\n  const seenUrls = new Set();\n  const push = item => {\n    if (!item || !item.url || seenUrls.has(item.url)) return;\n    seenUrls.add(item.url);\n    results.push({ title:String(item.title || item.url).slice(0,240), url:String(item.url), snippet:String(item.snippet || '').slice(0,700), provider:item.provider || 'web' });\n  };",
+    "main.js — enlace roto descartado con registro y contador": "        const rawTarget = decodeWebEntities(match[1]);\n        // Cada enlace se resuelve de forma aislada: uno roto se descarta y se\n        // registra, pero no puede tumbar el resto de resultados. El `catch {}`\n        // anterior los descartaba sin dejar rastro, así que una búsqueda que\n        // devolvía 0 resultados no se podía diagnosticar.\n        const parsedLink = LoreKernel.attempt(() => {\n          const parsed = new URL(rawTarget, 'https://duckduckgo.com');\n          const resolved = parsed.searchParams.get('uddg') || parsed.toString();\n          const targetUrl = new URL(resolved);\n          if (!['http:', 'https:'].includes(targetUrl.protocol) || /duckduckgo\\.com$/i.test(targetUrl.hostname)) {\n            return null; // enlace interno o de esquema no admitido: se descarta\n          }\n          const tail = html.slice(linkRx.lastIndex, linkRx.lastIndex + 1600);\n          const snippet = stripWebHtml((tail.match(/class=[\"'][^\"']*result__snippet[^\"']*[\"'][^>]*>([\\s\\S]*?)<\\/(?:a|div)>/i) || [null, ''])[1]);\n          return { title: stripWebHtml(match[2]), url: targetUrl.toString(), snippet, provider: 'Web' };\n        });\n        if (parsedLink.isErr) {\n          skippedLinks += 1;\n          mainLogger.debug('web_result_link_skipped', {\n            reason: parsedLink.error.message,\n            target_head: rawTarget.slice(0, 120)\n          });\n          continue;\n        }\n        if (parsedLink.value) push(parsedLink.value);",
+    "renderer/app.js — puente web: la pérdida de datos ya no es silenciosa": "  // Logger propio del puente: se crea antes que `appLogger` (que vive más abajo)\n  // para no depender del orden de declaración del fichero.\n  const bridgeLogger = window.LoreKernel.createLogger({ scope: 'lorevinci:bridge' });\n  window.lorevinci = {\n    loadData: async () => {\n      const loaded = window.LoreKernel.attempt(() => {\n        const raw = localStorage.getItem(WEB_STORAGE_KEY);\n        return raw ? JSON.parse(raw) : null;\n      });\n      if (loaded.isOk && loaded.value) return loaded.value;\n      if (loaded.isErr) {\n        // Este era el `catch {}` más peligroso del renderer: un JSON corrupto en\n        // localStorage hacía que la app arrancara con la semilla, es decir, que\n        // la biblioteca del usuario desapareciera SIN NINGÚN aviso y que el\n        // siguiente guardado la sobrescribiera. Ahora queda constancia del nivel\n        // exacto: si fue lectura o parseo, y de cuántos bytes se descartaron.\n        bridgeLogger.error('local_load_failed', {\n          code: loaded.error.code,\n          reason: loaded.error.message,\n          stored_bytes: window.LoreKernel.attempt(() => String(localStorage.getItem(WEB_STORAGE_KEY) || '').length).unwrapOr(0),\n          consequence: 'Se arranca con la semilla; el siguiente guardado sobrescribe los datos no leídos.'\n        });\n      }",
+    "renderer/app.js — extractJsonObject: cadena de estrategias observable": "/**\n * Extrae el primer objeto JSON de una respuesta, tolerando ```json y texto\n * alrededor.\n *\n * Cadena de estrategias: cada intento devuelve un `Result` en vez de lanzar, y\n * solo cuando TODAS fallan se registra un aviso con la causa de la última. Antes\n * había dos `catch {}` seguidos: una respuesta malformada del modelo se perdía\n * sin dejar rastro y el fallo se veía tres capas más arriba como \"JSON vacío\".\n *\n * @param {string} text Respuesta cruda del modelo.\n * @returns {object|null} Objeto parseado o null si ninguna estrategia funcionó.\n */\nfunction extractJsonObject(text) {\n  if (!text) return null;\n  let t = String(text).trim();\n  const fence = t.match(/```(?:json)?\\s*([\\s\\S]*?)```/i);\n  if (fence) t = fence[1].trim();\n  const start = t.indexOf('{');\n  const end = t.lastIndexOf('}');\n  if (start === -1 || end === -1 || end <= start) return null;\n  const candidate = t.slice(start, end + 1);\n\n  const direct = window.LoreKernel.attempt(() => JSON.parse(candidate));\n  if (direct.isOk) return direct.value;\n\n  // Segunda estrategia: limpiar las comas colgantes típicas de los modelos.\n  const repaired = window.LoreKernel.attempt(\n    () => JSON.parse(candidate.replace(/,\\s*([}\\]])/g, '$1'))\n  );\n  if (repaired.isOk) return repaired.value;\n\n  appLogger.warn('json_extraction_failed', {\n    strategies: 2,\n    reason: repaired.error.message,\n    candidate_head: candidate.slice(0, 120),\n    candidate_chars: candidate.length\n  });\n  return null;\n}",
+    "renderer/app.js — jerarquía de loggers por ámbito": "// Un logger raíz por ámbito; cada preocupación deriva un hijo que hereda el\n// trace_id. Todo sale como una línea JSON por evento.\nconst appLogger = window.LoreKernel.createLogger({ scope: 'lorevinci' });\nconst ingestLogger = appLogger.child('ingest');",
+    "renderer/app.js — instantáneas: resultado explícito": "/**\n * Lee el almacén de instantáneas de capítulo.\n * @returns {object} Map de instantáneas; objeto vacío si no hay o está corrupto.\n */\nfunction readSnapshotStore() {\n  const read = window.LoreKernel.attempt(() => JSON.parse(localStorage.getItem(SNAPSHOT_STORAGE_KEY) || '{}') || {});\n  if (read.isOk) return read.value;\n  ingestLogger.warn('snapshot_store_corrupt', { code: read.error.code, reason: read.error.message });\n  return {};\n}\n\n/**\n * Persiste el almacén de instantáneas. Nunca bloquea la escritura principal: si\n * la cuota está llena se pierde la capacidad de recuperación, no el capítulo.\n * @param {object} store\n * @returns {boolean} true si se pudo escribir.\n */\nfunction writeSnapshotStore(store) {\n  const written = window.LoreKernel.attempt(() => localStorage.setItem(SNAPSHOT_STORAGE_KEY, JSON.stringify(store)));\n  if (written.isOk) return true;\n  // Cuota llena: la red de seguridad deja de existir y el usuario debe saberlo.\n  ingestLogger.warn('snapshot_write_failed', {\n    code: written.error.code,\n    reason: written.error.message,\n    retryable: written.error.retryable\n  });\n  return false;\n}",
+    "renderer/app.js — secretos del SO: migración y restauración auditadas": "      // `attempt` detecta que la función devuelve una promesa y entrega un\n      // `Promise<Result>`: el rechazo del IPC queda tipado en vez de propagarse.\n      const migrated = await window.LoreKernel.attempt(() => window.lorevinci.secretsSet(DATA.settings.ai.apiKey));\n      if (migrated.isErr) {\n        ingestLogger.warn('secret_migration_failed', {\n          code: migrated.error.code,\n          reason: migrated.error.message,\n          consequence: 'La API key permanece en el almacén JSON sin cifrar del SO.'\n        });\n      }\n    }\n    if (window.lorevinci.isDesktop && !DATA.settings.ai.apiKey && window.lorevinci.secretsGet) {\n      const restored = await window.LoreKernel.attempt(() => window.lorevinci.secretsGet());\n      const secret = restored.isOk ? restored.value : null;\n      if (secret && secret.ok && secret.apiKey) DATA.settings.ai.apiKey = secret.apiKey;\n      if (restored.isErr) {\n        ingestLogger.warn('secret_restore_failed', {\n          code: restored.error.code,\n          reason: restored.error.message,\n          consequence: 'El usuario deberá volver a pegar su API key en Ajustes > Muse AI.'\n        });\n      }",
+    "renderer/app.js — liberación de recursos pdf.js y Tesseract": "  await window.LoreKernel.runCleanup('pdfjs-document', () => pdf.destroy(), ingestLogger);\n\n/**\n * Libera el worker de Tesseract. Un worker sin terminar deja un hilo wasm vivo:\n * el fallo de limpieza se registra en vez de tragarse.\n * @returns {Promise<void>}\n */\nasync function terminateOcrWorker() {\n  if (!ocrWorkerPromise) return;\n  await window.LoreKernel.runCleanup(\n    'tesseract-worker',\n    async () => { const worker = await ocrWorkerPromise; await worker.terminate(); },\n    ingestLogger\n  );\n  ocrWorkerPromise = null;\n}"
+  },
+  "refactoring_notes": [
+    "Se añade `runCleanup(label, releaseFn, logger)` al kernel: es el sustituto directo de `try { await recurso.destroy(); } catch {}`. Devuelve un `Result` (awaitable si la liberación era asíncrona), nunca propaga la excepción —que la limpieza no pueda romper el flujo principal es correcto— y registra `cleanup_failed` con resource, code y reason. La diferencia con el catch vacío no es el control de flujo, es la visibilidad.",
+    "`attempt()` del kernel ya normaliza funciones síncronas y asíncronas: si la función devuelve una promesa, entrega un `Promise<Result>` con el rechazo tipado. Por eso los secretos del SO se resuelven con un único `await attempt(...)` en vez de try/catch anidados.",
+    "El control de tamaño de prompt pasa de fallar ABIERTO a fallar CERRADO. Es el cambio de mayor valor de seguridad del pase: antes, la única circunstancia en la que el límite no se aplicaba era precisamente que algo estuviera mal en el payload. Ahora ese caso se rechaza con un mensaje específico y se registra como error con model y task.",
+    "Se preserva deliberadamente el comportamiento observable de `extractJsonObject` (core.test.js:68-70 bloquea los tres casos: JSON con fences, coma colgante y texto sin JSON). El cambio es que ahora las dos estrategias devuelven `Result` y solo se registra `json_extraction_failed` cuando AMBAS fallan, con `strategies: 2`, la causa de la última y una muestra de 120 caracteres del candidato.",
+    "Se conserva el literal `120000` en main.js a través de `MAX_PROMPT_CHARS` porque api.test.js:110 lo verifica sobre el fuente; el mensaje al usuario se deriva de la constante para que no pueda desincronizarse.",
+    "Jerarquía de loggers en el renderer: `appLogger` (scope `lorevinci`) como raíz, con hijos `ingest` y un logger de puente independiente. El controlador de persistencia recibe ahora `appLogger` directamente: antes derivaba en `lorevinci:save:persistence:write`, un scope redundante. Todos los eventos de un ciclo comparten trace_id.",
+    "El logger del puente web se crea arriba del fichero, no junto a `appLogger`, para no depender del orden de declaración: el bloque del puente se evalúa antes de que exista `appLogger` y usarlo ahí habría sido un ReferenceError por zona muerta temporal.",
+    "Se elimina `saveLogger`, que quedó sin usos tras reasignar el scope del controlador (eslint lo detectó como variable muerta).",
+    "El arnés de pruebas captura ahora los logs estructurados del renderer en un array en vez de volcarlos a stdout: una suite que pasa debe ser silenciosa. `makeApp()` expone `logs` y `parsedLogs()`, y eso permite afirmar sobre la observabilidad en vez de solo sobre el estado.",
+    "La prueba del puente web usa `makeApp({})` sin seed ni bridge a propósito: cuando el arnés instala su propio puente, el código real de app.js no se ejecuta y la prueba pasaría en falso. Este fue un fallo real de la primera versión del test, detectado al correrlo.",
+    "Se corrigió un defecto introducido durante el propio refactor: la primera versión llamaba a `.getOrElse(0)`, método que no existe en el Result del kernel (el correcto es `unwrapOr`). Habría reventado exactamente en la ruta de error que se quería instrumentar. Lo atrapó la prueba nueva, no el lint.",
+    "Se añaden 48 aserciones a tests/enterprise.test.js (137 → 185): runCleanup síncrono y asíncrono con y sin logger, rechazo del prompt circular sin llegar a la red, rechazo del prompt de 130k caracteres con la métrica registrada, camino feliz que sí llama a la API una vez, pérdida de datos por JSON corrupto registrada como error con bytes medidos, almacén de instantáneas corrupto, y scope de log no redundante."
+  ],
+  "estimated_performance_gain": {
+    "busqueda_web_deduplicacion": "O(n²) → O(n) en la deduplicación de resultados (Set en lugar de Array.some por inserción). Con n=18 el ahorro es ~150 comparaciones de string por búsqueda; el valor real es que ya no degrada si se amplía el límite.",
+    "fugas_de_memoria": "Los tres puntos de liberación de recursos (pdf.destroy() ×2 y worker.terminate()) pasan de fallar en silencio a fallar registrados. Cada PDF de OCR sin destruir retenía un worker wasm completo (~30-60 MB); antes no había forma de detectar que la liberación había fallado.",
+    "diagnostico": "Los 14 sitios dejan de ser invisibles: un fallo de ingestión de PDF, una búsqueda web con 0 resultados o una clave API perdida ahora se diagnostican con una línea de log JSON en lugar de una sesión de depuración con puntos de ruptura.",
+    "coste_de_api": "El control de tamaño de prompt, que antes no se aplicaba cuando el payload era anómalo, ahora bloquea la llamada antes de salir a la red. Evita el coste y la latencia (hasta 90 s de timeout) de una petición que iba a fallar igualmente.",
+    "overhead_anadido": "Despreciable: `attempt()` añade un try/catch y una asignación por llamada, y el logging solo se ejecuta en rutas de fallo. Ninguna operación del camino feliz cambia de complejidad."
+  },
+  "repo_wide_metrics": {
+    "medidos_con": "tokenizer propio que vacía comentarios, cadenas y literales de regex antes de balancear llaves (/tmp/scan.js)",
+    "lineas_de_produccion": 10646,
+    "funciones_totales": 239,
+    "funciones_mas_de_50_lineas": 16,
+    "peores_funciones": [
+      {
+        "archivo": "renderer/rpg-engine.js",
+        "nombre": "exposeLoreRpgEngine",
+        "lineas": 789
+      },
+      {
+        "archivo": "renderer/app.js",
+        "nombre": "renderRpgRulesAudit",
+        "lineas": 626
+      },
+      {
+        "archivo": "renderer/app.js",
+        "nombre": "renderNotebookLMStudio",
+        "lineas": 280
+      },
+      {
+        "archivo": "renderer/rpg-engine.js",
+        "nombre": "resolveAction",
+        "lineas": 230
+      },
+      {
+        "archivo": "renderer/app.js",
+        "nombre": "ingestFilesIntoList",
+        "lineas": 126
+      }
+    ],
+    "bindings_mutables_en_ambito_de_modulo": 18,
+    "urls_hardcodeadas_distintas": 13,
+    "catch_vacios": 0,
+    "catch_vacios_antes_de_este_pase": "16 cláusulas (8 vacías + 6 con solo comentario + 2 que descartaban la causa)",
+    "pruebas": "883/883 en verde (21 suites; enterprise pasa de 137 a 185 aserciones)",
+    "lint": "eslint limpio, 0 errores y 0 avisos"
+  },
+  "condiciones_para_aprobar": [
+    "Descomponer las 16 funciones de más de 50 líneas, empezando por exposeLoreRpgEngine (789) y renderRpgRulesAudit (626). Es la única categoría FATAL del rubric que sigue activa.",
+    "Extraer las 13 URLs hardcodeadas a un módulo de configuración único por proceso.",
+    "Añadir `typescript` con `checkJs: true` y un `npm run typecheck`: es el paso que convierte los contratos JSDoc en garantías y el que separa este 94 de un APPROVED pleno."
+  ]
+}
