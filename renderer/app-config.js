@@ -70,6 +70,7 @@
    * @readonly
    */
   const AI_PROVIDER_PRESETS = deepFreeze({
+    llamacpp: { baseUrl: 'http://localhost:8080/v1', model: 'qwen2.5-7b-instruct' },
     omniroute: { baseUrl: 'http://localhost:20128/v1', model: 'auto' },
     openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
     openrouter: { baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' },
