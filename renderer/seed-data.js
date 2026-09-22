@@ -12,8 +12,21 @@
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
   if (root) root.LoreSeed = api;
-})(typeof window !== 'undefined' ? window : globalThis, function () {
+  // La fábrica UMD se exime de max-lines-per-function a propósito y es la ÚNICA
+  // excepción del proyecto: este `function () { … }` no es una unidad de lógica
+  // sino el cuerpo del módulo, así que su longitud es la del fichero entero y no
+  // se puede reducir sin dividir el módulo en varios. La regla sí aplica a todas
+  // las funciones declaradas dentro (que es donde la longitud indica acoplamiento),
+  // y tests/stress.test.js verifica que no exista ninguna otra supresión.
+  // eslint-disable-next-line max-lines-per-function
+})(/** @type {any} */ (typeof window !== 'undefined' ? window : globalThis), function () {
   'use strict';
+
+  // LoreConfig se carga antes (index.html y main.js lo garantizan). Se resuelve
+  // aquí para que el módulo siga funcionando si se requiere de forma aislada.
+  const CONFIG = (typeof module === 'object' && typeof require === 'function')
+    ? require('./app-config')
+    : (typeof window !== 'undefined' ? window.LoreConfig : globalThis.LoreConfig);
 
   // structuredClone no existe en todos los entornos (jsdom, Electron antiguo):
   // la semilla es JSON puro, así que la copia profunda por JSON es equivalente.
@@ -110,7 +123,7 @@
       chapterGoalReached: null,
       ai: {
         provider: 'openai',
-        baseUrl: 'https://api.openai.com/v1',
+        baseUrl: CONFIG.AI.DEFAULT_BASE_URL,
         apiKey: '',
         model: 'gpt-4o-mini'
       }

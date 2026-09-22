@@ -1,0 +1,25 @@
+{
+  "//": "Verificación de tipos del código de producción. `npm run typecheck`.",
+  "//1": "checkJs:true sobre JavaScript con JSDoc: los contratos dejan de ser",
+  "//2": "documentación y pasan a estar garantizados por el compilador.",
+  "//3": "Se excluyen renderer/vendor (librerías de terceros minificadas) y",
+  "//4": "tests/ (usan jsdom y stubs de Electron sin tipos instalados).",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["node"]
+  },
+  "include": ["main.js", "preload.js", "renderer/*.js", "types/**/*.d.ts"],
+  "exclude": ["node_modules", "tests", "renderer/vendor"]
+}

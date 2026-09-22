@@ -20,7 +20,14 @@
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
   if (root) root.LoreKernel = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  // La fábrica UMD se exime de max-lines-per-function a propósito y es la ÚNICA
+  // excepción del proyecto: este `function () { … }` no es una unidad de lógica
+  // sino el cuerpo del módulo, así que su longitud es la del fichero entero y no
+  // se puede reducir sin dividir el módulo en varios. La regla sí aplica a todas
+  // las funciones declaradas dentro (que es donde la longitud indica acoplamiento),
+  // y tests/stress.test.js verifica que no exista ninguna otra supresión.
+  // eslint-disable-next-line max-lines-per-function
+})(/** @type {any} */ (typeof globalThis !== 'undefined' ? globalThis : this), function () {
   'use strict';
 
   // ==========================================================
@@ -141,6 +148,28 @@
   const ERR_TAG = Object.freeze({ tag: 'err' });
 
   /**
+   * `Result<T>`: un valor O un error tipado. Nunca una excepción.
+   *
+   * Se declara como typedef porque el JSDoc de `ok`, `err` y `attempt` lo
+   * referencia: sin esta definición el compilador no resuelve el nombre y todo
+   * el contrato del núcleo queda sin verificar, que es justo lo que se quiere
+   * evitar al activar `checkJs`.
+   *
+   * @template T
+   * @typedef {Readonly<{
+   *   isOk: boolean,
+   *   isErr: boolean,
+   *   value?: T,
+   *   error?: AppError,
+   *   unwrap(): any,
+   *   unwrapOr(defaultValue: any): any,
+   *   map(fn: Function): Result<any>,
+   *   mapErr(fn: Function): Result<any>,
+   *   toJSON(): object
+   * }>} Result
+   */
+
+  /**
    * @template T
    * @param {T} value
    * @returns {Readonly<{ isOk: true, isErr: false, value: T, unwrap(): T, unwrapOr(defaultValue: T): T, map<U>(fn: (v: T) => U): Result<U>, mapErr(fn: (e: AppError) => AppError): Result<T>, toJSON(): object }>}
@@ -184,22 +213,84 @@
    * @template T
    * @param {() => T} fn
    * @param {(thrown: unknown) => AppError} [mapError]
-   * @returns {T extends Promise<infer U> ? Promise<Result<U>> : Result<T>}
+   * @returns {Result<T>} Para funciones ASÍNCRONAS usa `attemptAsync`.
+   *
+   * Por qué no un tipo condicional (`T extends Promise<infer U> ? …`), que sería
+   * lo más expresivo: en cuanto `T` se infiere como `any` —y `JSON.parse`
+   * devuelve `any`— TypeScript resuelve el condicional a la UNIÓN de sus dos
+   * ramas. El resultado es que `attempt(() => JSON.parse(x)).isOk` deja de
+   * compilar aunque el código sea correcto. Se probó y rompía 15 sitios.
+   *
+   * La alternativa honesta es separar los dos contratos en dos funciones: esta
+   * para síncronas y `attemptAsync` para asíncronas. En tiempo de ejecución
+   * `attempt` sigue normalizando una promesa si se le pasa una (no se rompe
+   * nada), pero el tipo ya no miente sobre lo que quien llama va a recibir.
    */
+  /**
+   * ¿Es `value` un thenable? Se comprueba por estructura y NO con
+   * `instanceof Promise`, a propósito.
+   *
+   * El renderer se ejecuta dentro de un realm distinto (la ventana de Chromium,
+   * o la de jsdom en los tests), y ese realm tiene su propio constructor
+   * `Promise`. Una promesa creada allí es perfectamente válida y, aun así,
+   * `instanceof Promise` evaluado desde Node da `false`.
+   *
+   * El fallo era silencioso y grave: `attempt` creía haber recibido un valor
+   * corriente y envolvía la promesa —todavía pendiente— en un `Result` ya
+   * resuelto. Quien esperaba "una sola escritura en vuelo a la vez" veía la
+   * escritura como terminada de inmediato y lanzaba la siguiente. Lo reprodujo
+   * perf.test.js en cuanto el `Promise.resolve(...)` defensivo que enmascaraba
+   * el problema salió del ejecutor de persistencia.
+   *
+   * @param {unknown} value
+   * @returns {boolean}
+   */
+  function isThenable(value) {
+    if (!value || (typeof value !== 'object' && typeof value !== 'function')) return false;
+    return typeof /** @type {{ then?: unknown }} */ (value).then === 'function';
+  }
+
   function attempt(fn, mapError = toAppError) {
     if (typeof fn !== 'function') {
-      return err(new ValidationError('attempt() requiere una función.'));
+      return /** @type {any} */ (err(new ValidationError('attempt() requiere una función.')));
     }
     let produced;
     try {
       produced = fn();
     } catch (thrown) {
-      return err(mapError(thrown));
+      return /** @type {any} */ (err(mapError(thrown)));
     }
-    if (produced instanceof Promise) {
-      return produced.then((value) => ok(value), (thrown) => err(mapError(thrown)));
+    if (isThenable(produced)) {
+      // `Promise.resolve` además trae el thenable al realm local, de modo que la
+      // cadena que recibe quien llama es una promesa nativa y no una foránea.
+      return /** @type {any} */ (
+        Promise.resolve(produced).then((value) => ok(value), (reason) => err(mapError(reason)))
+      );
     }
-    return ok(produced);
+    return /** @type {any} */ (ok(produced));
+  }
+
+  /**
+   * Variante asíncrona de `attempt`: el rechazo de la promesa también se
+   * convierte en un `Result` erróneo, nunca en una excepción sin manejar.
+   *
+   * Existe porque `await attempt(fnAsync)` funciona en tiempo de ejecución pero
+   * el compilador no puede saberlo: `attempt` declara `Result<T>`, así que quien
+   * llama se queda sin verificación justo en el caso más fácil de equivocar —el
+   * que devuelve una promesa y se usa sin `await`, donde `.isOk` vale `undefined`
+   * en silencio y la rama correcta nunca se ejecuta.
+   *
+   * @template T
+   * @param {() => (T | Promise<T>)} fn
+   * @param {(thrown: unknown) => AppError} [mapError]
+   * @returns {Promise<Result<T>>}
+   */
+  async function attemptAsync(fn, mapError = toAppError) {
+    // `attempt` tipa su devolución como `Result<T | Promise<T>>`, pero al
+    // retornarlo desde una función `async` la promesa interna se desenvuelve
+    // sola: lo que recibe quien llama es siempre `Result<T>`. El cast documenta
+    // ese desenvolvimiento, que el compilador no puede deducir de la firma.
+    return /** @type {Result<T>} */ (/** @type {unknown} */ (attempt(fn, mapError)));
   }
 
   // ==========================================================
@@ -284,11 +375,34 @@
   // ==========================================================
 
   /**
+   * Dependencias ya validadas y normalizadas del controlador de persistencia.
+   *
+   * Estaban tipadas como `Readonly<object>`, que no dice nada: el compilador no
+   * podía verificar ninguna de las llamadas internas y `createStatusPublisher`
+   * recibía un argumento de tipo opaco. Ahora cada campo tiene su firma.
+   *
+   * @typedef {Readonly<{
+   *   save: (payload: any) => any,
+   *   getPayload: () => any,
+   *   onStatus: (status: string, message?: string) => void,
+   *   onFailure: (error: AppError) => void,
+   *   onRecover: () => void,
+   *   onChange: () => void,
+   *   logger: ReturnType<typeof createLogger>,
+   *   debounceMs: number,
+   *   timers: Readonly<{
+   *     setTimeout: (fn: () => void, ms: number) => any,
+   *     clearTimeout: (id: any) => void
+   *   }>
+   * }>} PersistenceDeps
+   */
+
+  /**
    * Valida y normaliza las dependencias del controlador.
    * Todo lo inyectable se resuelve AQUÍ: el resto del módulo no vuelve a
    * preguntar por opcionales.
    * @param {object} deps
-   * @returns {Readonly<object>} Dependencias normalizadas.
+   * @returns {PersistenceDeps} Dependencias normalizadas.
    */
   function resolvePersistenceDeps(deps) {
     if (!deps || typeof deps.save !== 'function') {
@@ -403,7 +517,7 @@
       const startedAt = Date.now();
       state.clearDirty();
 
-      const write = attempt(() => Promise.resolve(deps.save(payload)), toAppError)
+      const write = attemptAsync(() => deps.save(payload), toAppError)
         .then(normalizeSaveResponse)
         .then((result) => {
           applyWriteOutcome(deps, state, result, trace, Date.now() - startedAt);
@@ -522,7 +636,7 @@
    * La clave incluye el detalle: dos errores con mensajes distintos SÍ se
    * publican, porque el usuario debe ver el motivo actualizado.
    *
-   * @param {{ onStatus: Function }} deps
+   * @param {{ onStatus: (status: string, message?: string) => void }} deps
    * @returns {(status: string, message?: string) => boolean} true si publicó.
    */
   function createStatusPublisher(deps) {
@@ -573,7 +687,11 @@
    * @returns {object|Promise<object>} `Result` del intento (awaitable si la limpieza era async).
    */
   function runCleanup(label, releaseFn, logger) {
-    const result = attempt(releaseFn, (thrown) => toAppError(thrown, `Limpieza de ${label} fallida`));
+    // Único sitio del núcleo que admite una liberación síncrona o asíncrona sin
+    // obligar a quien llama a elegir: el cast es deliberado y está acotado aquí.
+    const result = /** @type {Result<any> | Promise<Result<any>>} */ (
+      attempt(releaseFn, (thrown) => toAppError(thrown, `Limpieza de ${label} fallida`))
+    );
     const report = (settled) => {
       if (settled.isErr && logger && typeof logger.warn === 'function') {
         logger.warn('cleanup_failed', {
@@ -584,14 +702,16 @@
       }
       return settled;
     };
-    return result instanceof Promise ? result.then(report) : report(result);
+    // Mismo criterio que en `attempt`: una liberación puede devolver un thenable
+    // de otro realm, y `instanceof` no lo vería.
+    return isThenable(result) ? Promise.resolve(result).then(report) : report(result);
   }
 
   /**
    * Convierte la respuesta del transporte en un `Result`.
    * El contrato histórico del puente admite tres formas: `{ok:true}`,
    * `{ok:false,error}` y `true`/falsy. Se normalizan aquí, una sola vez.
-   * @param {{ isOk: boolean, value?: unknown, error?: AppError }} transportResult
+   * @param {Result<any>} transportResult `Result` del intento de transporte.
    */
   function normalizeSaveResponse(transportResult) {
     if (transportResult.isErr) return transportResult; // el transporte lanzó
@@ -631,6 +751,8 @@
     ok,
     err,
     attempt,
+    attemptAsync,
+    isThenable,
     createLogger,
     newTraceId,
     createPersistenceController,

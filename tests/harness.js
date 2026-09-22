@@ -58,7 +58,7 @@ function makeApp({ seed = null, bridge = {}, withPdf = false } = {}) {
   w.console.debug = (line) => { logs.push(String(line)); };
   w.console.info = (line) => { logs.push(String(line)); };
   // Módulos compartidos (seguridad de salida + semilla) antes que el motor y la app.
-  ['app-kernel.js', 'dom-safe.js', 'seed-data.js', 'rpg-engine.js'].forEach((file) => {
+  ['app-config.js', 'app-kernel.js', 'dom-safe.js', 'seed-data.js', 'rpg-engine.js'].forEach((file) => {
     const moduleScript = w.document.createElement('script');
     moduleScript.textContent = fs.readFileSync(P + file, 'utf8');
     w.document.body.appendChild(moduleScript);

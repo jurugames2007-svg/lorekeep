@@ -18,7 +18,14 @@
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
   if (root) root.LoreDomSafe = api;
-})(typeof window !== 'undefined' ? window : globalThis, function () {
+  // La fábrica UMD se exime de max-lines-per-function a propósito y es la ÚNICA
+  // excepción del proyecto: este `function () { … }` no es una unidad de lógica
+  // sino el cuerpo del módulo, así que su longitud es la del fichero entero y no
+  // se puede reducir sin dividir el módulo en varios. La regla sí aplica a todas
+  // las funciones declaradas dentro (que es donde la longitud indica acoplamiento),
+  // y tests/stress.test.js verifica que no exista ninguna otra supresión.
+  // eslint-disable-next-line max-lines-per-function
+})(/** @type {any} */ (typeof window !== 'undefined' ? window : globalThis), function () {
   'use strict';
 
   /** Etiquetas que sobreviven al sanitizado (whitelist estricta). */

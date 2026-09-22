@@ -894,18 +894,677 @@ async function contractStress() {
   // app-kernel.js define LoreKernel, que app.js usa en el ámbito superior del
   // fichero (el logger raíz y el puente web). Si el orden se invierte, la app no
   // arranca: ReferenceError por zona muerta temporal.
-  const order = ['app-kernel.js', 'dom-safe.js', 'seed-data.js', 'rpg-engine.js', 'app.js'];
+  const order = ['app-config.js', 'app-kernel.js', 'dom-safe.js', 'seed-data.js', 'rpg-engine.js', 'app.js'];
   const positions = order.map((f) => scripts.indexOf(f));
-  ok('S13 · los cinco módulos propios están en index.html', positions.every((p) => p >= 0), positions.join(','));
-  ok('S13 · app.js se carga AL FINAL (depende de los otros cuatro)', positions[4] === Math.max(...positions), positions.join(','));
-  ok('S13 · app-kernel.js se carga ANTES que app.js', positions[0] < positions[4], `${positions[0]} vs ${positions[4]}`);
-  ok('S13 · los módulos compartidos van antes que el motor y la app', Math.max(positions[0], positions[1], positions[2]) < positions[3], positions.join(','));
+  ok('S13 · los seis módulos propios están en index.html', positions.every((p) => p >= 0), positions.join(','));
+  ok('S13 · app.js se carga AL FINAL (depende de los otros cinco)', positions[5] === Math.max(...positions), positions.join(','));
+  ok('S13 · app-kernel.js se carga ANTES que app.js', positions[1] < positions[5], `${positions[1]} vs ${positions[5]}`);
+  ok('S13 · los módulos compartidos van antes que el motor y la app', Math.max(positions[0], positions[1], positions[2], positions[3]) < Math.min(positions[4], positions[5]), positions.join(','));
+  // app-config.js no depende de nada y los demás leen LoreConfig: si va después,
+  // seed-data.js y app.js revientan con una zona muerta temporal.
+  ok('S13 · app-config.js se carga ANTES que el kernel y la semilla', positions[0] < Math.min(positions[1], positions[3]), positions.join(','));
+
+  // ---- Ninguna URL remota fuera del módulo de configuración ----
+  // Regresión que protege el refactor completo: si alguien vuelve a pegar un
+  // extremo en main.js o en app.js, la suite lo detecta. Se buscan solo las URLs
+  // entre comillas o backticks, para no contar las que aparezcan en un
+  // comentario. Las regex se construyen desde string: escritas como literal
+  // escapado dentro de un parche, la secuencia de barras se corrompe con
+  // facilidad y el resultado puede parsear "por accidente".
+  const URL_IN_CODE = new RegExp(`['"\`](https?://[a-zA-Z0-9._-]+)`, 'g');
+  const URL_ANY = new RegExp('https?://[a-zA-Z0-9._/?=&#%-]+', 'g');
+  const configSrc = fs.readFileSync(path.join(P, 'app-config.js'), 'utf8');
+  const sources = {
+    'main.js': mainSrc,
+    'renderer/app.js': appSrc,
+    'renderer/seed-data.js': fs.readFileSync(path.join(P, 'seed-data.js'), 'utf8'),
+    'renderer/app-kernel.js': fs.readFileSync(path.join(P, 'app-kernel.js'), 'utf8'),
+    'renderer/rpg-engine.js': fs.readFileSync(path.join(P, 'rpg-engine.js'), 'utf8'),
+    'renderer/dom-safe.js': fs.readFileSync(path.join(P, 'dom-safe.js'), 'utf8')
+  };
+  const stray = [];
+  for (const [file, src] of Object.entries(sources)) {
+    for (const m of src.matchAll(URL_IN_CODE)) stray.push(`${file} → ${m[1]}`);
+  }
+  ok('S13 · ninguna URL remota vive fuera de app-config.js', stray.length === 0, stray.join(' | '));
+  const configUrls = new Set([...configSrc.matchAll(URL_ANY)].map((m) => m[0].replace(/[.,);]+$/, '')));
+  ok('S13 · app-config.js concentra los 13 extremos remotos', configUrls.size === 13, String(configUrls.size));
+  ok('S13 · la configuración es inmutable (no se puede mutar en caliente)', (() => {
+    const cfg = require(path.join(P, 'app-config.js'));
+    const before = cfg.AI.DEFAULT_BASE_URL;
+    try { cfg.AI.DEFAULT_BASE_URL = 'http://malicioso.example'; } catch { /* freeze en modo estricto lanza */ }
+    return cfg.AI.DEFAULT_BASE_URL === before;
+  })());
+  ok('S13 · los presets de proveedor están congelados en profundidad', (() => {
+    const cfg = require(path.join(P, 'app-config.js'));
+    const before = cfg.AI_PROVIDER_PRESETS.openai.model;
+    try { cfg.AI_PROVIDER_PRESETS.openai.model = 'otro'; } catch { /* idem */ }
+    return cfg.AI_PROVIDER_PRESETS.openai.model === before;
+  })());
+  ok('S13 · los constructores de URL codifican la consulta', (() => {
+    const cfg = require(path.join(P, 'app-config.js'));
+    return cfg.wikipediaSearchUrl('a b&c=d', 3).includes('srsearch=a%20b%26c%3Dd')
+      && cfg.duckDuckGoSearchUrl('x?y').includes('q=x%3Fy')
+      && cfg.wikipediaArticleUrl('El hobbit').endsWith('El_hobbit');
+  })());
+  ok('S13 · el límite de resultados se propaga al constructor', (() => {
+    const cfg = require(path.join(P, 'app-config.js'));
+    return cfg.wikipediaSearchUrl('x', 10).includes('srlimit=10') && cfg.openLibrarySearchUrl('x', 6).includes('limit=6');
+  })());
+
+  // ---- El puente web debe ser intercambiable con el de preload ----
+  // preload.js expone N métodos; el puente que app.js instala en el navegador
+  // debe ofrecer el MISMO conjunto. Si falta uno, ese código funciona en la app
+  // de escritorio y revienta con un TypeError en el preview web. Lo detectó
+  // tsc --checkJs; esta aserción lo fija para que no vuelva a ocurrir.
+  const preloadKeys = new Set();
+  const bridgeBlockSrc = preload.slice(bridgeStart);
+  for (const m of bridgeBlockSrc.matchAll(/^ {2}([a-zA-Z][A-Za-z0-9_]*)\s*[:,(]/gm)) if (!KEYWORDS.has(m[1])) preloadKeys.add(m[1]);
+  const webBridge = makeApp({});
+  await new Promise((resolve) => setTimeout(resolve, 2600));
+  const webKeys = new Set(Object.keys(webBridge.w.lorevinci));
+  const missingInWeb = [...preloadKeys].filter((k) => !webKeys.has(k));
+  const extraInWeb = [...webKeys].filter((k) => !preloadKeys.has(k));
+  ok(`S13 · preload expone ${preloadKeys.size} métodos del puente`, preloadKeys.size >= 15, String(preloadKeys.size));
+  ok('S13 · el puente web implementa TODOS los métodos de preload', missingInWeb.length === 0, missingInWeb.join(', '));
+  ok('S13 · el puente web no inventa métodos que preload no tenga', extraInWeb.length === 0, extraInWeb.join(', '));
+  ok('S13 · el puente web se declara como no-escritorio', webBridge.w.lorevinci.isDesktop === false);
+  ok('S13 · onAppEvent del puente web devuelve una función de desuscripción',
+    typeof webBridge.w.lorevinci.onAppEvent('app:save-failed', () => {}) === 'function');
+  webBridge.w.close();
+
+
 
   // ---- Los assets de terceros también, que son los que rompen PDF y OCR ----
   const vendor = ['vendor/pdfjs/pdf.min.js', 'vendor/tesseract/tesseract.min.js'];
   ok('S13 · las librerías de PDF y OCR están presentes', vendor.every((v) => fs.existsSync(path.join(P, v))), vendor.join(', '));
   ok('S13 · ninguna librería de terceros está vacía o truncada',
     vendor.every((v) => fs.statSync(path.join(P, v)).size > 50000), vendor.map((v) => `${v}=${fs.statSync(path.join(P, v)).size}`).join(', '));
+
+  // ---- Thenables de otro realm: el bug que perf.test.js destapó ----
+  // El renderer vive en una ventana (Chromium, o jsdom en los tests) con su
+  // PROPIO constructor Promise. Una promesa creada allí tiene `.then` pero no
+  // pasa `instanceof Promise` visto desde Node. Mientras `attempt` usó
+  // `instanceof`, esa promesa pendiente se envolvía en un Result YA resuelto: la
+  // escritura parecía terminada y el núcleo lanzaba la siguiente, rompiendo la
+  // garantía de "una sola escritura en vuelo a la vez".
+  // Thenable que cumple el contrato completo: recibe resolve Y reject, como
+  // cualquier promesa. La primera versión de este test solo pasaba `resolve` y
+  // por eso el caso de rechazo reventaba con "resolve is not a function".
+  const makeForeignThenable = (value, delayMs = 0) => ({
+    then: (resolve, _reject) => { setTimeout(() => resolve(value), delayMs); }
+  });
+  const makeForeignRejection = (reason, delayMs = 0) => ({
+    then: (_resolve, reject) => { setTimeout(() => reject(reason), delayMs); }
+  });
+
+  await (async () => {
+    const foreign = makeForeignThenable('valor-foráneo');
+    ok('S13 · un thenable ajeno al realm no pasa instanceof Promise (premisa del bug)',
+      !(foreign instanceof Promise));
+
+    const handled = K.attempt(() => foreign);
+    ok('S13 · attempt devuelve una promesa nativa ante un thenable ajeno (no lo envuelve)',
+      handled instanceof Promise && typeof handled.then === 'function');
+    const settled = await handled;
+    ok('S13 · attempt aguarda al thenable ajeno y entrega su valor',
+      settled.isOk === true && settled.value === 'valor-foráneo', JSON.stringify(settled && settled.toJSON ? settled.toJSON() : settled));
+
+    const rejected = K.attempt(() => makeForeignRejection(new Error('fallo foráneo')));
+    const settledRejection = await rejected;
+    ok('S13 · el rechazo de un thenable ajeno se convierte en Result erróneo, no en excepción',
+      settledRejection.isErr === true && /fallo foráneo/.test(String(settledRejection.error.message)));
+
+    const syncResult = K.attempt(() => 42);
+    ok('S13 · una función síncrona sigue devolviendo un Result inmediato (no una promesa)',
+      !(syncResult instanceof Promise) && syncResult.isOk === true && syncResult.value === 42);
+
+    // runCleanup admite liberación síncrona o asíncrona; con un thenable ajeno
+    // antes informaba el Result sin esperar a que el recurso se liberara.
+    let released = false;
+    const foreignRelease = {
+      then: (resolve) => { setTimeout(() => { released = true; resolve('liberado'); }, 5); }
+    };
+    const cleanup = K.runCleanup('recurso-foráneo', () => foreignRelease);
+    ok('S13 · runCleanup espera a un thenable ajeno antes de dar por hecha la limpieza',
+      cleanup instanceof Promise && typeof cleanup.then === 'function');
+    const cleanupResult = await cleanup;
+    ok('S13 · runCleanup propaga el resultado de la liberación asíncrona',
+      cleanupResult.isOk === true && released === true);
+
+    // attemptAsync: el contrato asíncrono explícito.
+    const asyncResult = await K.attemptAsync(async () => 'asíncrono');
+    ok('S13 · attemptAsync resuelve Result con el valor de una función async',
+      asyncResult.isOk === true && asyncResult.value === 'asíncrono');
+    const asyncFailure = await K.attemptAsync(async () => { throw new Error('rechazo async'); });
+    ok('S13 · attemptAsync convierte el rechazo en Result erróneo',
+      asyncFailure.isErr === true && /rechazo async/.test(String(asyncFailure.error.message)));
+    const syncViaAsync = await K.attemptAsync(() => 'síncrono-en-async');
+    ok('S13 · attemptAsync también acepta una función síncrona',
+      syncViaAsync.isOk === true && syncViaAsync.value === 'síncrono-en-async');
+  })();
+}
+
+// ============================================================
+// S14. Verificación estática: tsc --checkJs en cero errores
+// ============================================================
+// Por qué esto vive en la suite de estrés y no solo en un script de npm:
+// `npm run typecheck` se ejecuta cuando alguien se acuerda. Dentro de la suite
+// se ejecuta SIEMPRE, y un error nuevo rompe la build igual que lo haría un
+// test funcional. Es lo que convierte la verificación de tipos en una garantía
+// y no en una intención.
+//
+// La verificación ya demostró su valor: encontró el método `onAppEvent` que el
+// preload exponía y el puente web no, es decir código que funcionaba en
+// escritorio y lanzaba TypeError en el navegador. También encontró el `@returns`
+// desactualizado de `ingestFilesIntoList`. Ninguno de los dos lo cubría un test.
+function typecheckStorm() {
+  const ROOT_DIR = ROOT;
+  const tsconfigPath = path.join(ROOT_DIR, 'tsconfig.json');
+  ok('S14 · existe tsconfig.json', fs.existsSync(tsconfigPath));
+  if (!fs.existsSync(tsconfigPath)) return;
+
+  // JSON con comentarios: tsconfig los admite, así que se limpian antes de parsear.
+  const raw = fs.readFileSync(tsconfigPath, 'utf8');
+  const cfg = JSON.parse(raw.replace(/^\s*\/\/.*$/gm, '').replace(/,\s*([}\]])/g, '$1'));
+  const co = cfg.compilerOptions || {};
+  ok('S14 · checkJs está ACTIVADO (se verifica el JavaScript real, no solo los .ts)', co.checkJs === true);
+  ok('S14 · allowJs está activado', co.allowJs === true);
+  ok('S14 · noEmit: el compilador verifica y no genera artefactos', co.noEmit === true);
+  ok('S14 · strict no está silenciado por omisión (aparece explícito en el fichero)', /"strict"\s*:/.test(raw));
+
+  // Cobertura: si un fichero fuente queda fuera del include, se "verifica" sin
+  // verificarlo. Se comprueba fichero a fichero contra los patrones declarados.
+  const includes = cfg.include || [];
+  const sources = ['main.js', 'preload.js', 'renderer/app.js', 'renderer/app-kernel.js',
+    'renderer/app-config.js', 'renderer/seed-data.js', 'renderer/dom-safe.js', 'renderer/rpg-engine.js'];
+  const uncovered = sources.filter((f) => !includes.some((g) => {
+    // El centinela es texto y no un carácter de control: la versión anterior
+    // usaba \u0000 y eslint lo rechazaba (no-control-regex) con razón.
+    const rx = new RegExp('^' + g
+      .replace(/\./g, '\\.')
+      .replace(/\*\*/g, '@@GLOBSTAR@@')
+      .replace(/\*/g, '[^/]*')
+      .replace(/@@GLOBSTAR@@/g, '.*') + '$');
+    return rx.test(f);
+  }));
+  ok(`S14 · los ${sources.length} ficheros fuente están cubiertos por include`, uncovered.length === 0, uncovered.join(', '));
+  const excludes = cfg.exclude || [];
+  ok('S14 · node_modules y vendor quedan excluidos (no se verifica código ajeno)',
+    excludes.some((e) => e.includes('node_modules')) && excludes.some((e) => e.includes('vendor')));
+
+  // Las declaraciones globales son lo que permite tipar window.LoreConfig como
+  // `typeof import(...)` en vez de `any`: sin ellas no hay verificación real.
+  const globalsPath = path.join(ROOT_DIR, 'types', 'globals.d.ts');
+  ok('S14 · existe types/globals.d.ts', fs.existsSync(globalsPath));
+  const globalsSrc = fs.existsSync(globalsPath) ? fs.readFileSync(globalsPath, 'utf8') : '';
+  const typedGlobals = ['LoreConfig', 'LoreKernel', 'LoreSeed', 'LoreDomSafe', 'LoreRpgEngine'];
+  // Se exige `typeof import(...)` y no `any`: con `any` el compilador calla y la
+  // "verificación de tipos" pasaría a ser decorativa justo en los módulos propios.
+  const looselyTyped = typedGlobals.filter((g) => !new RegExp(g + '\\s*:\\s*typeof import\\(').test(globalsSrc));
+  ok('S14 · los 5 módulos propios están tipados con typeof import (no como any)', looselyTyped.length === 0, looselyTyped.join(', '));
+  ok('S14 · el puente lorevinci tiene interfaz propia', /interface LoreBridge\b/.test(globalsSrc));
+
+  // Contrato de npm: el script y la dependencia deben existir o la verificación
+  // no es reproducible fuera de esta máquina.
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'package.json'), 'utf8'));
+  ok('S14 · package.json expone npm run typecheck', Boolean(pkg.scripts && pkg.scripts.typecheck));
+  ok('S14 · verify encadena lint + typecheck + tests', /typecheck/.test(String(pkg.scripts && pkg.scripts.verify)));
+  ok('S14 · typescript es una devDependency declarada', Boolean(pkg.devDependencies && pkg.devDependencies.typescript),
+    'sin ella, un clon limpio no puede verificar nada');
+
+  // ---- La compuerta real: ejecutar el compilador ----
+  const tscJs = path.join(ROOT_DIR, 'node_modules', 'typescript', 'bin', 'tsc');
+  if (!fs.existsSync(tscJs)) {
+    ok('S14 · tsc ejecutado con cero errores', false, 'typescript no está instalado: ejecute npm install');
+    return;
+  }
+  const { execFileSync } = require('child_process');
+  let stdout = '';
+  let status = 0;
+  try {
+    stdout = execFileSync(process.execPath, [tscJs, '-p', tsconfigPath], {
+      cwd: ROOT_DIR, encoding: 'utf8', timeout: 240000, maxBuffer: 32 * 1024 * 1024
+    });
+  } catch (err) {
+    status = typeof err.status === 'number' ? err.status : 1;
+    stdout = String(err.stdout || '') + String(err.stderr || '');
+  }
+  const errors = stdout.split('\n').filter((l) => /error TS\d+:/.test(l));
+  ok(`S14 · tsc --checkJs termina sin errores (${errors.length})`, status === 0 && errors.length === 0,
+    errors.slice(0, 8).join(' | ') || `exit ${status}`);
+  ok('S14 · el compilador no escribe ficheros (noEmit se respeta en la práctica)', status === 0 && !/error TS5055/.test(stdout));
+
+  // Regresión concreta del bug que la verificación encontró: el puente web debe
+  // seguir ofreciendo onAppEvent. Se comprueba sobre el fuente para que el test
+  // no dependa de tener un DOM cargado.
+  const appSrc = fs.readFileSync(path.join(P, 'app.js'), 'utf8');
+  ok('S14 · el puente web sigue exponiendo onAppEvent (bug hallado por tsc)', /onAppEvent\s*:/.test(appSrc));
+}
+
+// ============================================================
+// 15. Longitud de función: la garantía se verifica, no se declara
+// ============================================================
+/**
+ * Comprueba que ninguna función del código de producción supera las 50 líneas.
+ *
+ * No basta con que el repo esté limpio hoy: sin una regla activa, la próxima
+ * función de 300 líneas entra sin que nadie lo note. Esta sección verifica tres
+ * cosas distintas, porque fallan por motivos distintos:
+ *
+ *   1. Que la regla esté ACTIVA en la configuración efectiva (no en el texto del
+ *      fichero: se carga con require y se inspecciona qué queda vigente).
+ *   2. Que el conjunto de supresiones sea cerrado y esté justificado. Una
+ *      directiva eslint-disable es deuda silenciosa si nadie la vigila.
+ *   3. Que la regla MUERDA. Un repo limpio no demuestra nada si la regla está
+ *      mal configurada: se le pasa por stdin una función de 60 líneas y se exige
+ *      que la señale.
+ */
+function functionLengthStorm() {
+  const cfgPath = path.join(ROOT, 'eslint.config.js');
+  ok('S15 · existe eslint.config.js', fs.existsSync(cfgPath));
+  if (!fs.existsSync(cfgPath)) return;
+
+  const blocks = require(cfgPath);
+  const production = blocks.filter((b) => Array.isArray(b.files)
+    && b.files.includes('main.js') && b.files.includes('renderer/*.js')
+    && b.rules && b.rules['max-lines-per-function']);
+  ok('S15 · un bloque activa max-lines-per-function sobre el código de producción',
+    production.length === 1, show(production.map((b) => b.files.join(','))));
+
+  const rule = production.length ? production[0].rules['max-lines-per-function'] : null;
+  const opts = Array.isArray(rule) ? rule[1] : null;
+  ok('S15 · el límite son 50 líneas', Boolean(opts) && opts.max === 50, show(opts));
+  ok('S15 · mide código y no documentación (skipBlankLines y skipComments)',
+    Boolean(opts) && opts.skipBlankLines === true && opts.skipComments === true, show(opts));
+  ok('S15 · los envoltorios de módulo quedan exentos (IIFEs:false)',
+    Boolean(opts) && opts.IIFEs === false, show(opts));
+  ok('S15 · preload.js también está cubierto',
+    production.length === 1 && production[0].files.includes('preload.js'),
+    show(production.length ? production[0].files : []));
+
+  // La exclusión de tests/ es una decisión documentada, no un olvido. Si alguien
+  // la revoca al reordenar bloques, esta aserción lo señala en vez de dejar que
+  // la suite empiece a fallar por guiones lineales.
+  const testBlocks = blocks.filter((b) => Array.isArray(b.files) && b.files.some((f) => String(f).startsWith('tests/')));
+  ok('S15 · la regla no se aplica a los suites de prueba (decisión documentada)',
+    testBlocks.every((b) => !(b.rules && b.rules['max-lines-per-function'])),
+    show(testBlocks.map((b) => b.files.join(','))));
+
+  // ---- Supresiones: conjunto cerrado y justificado ----
+  const sources = ['main.js', 'preload.js', 'renderer/app.js', 'renderer/app-kernel.js',
+    'renderer/app-config.js', 'renderer/seed-data.js', 'renderer/dom-safe.js', 'renderer/rpg-engine.js'];
+  const ALLOWED = ['renderer/app-config.js', 'renderer/app-kernel.js', 'renderer/dom-safe.js', 'renderer/seed-data.js'];
+  const found = [];
+  const unjustified = [];
+  for (const rel of sources) {
+    const full = path.join(ROOT, rel);
+    if (!fs.existsSync(full)) continue;
+    const src = fs.readFileSync(full, 'utf8').split('\n');
+    src.forEach((line, i) => {
+      if (!/eslint-disable(-next-line)?\s.*max-lines-per-function/.test(line)) return;
+      found.push(rel);
+      // El motivo debe preceder a la directiva: sin él, quien venga detrás no
+      // sabe si la supresión sigue siendo necesaria.
+      const prev = src.slice(Math.max(0, i - 8), i).join('\n');
+      if (!/UMD|envoltorio|f[aá]brica/i.test(prev)) unjustified.push(rel + ':' + (i + 1));
+    });
+  }
+  const unexpected = found.filter((f) => !ALLOWED.includes(f));
+  const missing = ALLOWED.filter((f) => !found.includes(f));
+  ok('S15 · las únicas supresiones son las 4 fábricas UMD',
+    unexpected.length === 0 && missing.length === 0,
+    show({ inesperadas: unexpected, ausentes: missing }));
+  ok('S15 · cada supresión lleva su justificación encima', unjustified.length === 0, show(unjustified));
+
+  // ---- La compuerta real: ejecutar ESLint ----
+  const eslintBin = path.join(ROOT, 'node_modules', 'eslint', 'bin', 'eslint.js');
+  if (!fs.existsSync(eslintBin)) {
+    ok('S15 · eslint ejecutado sobre el código de producción', false, 'eslint no está instalado: ejecute npm install');
+    return;
+  }
+  const { execFileSync } = require('child_process');
+  const runEslint = (args, input) => {
+    try {
+      return { status: 0, out: execFileSync(process.execPath, [eslintBin, ...args], {
+        cwd: ROOT, encoding: 'utf8', input, timeout: 240000, maxBuffer: 64 * 1024 * 1024
+      }) };
+    } catch (err) {
+      return { status: typeof err.status === 'number' ? err.status : 1, out: String(err.stdout || '') + String(err.stderr || '') };
+    }
+  };
+  const parse = (out) => { try { return JSON.parse(out); } catch (err) { return []; } };
+
+  const real = runEslint(['main.js', 'preload.js', 'renderer', '--format', 'json']);
+  const results = parse(real.out);
+  const lengthErrors = [];
+  const unusedDisables = [];
+  for (const r of results) {
+    for (const m of (r.messages || [])) {
+      if (m.ruleId === 'max-lines-per-function') lengthErrors.push(path.basename(r.filePath) + ':' + m.line);
+      if (/Unused eslint-disable/.test(String(m.message || ''))) unusedDisables.push(path.basename(r.filePath) + ':' + m.line);
+    }
+  }
+  ok('S15 · cero funciones de más de 50 líneas en el código de producción',
+    real.status === 0 && lengthErrors.length === 0, show(lengthErrors.slice(0, 8)));
+  ok('S15 · ninguna supresión quedó obsoleta (todas siguen siendo necesarias)',
+    unusedDisables.length === 0, show(unusedDisables.slice(0, 8)));
+  ok('S15 · el código de producción pasa eslint sin errores ni avisos',
+    results.length > 0 && results.every((r) => (r.errorCount || 0) === 0 && (r.warningCount || 0) === 0),
+    show(results.filter((r) => r.errorCount || r.warningCount).map((r) => path.basename(r.filePath))));
+
+  // ---- La regla tiene que morder ----
+  // Un repo limpio no prueba que la regla funcione: podría estar mal configurada
+  // y no señalar nada jamás. Se le pasa por stdin una función de 60 líneas con
+  // nombre de fichero del renderer y se exige exactamente el error de longitud.
+  const probeSrc = 'function sonda() {\n'
+    + Array.from({ length: 60 }, (unused, i) => '  const v' + i + ' = ' + i + ';').join('\n')
+    + '\n}\nmodule.exports = sonda;\n';
+  const probe = runEslint(['--stdin', '--stdin-filename', 'renderer/__sonda_longitud.js', '--format', 'json'], probeSrc);
+  const probeHits = parse(probe.out).flatMap((r) => (r.messages || []))
+    .filter((m) => m.ruleId === 'max-lines-per-function');
+  ok('S15 · la regla señala una función de 60 líneas (la compuerta muerde)',
+    probe.status !== 0 && probeHits.length === 1,
+    show({ exit: probe.status, hallazgos: probeHits.map((m) => m.message) }));
+  ok('S15 · y no la señalaría por debajo del límite',
+    (() => {
+      const small = 'function sonda() {\n'
+        + Array.from({ length: 40 }, (unused, i) => '  const v' + i + ' = ' + i + ';').join('\n')
+        + '\n}\nmodule.exports = sonda;\n';
+      const r = runEslint(['--stdin', '--stdin-filename', 'renderer/__sonda_longitud.js', '--format', 'json'], small);
+      return parse(r.out).flatMap((x) => (x.messages || []))
+        .filter((m) => m.ruleId === 'max-lines-per-function').length === 0;
+    })());
+
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  ok('S15 · package.json expone npm run lint', Boolean(pkg.scripts && pkg.scripts.lint));
+  ok('S15 · verify encadena lint antes de typecheck y tests',
+    /^npm run lint\b/.test(String(pkg.scripts && pkg.scripts.verify)));
+  ok('S15 · eslint es una devDependency declarada', Boolean(pkg.devDependencies && pkg.devDependencies.eslint),
+    'sin ella, un clon limpio no puede verificar la longitud');
+}
+
+// ============================================================
+// 16. Preparación para el arranque de escritorio
+// ============================================================
+/**
+ * Verifica las rutas y la configuración con las que Electron lanza la ventana.
+ *
+ * Las demás suites cargan main.js con un stub cuyo `whenReady()` NUNCA resuelve y
+ * cuyo `loadFile()` no hace nada. Eso es correcto para lo que prueban —los
+ * handlers IPC—, pero deja sin verificar todo lo que ocurre al crear la ventana.
+ * Consecuencia concreta: si alguien renombra `renderer/index.html` o mueve
+ * `preload.js`, los 22 suites siguen en verde y la aplicación lanza una ventana
+ * en blanco. Aquí `whenReady()` sí resuelve, la ventana se crea contra el stub y
+ * se registra todo lo que main.js le pasa.
+ *
+ * @returns {Promise<void>}
+ */
+async function desktopLaunchStorm() {
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'lk-launch-'));
+  const recorded = { windows: [], loaded: [], openHandler: 0, navigateListener: 0, menuBarHidden: 0 };
+  const appStub = {
+    isPackaged: false,
+    getPath: () => userData,
+    whenReady: () => Promise.resolve(),
+    on: () => {},
+    quit: () => {}
+  };
+  const BW = function (options) {
+    recorded.windows.push(options || {});
+    return {
+      webContents: {
+        openDevTools() {},
+        getURL: () => '',
+        setWindowOpenHandler() { recorded.openHandler += 1; },
+        on(event) { if (event === 'will-navigate') recorded.navigateListener += 1; }
+      },
+      setMenuBarVisibility(value) { if (value === false) recorded.menuBarHidden += 1; },
+      loadFile(target) { recorded.loaded.push(target); },
+      on() {}
+    };
+  };
+  BW.getAllWindows = () => [];
+
+  const realLoad = Module._load;
+  Module._load = function (request) {
+    if (request === 'electron') {
+      return {
+        app: appStub,
+        BrowserWindow: BW,
+        ipcMain: { handle: () => {}, on: () => {} },
+        dialog: { showOpenDialog: async () => ({ canceled: true, filePaths: [] }), showSaveDialog: async () => ({ canceled: true }) },
+        shell: { openExternal: async () => true },
+        clipboard: { writeText: () => {}, readText: () => '' },
+        safeStorage: {
+          isEncryptionAvailable: () => false,
+          encryptString: (value) => Buffer.from('enc:' + value),
+          decryptString: (buf) => String(buf).slice(4)
+        }
+      };
+    }
+    return realLoad.apply(this, arguments);
+  };
+
+  const mainPath = path.join(ROOT, 'main.js');
+  const resolved = require.resolve(mainPath);
+  // main.js ya se requirió antes en esta suite: sin limpiar la caché, Node
+  // devolvería el módulo cacheado y el whenReady() nuevo no ejecutaría nada.
+  delete require.cache[resolved];
+  const realDebug = console.debug;
+  const realError = console.error;
+  const noise = [];
+  console.debug = () => {};
+  console.error = (...args) => { noise.push(args.map(String).join(' ')); };
+  try {
+    require(mainPath);
+    await settleDeep(3); // deja correr el .then() de whenReady y createWindow()
+  } finally {
+    Module._load = realLoad;
+    console.debug = realDebug;
+    console.error = realError;
+    delete require.cache[resolved];
+    try { fs.rmSync(userData, { recursive: true, force: true }); } catch (err) { /* ya no existe */ }
+  }
+
+  ok('S16 · main.js crea exactamente una ventana al arrancar', recorded.windows.length === 1, show(recorded.windows.length));
+  const opts = recorded.windows[0] || {};
+  const wp = opts.webPreferences || {};
+
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  ok('S16 · package.json apunta a un punto de entrada que existe',
+    Boolean(pkg.main) && fs.existsSync(path.join(ROOT, pkg.main)), show(pkg.main));
+
+  ok('S16 · el preload declarado existe en disco', Boolean(wp.preload) && fs.existsSync(String(wp.preload)), show(wp.preload));
+  ok('S16 · y es el preload del proyecto, no otra ruta',
+    path.resolve(String(wp.preload || '')) === path.resolve(path.join(ROOT, 'preload.js')), show(wp.preload));
+
+  ok('S16 · la ventana cargó exactamente un archivo', recorded.loaded.length === 1, show(recorded.loaded));
+  const loaded = String(recorded.loaded[0] || '');
+  ok('S16 · ese archivo existe en disco', Boolean(loaded) && fs.existsSync(loaded), show(loaded));
+  ok('S16 · y es renderer/index.html, el mismo que audita S13',
+    path.resolve(loaded) === path.resolve(path.join(P, 'index.html')), show(loaded));
+
+  ok('S16 · el icono declarado existe', Boolean(opts.icon) && fs.existsSync(String(opts.icon)), show(opts.icon));
+
+  ok('S16 · contextIsolation activado', wp.contextIsolation === true, show(wp));
+  ok('S16 · nodeIntegration desactivado', wp.nodeIntegration === false, show(wp));
+  ok('S16 · sandbox está declarado de forma explícita (no confiado al valor por defecto)',
+    typeof wp.sandbox === 'boolean', show(wp.sandbox));
+
+  // sandbox:false solo es una elección defendible mientras el preload no toque
+  // Node. Si algún día importa 'fs', activar el sandbox deja de ser una opción y
+  // la ventana queda expuesta sin alternativa. Se fija la precondition para que
+  // el endurecimiento siga disponible.
+  const preloadSrc = fs.readFileSync(path.join(ROOT, 'preload.js'), 'utf8');
+  const preloadRequires = [...preloadSrc.matchAll(/require\(\s*'([^']+)'\s*\)/g)].map((m) => m[1]);
+  ok('S16 · el preload solo importa electron (mantiene disponible sandbox:true)',
+    preloadRequires.length > 0 && preloadRequires.every((r) => r === 'electron'), show(preloadRequires));
+  ok('S16 · el preload no usa globales de Node', !/\b(?:process|Buffer|__dirname)\b/.test(preloadSrc));
+
+  ok('S16 · la apertura de ventanas nuevas está interceptada', recorded.openHandler === 1, String(recorded.openHandler));
+  ok('S16 · will-navigate está escuchado', recorded.navigateListener === 1, String(recorded.navigateListener));
+  ok('S16 · la barra de menú se oculta', recorded.menuBarHidden === 1, String(recorded.menuBarHidden));
+
+  ok('S16 · la ventana declara dimensiones y mínimos',
+    [opts.width, opts.height, opts.minWidth, opts.minHeight].every((n) => typeof n === 'number' && n > 0),
+    show({ width: opts.width, height: opts.height, minWidth: opts.minWidth, minHeight: opts.minHeight }));
+  ok('S16 · backgroundColor declarado (evita el destello blanco al abrir)',
+    typeof opts.backgroundColor === 'string' && /^#[0-9a-f]{6}$/i.test(opts.backgroundColor), show(opts.backgroundColor));
+  ok('S16 · el arranque no produjo errores en consola', noise.length === 0, show(noise.slice(0, 3)));
+}
+
+// ============================================================
+// 17. Autoprueba del modo humo de lanzamiento
+// ============================================================
+/**
+ * Ejercita `runDesktopSmokeTest` de main.js sin necesitar el binario de Electron.
+ *
+ * `npm run test:launch` es la única comprobación que abre una ventana de verdad, y
+ * en un entorno sin binario o sin pantalla reporta SKIP: es honesto, pero deja su
+ * lógica sin ejercitar. Aquí se carga main.js con `LOREVINCI_SMOKE=1` contra un
+ * stub que controla `executeJavaScript`, `app.exit` y `stdout`, y se recorren los
+ * cuatro desenlaces que el modo humo puede tomar.
+ *
+ * @param {any} snapshots valor o función que devuelve el sondeo del renderer
+ * @returns {Promise<{exits:number[], markers:any[], polls:number, failHandlers:any}>}
+ */
+async function runSmokeScenario(options) {
+  const { snapshots, smokeEnv = true, afterBoot = null } = options;
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'lk-smoke-'));
+  const state = { exits: [], markers: [], polls: 0, failHandlers: {} };
+  const appStub = {
+    isPackaged: false, getPath: () => userData, whenReady: () => Promise.resolve(),
+    on: () => {}, quit: () => {}, exit: (code) => { state.exits.push(code); }
+  };
+  const BW = function () {
+    return {
+      webContents: {
+        openDevTools() {}, getURL: () => '', setWindowOpenHandler() {}, on() {},
+        once(event, fn) { state.failHandlers[event] = fn; },
+        executeJavaScript: async () => {
+          state.polls += 1;
+          return typeof snapshots === 'function' ? snapshots() : snapshots;
+        }
+      },
+      setMenuBarVisibility() {}, loadFile() {}, on() {}
+    };
+  };
+  BW.getAllWindows = () => [];
+
+  const realLoad = Module._load;
+  Module._load = function (request) {
+    if (request === 'electron') {
+      return {
+        app: appStub, BrowserWindow: BW, ipcMain: { handle: () => {}, on: () => {} },
+        dialog: {}, shell: { openExternal: async () => true },
+        clipboard: { writeText: () => {}, readText: () => '' },
+        safeStorage: { isEncryptionAvailable: () => false, encryptString: (v) => Buffer.from('enc:' + v), decryptString: (b) => String(b).slice(4) }
+      };
+    }
+    return realLoad.apply(this, arguments);
+  };
+  const realWrite = process.stdout.write;
+  const realDebug = console.debug;
+  const realError = console.error;
+  const previousEnv = process.env.LOREVINCI_SMOKE;
+  // Solo se activa cuando el escenario lo pide: comprobar que main.js NO entra
+  // en modo humo por su cuenta es lo que garantiza que un arranque normal no
+  // termine con app.exit().
+  if (smokeEnv) process.env.LOREVINCI_SMOKE = '1'; else delete process.env.LOREVINCI_SMOKE;
+  process.stdout.write = function (chunk) {
+    const text = String(chunk);
+    if (text.startsWith('LOREVINCI_SMOKE ')) {
+      try { state.markers.push(JSON.parse(text.slice('LOREVINCI_SMOKE '.length))); } catch (err) { state.markers.push({ ok: false, step: 'bad-json' }); }
+      return true;
+    }
+    return realWrite.apply(process.stdout, arguments);
+  };
+  console.debug = () => {};
+  console.error = () => {};
+  const mainPath = path.join(ROOT, 'main.js');
+  const resolved = require.resolve(mainPath);
+  delete require.cache[resolved];
+  try {
+    require(mainPath);
+    await new Promise((resolve) => setTimeout(resolve, 900)); // el sondeo va cada 250 ms
+    if (typeof afterBoot === 'function') {
+      afterBoot(state);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    }
+  } finally {
+    Module._load = realLoad;
+    process.stdout.write = realWrite;
+    console.debug = realDebug;
+    console.error = realError;
+    if (previousEnv === undefined) delete process.env.LOREVINCI_SMOKE; else process.env.LOREVINCI_SMOKE = previousEnv;
+    delete require.cache[resolved];
+    try { fs.rmSync(userData, { recursive: true, force: true }); } catch (err) { /* ya no existe */ }
+  }
+  return state;
+}
+
+async function desktopSmokeSelfTest() {
+  // ---- 1. Arranque correcto ----
+  const ready = await runSmokeScenario({ snapshots: { cards: 3, bridgeMethods: 17, bootError: null } });
+  ok('S17 · con la biblioteca pintada y el puente expuesto, el humo aprueba',
+    ready.exits.length === 1 && ready.exits[0] === 0, show({ exits: ready.exits, markers: ready.markers }));
+  ok('S17 · informa ok:true y el paso "ready"',
+    ready.markers.length === 1 && ready.markers[0].ok === true && ready.markers[0].step === 'ready', show(ready.markers));
+  ok('S17 · incluye la instantánea del renderer en el informe',
+    Boolean(ready.markers[0] && ready.markers[0].snapshot && ready.markers[0].snapshot.cards === 3), show(ready.markers[0]));
+
+  // ---- 2. El renderer arrancó pero dejó el banner de error ----
+  const broken = await runSmokeScenario({ snapshots: { cards: 0, bridgeMethods: 17, bootError: 'LoreVinci no pudo cargar tus datos. TypeError' } });
+  ok('S17 · un banner de arranque se reporta como fallo con código 1',
+    broken.exits.length === 1 && broken.exits[0] === 1, show(broken.exits));
+  ok('S17 · y nombra el paso "boot" con el texto del banner',
+    broken.markers.length === 1 && broken.markers[0].step === 'boot'
+    && /no pudo cargar/.test(String(broken.markers[0].detail)), show(broken.markers));
+
+  // ---- 3. El archivo no carga ----
+  // El disparo se hace dentro de runSmokeScenario, mientras stdout sigue
+  // interceptado: hacerlo fuera escribiría al stdout real y la aserción no
+  // vería ningún marcador aunque el código de salida fuera correcto.
+  const failed = await runSmokeScenario({
+    snapshots: { cards: 0, bridgeMethods: 0, bootError: null },
+    afterBoot: (state) => {
+      if (typeof state.failHandlers['did-fail-load'] === 'function') {
+        state.failHandlers['did-fail-load']({}, -6, 'ERR_FILE_NOT_FOUND');
+      }
+    }
+  });
+  ok('S17 · main.js registra did-fail-load', typeof failed.failHandlers['did-fail-load'] === 'function',
+    show(Object.keys(failed.failHandlers)));
+  ok('S17 · did-fail-load termina con código 1 y el motivo',
+    failed.exits.includes(1) && failed.markers.some((m) => m.step === 'did-fail-load' && /ERR_FILE_NOT_FOUND/.test(String(m.detail))),
+    show({ exits: failed.exits, markers: failed.markers }));
+
+  // ---- 4. Arranque incompleto: no debe darse por bueno ----
+  const incomplete = await runSmokeScenario({ snapshots: { cards: 0, bridgeMethods: 17, bootError: null } });
+  ok('S17 · sin historias pintadas no aprueba aunque el puente exista',
+    incomplete.exits.length === 0 && incomplete.markers.length === 0, show({ exits: incomplete.exits, markers: incomplete.markers }));
+  ok('S17 · y sigue sondeando (no se rinde a la primera)', incomplete.polls >= 2, show(incomplete.polls));
+
+  // ---- 5. El modo humo no se activa solo ----
+  // El renderer estaría listo para aprobar, así que si el modo humo se activara
+  // solo, este escenario terminaría con exit(0): la app real se cerraría al
+  // arrancar. Es la propiedad que más daño haría si se rompiera en silencio.
+  const quiet = await runSmokeScenario({ snapshots: { cards: 3, bridgeMethods: 17, bootError: null }, smokeEnv: false });
+  ok('S17 · sin la variable de entorno, main.js no entra en modo humo (un arranque normal no se auto-cierra)',
+    quiet.exits.length === 0 && quiet.markers.length === 0, show({ exits: quiet.exits, markers: quiet.markers }));
+
+  // ---- 6. El lanzador está cableado ----
+  ok('S17 · existe scripts/smoke-launch.js', fs.existsSync(path.join(ROOT, 'scripts', 'smoke-launch.js')));
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  ok('S17 · package.json expone npm run test:launch', Boolean(pkg.scripts && pkg.scripts['test:launch']),
+    show(pkg.scripts && pkg.scripts['test:launch']));
+  const launcher = fs.existsSync(path.join(ROOT, 'scripts', 'smoke-launch.js'))
+    ? fs.readFileSync(path.join(ROOT, 'scripts', 'smoke-launch.js'), 'utf8') : '';
+  ok('S17 · el lanzador distingue SKIP de FAIL (no convierte un entorno limitado en fallo)',
+    /function skip\(/.test(launcher) && /function fail\(/.test(launcher) && /process\.exit\(0\)/.test(launcher));
+  ok('S17 · el lanzador detecta la ausencia de binario y de pantalla',
+    /node_modules', 'electron|node_modules\/electron/.test(launcher) && /DISPLAY/.test(launcher));
 }
 
 // ============================================================
@@ -944,6 +1603,10 @@ async function integrity() {
   await quotaStress();
   await engineStress();
   await contractStress();
+  typecheckStorm();
+  functionLengthStorm();
+  await desktopLaunchStorm();
+  await desktopSmokeSelfTest();
   await integrity();
 
   R.done();

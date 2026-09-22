@@ -1527,7 +1527,10 @@
 
   <script src="vendor/pdfjs/pdf.min.js"></script>
   <script src="vendor/tesseract/tesseract.min.js"></script>
-  <!-- Módulos compartidos: seguridad de salida y datos semilla (deben ir antes que app.js) -->
+  <!-- Módulos compartidos: configuración, seguridad de salida y datos semilla.
+       El ORDEN importa: app-config.js no depende de nada; app-kernel.js y
+       seed-data.js leen LoreConfig; app.js usa los cuatro. -->
+  <script src="app-config.js"></script>
   <script src="app-kernel.js"></script>
   <script src="dom-safe.js"></script>
   <script src="seed-data.js"></script>

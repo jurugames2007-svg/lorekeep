@@ -18,17 +18,21 @@
     "test:regression": "node tests/regression.test.js",
     "test:enterprise": "node tests/enterprise.test.js",
     "test:stress": "node tests/stress.test.js",
+    "test:launch": "node scripts/smoke-launch.js",
     "lint": "eslint .",
-    "verify": "npm run lint && npm test"
+    "verify": "npm run lint && npm run typecheck && npm test",
+    "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
+    "@types/node": "^20.19.43",
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3",
     "eslint": "^9.39.5",
     "globals": "^16.5.0",
     "jsdom": "^26.1.0",
     "pdfjs-dist": "3.11.174",
-    "tesseract.js": "5.1.1"
+    "tesseract.js": "5.1.1",
+    "typescript": "^5.9.3"
   },
   "build": {
     "appId": "com.lorevinci.app",
