@@ -749,8 +749,8 @@
       <div class="modal-backdrop" id="autoBookModalBackdrop" role="dialog" aria-modal="true" aria-label="Crear libro automático">
         <div class="modal" style="width: 580px;">
           <div class="modal-head">
-            <h3> Crear Libro Automático (Multi-Fuente, PDFs y Canon)</h3>
-            <button class="icon-btn" id="closeAutoBookModal" title="Cerrar">✕</button>
+            <h3>Crear libro automático</h3>
+            <button class="icon-btn" id="closeAutoBookModal" title="Cerrar">Cerrar</button>
           </div>
           <p class="muted small">Genera automáticamente capítulos coherentes respetando la fuente prioritaria (Canon) y los documentos derivados adjuntos.</p>
           
@@ -800,6 +800,10 @@
                 <option value="epico">Fantasía Épica</option>
               </select>
             </div>
+          </div>
+          <div class="autobook-presets" aria-label="Preajustes de extensión">
+            <button class="btn-secondary small" id="autoBook100PagesBtn" type="button">Plan de 100 páginas</button>
+            <span class="muted small" id="autoBookPageEstimate">Estimación: 4 páginas</span>
           </div>
 
           <label class="autobook-check" style="display:flex; align-items:center; gap:8px; margin-top:10px; font-weight:600; color:var(--text); cursor:pointer;">

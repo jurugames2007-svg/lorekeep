@@ -6613,6 +6613,25 @@ $('#openAutoBookModalBtn').addEventListener('click', () => {
   openModal($('#autoBookModalBackdrop'));
 });
 
+function updateAutoBookPageEstimate() {
+  const count = Math.max(1, parseInt($('#autoBookCount')?.value, 10) || 1);
+  const length = Math.max(300, parseInt($('#autoBookLength')?.value, 10) || 1200);
+  // Estimación editorial conservadora: 250 palabras por página. No es una
+  // garantía de paginación; la maquetación final depende de tipografía y formato.
+  const pages = Math.max(1, Math.round((count * length) / 250));
+  const label = $('#autoBookPageEstimate');
+  if (label) label.textContent = `Estimación: ${pages} páginas (${count * length} palabras objetivo)`;
+}
+$('#autoBook100PagesBtn')?.addEventListener('click', () => {
+  $('#autoBookCount').value = '25';
+  $('#autoBookLength').value = '1000';
+  $('#autoBookPlanning').checked = true;
+  updateAutoBookPageEstimate();
+  showToast('Preajuste aplicado: 25 capítulos de 1.000 palabras. Revisa el canon antes de iniciar.');
+});
+$('#autoBookCount')?.addEventListener('input', updateAutoBookPageEstimate);
+$('#autoBookLength')?.addEventListener('input', updateAutoBookPageEstimate);
+
 $('#autoBookResearchWebBtn').addEventListener('click', () => {
   const story = getStory(currentStoryId); if (!story) return;
   const ref = story.style?.reference || story.title;
@@ -6880,7 +6899,14 @@ function buildAutoBookChapterPrompts(story, nextNum, cfg, ctx, plan) {
   const { beatBlock } = plan;
 
   // --- Paso 2: redacción ---
-  const systemPrompt = `Eres un novelista profesional que escribe en ${outputLanguage.instruction}. Tu trabajo es redactar el Capítulo ${nextNum} de la obra "${sanitizeTextForPrompt(story.title)}" respetando su canon y su voz.
+  const systemPrompt = `Eres un motor narrativo profesional que escribe en ${outputLanguage.instruction}. Simulas una realidad ficticia dentro de sus restricciones; no afirmes que puedes volverla literalmente real. Tu trabajo es redactar el Capítulo ${nextNum} de la obra "${sanitizeTextForPrompt(story.title)}" respetando su canon y su voz.
+
+REGLAS DE FIABILIDAD:
+- La coherencia es probabilística, no absoluta. No prometas perfección.
+- Si detectas una contradicción con el canon o la memoria, marca el punto como [CANOT] y elige la corrección más conservadora.
+- Nunca inventes que una fuente, recuerdo o capacidad existe si no está en el contexto.
+- El usuario puede pedir [REGENERATE] para rehacer el tramo o [ADJUST] para corregir canon y continuar.
+- La obra se construye por etapas: plan, un capítulo o escena, memoria y validación; nunca intentes escribir un libro completo de una sola vez.
 
 ${contextBlock}
 
@@ -6904,7 +6930,9 @@ Requisitos de entrega:
 - Extensión: entre ${targetWords} y ${targetWords + 500} palabras.
 - Prosa continua en párrafos, con diálogo donde la escena lo pida.
 - Cierra el capítulo con el gancho planificado, en una frase completa.
-- Responde solo con el texto del capítulo.`;
+- Responde solo con el texto del capítulo.
+- Si hubo una corrección, incluye [CANOT] en una línea breve al final, seguida de [MEMORY BLOCK] con eventos, cambios de personajes, objetos, decisiones y hilos abiertos.
+- Termina con [OPTIONS] y 2 o 3 acciones posibles para el usuario, incluyendo [REGENERATE] y [ADJUST] cuando sean pertinentes.`;
   return { systemPrompt, userPrompt };
 }
 
