@@ -234,6 +234,9 @@ button, input, textarea, select {
 .card h3 { margin: 0 0 6px 0; font-size: 12.8px; font-weight: 600; letter-spacing: 0.1px; }
 .muted { color: var(--muted); }
 .small { font-size: 11px; line-height: 1.5; }
+.autobook-presets { display:flex; align-items:center; gap:10px; margin:10px 0 2px; padding:8px 10px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg-alt); }
+.autobook-presets .btn-secondary { margin:0; }
+
 
 /* Home */
 .home-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }

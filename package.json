@@ -19,6 +19,9 @@
     "test:enterprise": "node tests/enterprise.test.js",
     "test:stress": "node tests/stress.test.js",
     "test:launch": "node scripts/smoke-launch.js",
+    "test:endurance": "node scripts/endurance-runner.js",
+    "test:endurance:short": "node scripts/endurance-runner.js --duration=30s",
+    "pages": "node tools/page-counter.js",
     "lint": "eslint .",
     "verify": "npm run lint && npm run typecheck && npm test",
     "typecheck": "tsc -p tsconfig.json"
