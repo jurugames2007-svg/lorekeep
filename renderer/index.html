@@ -442,9 +442,12 @@
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
             <div>
               <h3 style="margin:0;">Arquitectura de Inferencia y Adaptabilidad de Hardware</h3>
-              <p class="muted small" style="margin:4px 0 0 0;">Optimiza LoreVinci para exprimir el máximo potencial de cualquier computador (desde portátiles modestos sin GPU hasta estaciones de trabajo con RTX).</p>
+              <p class="muted small" style="margin:4px 0 0 0;">Análisis automático de hardware (dxdiag / CPU / GPU) para adaptar el modelo local al máximo potencial de tu equipo sin depender de APIs externas.</p>
             </div>
-            <span class="canon-badge canon-primary" id="detectedHardwareBadge">Detectando hardware…</span>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              <button class="btn-secondary small" id="reScanHardwareBtn" type="button" title="Ejecutar análisis de hardware del sistema">🔄 Re-escanear (dxdiag)</button>
+              <span class="canon-badge canon-primary" id="detectedHardwareBadge">Detectando hardware…</span>
+            </div>
           </div>
 
           <!-- DIAGNÓSTICO DE HARDWARE -->
@@ -454,17 +457,26 @@
               <b class="diag-value" id="diagCpuCores">-</b>
             </div>
             <div class="diag-item">
-              <span class="diag-label">RAM Estimada</span>
+              <span class="diag-label">RAM del Sistema</span>
               <b class="diag-value" id="diagRamGb">-</b>
             </div>
             <div class="diag-item">
-              <span class="diag-label">Motor Recomendado</span>
-              <b class="diag-value" id="diagRecommendedEngine">llama.cpp / llama-server</b>
+              <span class="diag-label">GPU / Acelerador</span>
+              <b class="diag-value" id="diagGpuName">Detectando…</b>
             </div>
             <div class="diag-item">
-              <span class="diag-label">Modelo Óptimo</span>
+              <span class="diag-label">Modelo Local Óptimo</span>
               <b class="diag-value" id="diagOptimalModel">Qwen2.5-7B (Q4_K_M)</b>
             </div>
+          </div>
+
+          <!-- BANNER DE RECOMENDACIÓN LOCAL-FIRST -->
+          <div id="hardwareRecommendationBanner" style="margin-top:10px; padding:10px 14px; border-radius:12px; background:var(--panel-2); border:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:240px;">
+              <span style="font-size:11px; text-transform:uppercase; font-weight:700; color:var(--accent); letter-spacing:0.4px;">Recomendación Local-First</span>
+              <p id="hardwareRecommendationText" class="muted small" style="margin:3px 0 0 0;">Analizando especificaciones para configurar el modelo local más potente sin saturar tu equipo.</p>
+            </div>
+            <button class="btn-primary small" id="autoOptimizeHardwareBtn" type="button">Aplicar y Activar Modelo Local</button>
           </div>
 
           <!-- PERFILES DE HARDWARE SELECCIONABLES -->

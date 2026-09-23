@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('lorevinci', {
   secretsSet: (apiKey) => ipcRenderer.invoke('secrets:set', apiKey),
   secretsStatus: () => ipcRenderer.invoke('secrets:status'),
   clipboardWrite: (text) => ipcRenderer.invoke('clipboard:write', text),
+  systemScanHardware: () => ipcRenderer.invoke('system:scanHardware'),
   // Permite a la UI informar el estado real del almacenamiento del secreto.
   onAppEvent: (channel, callback) => {
     const allowed = ['app:save-failed', 'app:navigation-blocked'];

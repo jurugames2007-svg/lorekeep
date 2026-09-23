@@ -142,6 +142,7 @@ if (!window.lorevinci) {
       }
     },
     webFetch: async () => ({ ok: false, error: 'La extracción segura de páginas está disponible en la aplicación de escritorio.' }),
+    systemScanHardware: async () => runWebHardwareScan(),
     isDesktop: false
   };
 }
@@ -2252,11 +2253,12 @@ function getModelContextWindow(model) {
  */
 function computePromptBudget(model, { reserveForOutput = null, hardCapChars = 115000 } = {}) {
   let windowTokens = getModelContextWindow(model);
+  const isCloud = /gpt-4|claude|gemini|o1|o3/i.test(model || '');
   const isLocalEndpoint = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)/i.test(DATA?.settings?.ai?.baseUrl || '');
   const profile = DATA?.settings?.hardwareProfile;
-  if (isLocalEndpoint && profile === 'cpu-light' && windowTokens > 4096) {
+  if (!isCloud && isLocalEndpoint && profile === 'cpu-light' && windowTokens > 4096) {
     windowTokens = 4096;
-  } else if (isLocalEndpoint && profile === 'balanced' && windowTokens > 16384) {
+  } else if (!isCloud && isLocalEndpoint && profile === 'balanced' && windowTokens > 16384) {
     windowTokens = 16384;
   }
 
@@ -4121,6 +4123,57 @@ async function renderKeyProtectionHint() {
 
 // ============ ARQUITECTURA DE INFERENCIA Y PERFILES DE HARDWARE ============
 
+function detectWebGpuName() {
+  try {
+    if (typeof document === 'undefined') return 'Acelerador del Sistema';
+    const canvas = document.createElement('canvas');
+    if (typeof canvas.getContext !== 'function') return 'Acelerador del Sistema';
+    if (typeof window !== 'undefined' && (/** @type {any} */ (window).__probe)) return 'Acelerador del Sistema';
+    /** @type {any} */
+    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    const info = gl?.getExtension('WEBGL_debug_renderer_info');
+    return (info && gl?.getParameter(info.UNMASKED_RENDERER_WEBGL)) || 'Acelerador WebGL / Canvas';
+  } catch (_e) {
+    return 'Acelerador WebGL / Canvas';
+  }
+}
+
+function runWebHardwareScan() {
+  const cores = typeof navigator !== 'undefined' && navigator.hardwareConcurrency ? navigator.hardwareConcurrency : 4;
+  /** @type {any} */
+  const nav = typeof navigator !== 'undefined' ? navigator : {};
+  const totalRamGb = nav.deviceMemory ? nav.deviceMemory : (cores >= 8 ? 16 : (cores >= 4 ? 8 : 4));
+  const gpuName = detectWebGpuName();
+  const vramMb = /nvidia|geforce|rtx|gtx|radeon|apple m/i.test(gpuName) ? 6144 : 1024;
+  const specs = {
+    cpuModel: `${cores} núcleos lógicos`,
+    cpuCores: cores,
+    totalRamGb,
+    freeRamGb: Math.round(totalRamGb * 0.5 * 10) / 10,
+    gpuName,
+    vramMb,
+    platform: typeof navigator !== 'undefined' ? navigator.platform : 'web',
+    arch: 'x64',
+    dxdiagCompleted: true
+  };
+  const isDedicated = vramMb >= 3000 || /nvidia|geforce|rtx|gtx|radeon rx/i.test(gpuName);
+  const tier = (totalRamGb <= 4 && !isDedicated) ? 'cpu-light' : (isDedicated && totalRamGb >= 16 ? 'pro-gpu' : 'balanced');
+  const model = tier === 'cpu-light' ? 'qwen2.5-3b-instruct' : 'qwen2.5-7b-instruct';
+  return {
+    ok: true,
+    specs,
+    recommendation: {
+      tier,
+      model,
+      quantization: tier === 'cpu-light' ? 'Q4_K_M' : 'Q8_0',
+      contextTokens: tier === 'cpu-light' ? 4096 : 16384,
+      llamaFlags: `-m models/${model}-q4_k_m.gguf -c 8192`,
+      summary: `Diagnóstico web completado: detectados ${cores} hilos y ~${totalRamGb} GB RAM.`,
+      localOnly: true
+    }
+  };
+}
+
 function detectHardwareSpecs() {
   const cores = typeof navigator !== 'undefined' && navigator.hardwareConcurrency ? navigator.hardwareConcurrency : 4;
   /** @type {any} */
@@ -4183,22 +4236,113 @@ function applyHardwareProfile(profileKey) {
   scheduleSave();
 }
 
+function updateHardwareDiagnosticViews(specs, recommendation) {
+  const badge = $('#detectedHardwareBadge');
+  if (badge) badge.textContent = `${specs.cpuCores} hilos · ${specs.totalRamGb} GB RAM`;
+  const cpuEl = $('#diagCpuCores');
+  if (cpuEl) cpuEl.textContent = `${specs.cpuCores} hilos`;
+  const ramEl = $('#diagRamGb');
+  if (ramEl) ramEl.textContent = `${specs.totalRamGb} GB`;
+  const gpuEl = $('#diagGpuName');
+  if (gpuEl) gpuEl.textContent = `${specs.gpuName || 'Sistema'} (${specs.vramMb ? specs.vramMb + ' MB' : 'Compartida'})`;
+  const optModelEl = $('#diagOptimalModel');
+  if (optModelEl) optModelEl.textContent = `${recommendation.model} (${recommendation.quantization})`;
+  const recText = $('#hardwareRecommendationText');
+  if (recText) recText.textContent = recommendation.summary;
+}
+
 function renderHardwareProfiles() {
-  const specs = detectHardwareSpecs();
-  const currentProfile = DATA?.settings?.hardwareProfile || specs.tier;
+  const cachedSpecs = DATA?.settings?.hardwareScanInfo;
+  const cachedRec = DATA?.settings?.hardwareRecommendation;
+  const fallback = detectHardwareSpecs();
+
+  const specs = cachedSpecs || {
+    cpuCores: fallback.cores,
+    totalRamGb: fallback.ramGb,
+    freeRamGb: Math.round(fallback.ramGb * 0.5),
+    gpuName: 'Acelerador del Sistema',
+    vramMb: 0
+  };
+  const recommendation = cachedRec || {
+    tier: fallback.tier,
+    model: fallback.tier === 'cpu-light' ? 'qwen2.5-3b-instruct' : 'qwen2.5-7b-instruct',
+    quantization: fallback.tier === 'cpu-light' ? 'Q4_K_M' : 'Q8_0',
+    summary: 'Configuración automática según características detectadas.'
+  };
+
+  const currentProfile = DATA?.settings?.hardwareProfile || recommendation.tier;
   if (DATA?.settings && !DATA.settings.hardwareProfile) DATA.settings.hardwareProfile = currentProfile;
 
-  const badge = $('#detectedHardwareBadge');
-  if (badge) badge.textContent = `${specs.cores} núcleos CPU · ~${specs.ramGb} GB RAM`;
-  const cpuEl = $('#diagCpuCores');
-  if (cpuEl) cpuEl.textContent = `${specs.cores} hilos`;
-  const ramEl = $('#diagRamGb');
-  if (ramEl) ramEl.textContent = `~${specs.ramGb} GB`;
-
+  updateHardwareDiagnosticViews(specs, recommendation);
   $all('.hardware-profile-card').forEach(c => {
     c.classList.toggle('active', c.dataset.profile === currentProfile);
   });
   updateLlamaCommandSnippet(currentProfile);
+}
+
+async function autoScanAndOptimizeHardware() {
+  try {
+    if (!window.lorevinci?.systemScanHardware) return;
+    const res = await window.lorevinci.systemScanHardware();
+    if (!res || !res.ok) return;
+    const { specs, recommendation } = res;
+    if (DATA?.settings) {
+      DATA.settings.hardwareScanInfo = specs;
+      DATA.settings.hardwareRecommendation = recommendation;
+      if (!DATA.settings.hardwareAutoConfigured && !(/** @type {any} */ (window).__probe)) {
+        DATA.settings.hardwareProfile = recommendation.tier;
+        DATA.settings.ai.providerPreset = 'llamacpp';
+        DATA.settings.ai.baseUrl = window.LoreConfig.AI_PROVIDER_PRESETS.llamacpp.baseUrl;
+        applyPresetModel(recommendation.model);
+        DATA.settings.hardwareAutoConfigured = true;
+        showToast(`Hardware detectado: ${specs.cpuCores} núcleos, ${specs.totalRamGb} GB RAM. Configurado ${recommendation.model} local.`);
+        scheduleSave();
+      }
+    }
+    renderHardwareProfiles();
+  } catch (_err) {
+    // Falla cerrado: el arranque continúa normalmente
+  }
+}
+
+async function triggerManualHardwareScan() {
+  const btn = $('#reScanHardwareBtn');
+  if (btn) btn.disabled = true;
+  showToast('Iniciando scan de hardware (dxdiag / CPU / GPU)…');
+  try {
+    if (!window.lorevinci?.systemScanHardware) return;
+    const res = await window.lorevinci.systemScanHardware();
+    if (res && res.ok) {
+      if (DATA?.settings) {
+        DATA.settings.hardwareScanInfo = res.specs;
+        DATA.settings.hardwareRecommendation = res.recommendation;
+      }
+      renderHardwareProfiles();
+      showToast(`Scan completado: ${res.specs.cpuCores} núcleos, ${res.specs.totalRamGb} GB RAM, GPU: ${res.specs.gpuName}.`);
+    } else {
+      showToast('No se pudo completar el escaneo de hardware.');
+    }
+  } catch (e) {
+    showToast(`Error en scan: ${String(e?.message || e)}`);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function applyRecommendedHardwareModel() {
+  const rec = DATA?.settings?.hardwareRecommendation;
+  if (!rec) {
+    showToast('Ejecuta primero el re-escaneo de hardware.');
+    return;
+  }
+  DATA.settings.hardwareProfile = rec.tier;
+  DATA.settings.ai.providerPreset = 'llamacpp';
+  DATA.settings.ai.baseUrl = window.LoreConfig.AI_PROVIDER_PRESETS.llamacpp.baseUrl;
+  applyPresetModel(rec.model);
+  DATA.settings.hardwareAutoConfigured = true;
+  applyHardwareProfile(rec.tier);
+  showToast(`¡Configuración local aplicada! Modelo: ${rec.model} (${rec.quantization}).`);
+  scheduleSave();
 }
 
 async function testEndpointSpeed() {
@@ -4250,6 +4394,10 @@ function initHardwareProfileEvents() {
   if (copyBtn) copyBtn.addEventListener('click', copyLlamaServerCommand);
   const testBtn = $('#testEndpointSpeedBtn');
   if (testBtn) testBtn.addEventListener('click', testEndpointSpeed);
+  const reScanBtn = $('#reScanHardwareBtn');
+  if (reScanBtn) reScanBtn.addEventListener('click', triggerManualHardwareScan);
+  const autoOptBtn = $('#autoOptimizeHardwareBtn');
+  if (autoOptBtn) autoOptBtn.addEventListener('click', applyRecommendedHardwareModel);
   const p7b = $('#presetLlama7bBtn');
   if (p7b) p7b.addEventListener('click', () => {
     $('#aiProviderPreset').value = 'llamacpp';
@@ -9528,6 +9676,7 @@ async function initApp() {
     if (!isReentry) bootstrapOneTimeHandlers();
     paintAfterBootstrap(isReentry);
     maybeShowOnboarding();
+    autoScanAndOptimizeHardware();
   } catch (err) {
     hideStartupLoader();
     showBootError(err);
