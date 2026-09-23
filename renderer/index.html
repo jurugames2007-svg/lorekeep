@@ -86,11 +86,17 @@
         </button>
       </div>
     </aside>
+    <div class="sidebar-backdrop" id="sidebarBackdrop" aria-hidden="true"></div>
 
     <!-- Main -->
     <main class="main" id="content-area">
       <header class="topbar">
-        <div class="crumb" id="crumb">Inicio</div>
+        <div class="top-nav-left">
+          <button class="icon-btn mobile-menu-toggle" id="mobileMenuBtn" type="button" aria-label="Abrir menú de navegación" title="Menú">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+          </button>
+          <div class="crumb" id="crumb">Inicio</div>
+        </div>
         <div class="top-actions">
           <label class="sr-only" for="globalSearch">Buscar en tus historias, capítulos y personajes</label>
           <input type="search" id="globalSearch" placeholder="Buscar historias, capítulos, personajes…" title="Buscar en títulos y dentro del texto de tus capítulos" aria-describedby="searchHelp" />

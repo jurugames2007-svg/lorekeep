@@ -1033,6 +1033,12 @@ function showView(name) {
   $all('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === name));
   $('#crumb').textContent = viewTitles[name] || name;
 
+  const sidebar = $('#mainSidebar');
+  if (sidebar && sidebar.classList.contains('mobile-open')) {
+    sidebar.classList.remove('mobile-open');
+    $('#sidebarBackdrop')?.classList.remove('active');
+  }
+
   if (name === 'sources') renderGlobalSources();
   if (name === 'home') renderHome();
   if (name === 'stories') renderStories();
@@ -9580,6 +9586,28 @@ async function restoreApiKeyFromSecureStore() {
 }
 
 /**
+ * Inicializa el menú de navegación adaptable en dispositivos móviles y vistas reducidas.
+ * @returns {void}
+ */
+function setupMobileResponsiveNavigation() {
+    const mobileBtn = $('#mobileMenuBtn');
+    const backdrop = $('#sidebarBackdrop');
+    const sidebar = $('#mainSidebar');
+    if (mobileBtn && sidebar) {
+        mobileBtn.addEventListener('click', () => {
+            const open = sidebar.classList.toggle('mobile-open');
+            backdrop?.classList.toggle('active', open);
+        });
+    }
+    if (backdrop && sidebar) {
+        backdrop.addEventListener('click', () => {
+            sidebar.classList.remove('mobile-open');
+            backdrop.classList.remove('active');
+        });
+    }
+}
+
+/**
  * Registra los manejadores que solo deben vincularse una vez por sesión.
  *
  * Se extrajo de `initApp`, que superaba las 50 líneas porque recorría todo el
@@ -9599,6 +9627,7 @@ function bootstrapOneTimeHandlers() {
     enhanceAccessibility();
     initHardwareProfileEvents();
     initDockedMuseEvents();
+    setupMobileResponsiveNavigation();
 }
 
 /**

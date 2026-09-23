@@ -321,16 +321,18 @@ npm install
 npm test
 ```
 
-Veintitrés suites, 1.165 comprobaciones: núcleo, ingesta multi-PDF con extracción real, motor de
+Veinticuatro suites, 1.197 comprobaciones: núcleo, ingesta multi-PDF con extracción real, motor de
 generación, handlers del proceso principal, OCR, Mesa RPG, escaneo y adaptación de hardware
-(`hardware-scan.test.js`), una batería adversarial basada en la retroalimentación beta,
-investigación web segura y un **maratón de 30 capítulos** contra un modelo simulado adverso.
+(`hardware-scan.test.js`), fluidez y adaptación responsiva a cualquier resolución (`responsive.test.js`),
+una batería adversarial basada en la retroalimentación beta, investigación web segura y un
+**maratón de 30 capítulos** contra un modelo simulado adverso.
 
 A esas se suman las suites de calidad y auditoría:
 
 | Suite | Comprobaciones | Qué fija |
 |---|---:|---|
 | `hardware-scan` | 28 | Escaneo no invasivo de hardware (dxdiag/WMI/GPU), tiering local, adaptación de ventana, comandos llama-server |
+| `responsive` | 32 | Adaptación fluida 100% a cualquier viewport (móvil, tablet, split-screen, laptop, ultra-wide), menú drawer accesible, modales contenidos en `min()`, paneles sin aplastar el editor |
 | `security` | 60 | XSS por lista blanca, inyección CSS/SVG, enlaces endurecidos, clave fuera del JSON, IPC real de `main.js` con Electron simulado, importaciones hostiles |
 | `accessibility` | 41 | skip-link, `lang`, nombres accesibles, ARIA de diálogos, regiones `aria-live`, `combobox`/`listbox`, Escape, foco atrapado, `prefers-reduced-motion` |
 | `ux` | 48 | deshacer/rehacer por capítulo, inserción en el cursor, mensajes veraces, búsqueda dentro del texto, centro de actividad, racha en fecha local, estados de guardado |
