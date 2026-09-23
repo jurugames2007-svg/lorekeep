@@ -45,6 +45,7 @@ function makeApp({ seed = null, bridge = {}, withPdf = false } = {}) {
     omniRouteStatus: async () => ({ ok:true, baseUrl:'http://localhost:20128/v1', dashboardUrl:'http://localhost:20128', latencyMs:12, modelCount:4, models:['auto','auto/smart','auto/fast','auto/cheap'], autoAvailable:true, version:'3.8.50' }),
     webSearch: async () => ({ ok: true, results: [] }),
     webFetch: async ({ url }) => ({ ok: true, page: { url, title:'Fuente web', description:'', content:'Contenido web de prueba suficientemente extenso para ser una fuente verificable.', fetchedAt:Date.now() } }),
+    systemScanHardware: async () => ({ ok: true, specs: { cpuModel: 'Intel Core i7', cpuCores: 8, totalRamGb: 16, freeRamGb: 8, gpuName: 'NVIDIA GeForce RTX', vramMb: 6144, platform: 'test', arch: 'x64', dxdiagCompleted: true }, recommendation: { tier: 'balanced', model: 'qwen2.5-7b-instruct', quantization: 'Q4_K_M', contextTokens: 16384, llamaFlags: '-c 16384', summary: 'Recomendación de prueba equilibrada para test.', localOnly: true } }),
     isDesktop: true
   };
   if (seed || Object.keys(bridge).length) w.lorevinci = { ...defaults, ...bridge };

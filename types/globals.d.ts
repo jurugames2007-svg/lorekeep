@@ -55,6 +55,7 @@ interface LoreBridge {
   secretsSet(apiKey: string): Promise<LoreBridgeResponse>;
   secretsStatus(): Promise<LoreBridgeResponse>;
   clipboardWrite(text: string): Promise<LoreBridgeResponse>;
+  systemScanHardware(): Promise<LoreBridgeResponse>;
   onAppEvent(channel: string, callback: (payload: unknown) => void): () => void;
   /** true solo en Electron; ausente o false en el navegador. */
   isDesktop?: boolean;

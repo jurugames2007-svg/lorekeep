@@ -321,19 +321,18 @@ npm install
 npm test
 ```
 
-Veintidós suites, 1.137 comprobaciones: núcleo, ingesta multi-PDF con extracción real, motor de
-generación, handlers del proceso principal, OCR, Mesa RPG, una batería adversarial basada
-en la retroalimentación beta, investigación web segura y un **maratón de 30 capítulos**
-contra un modelo simulado adverso (que trunca, devuelve JSON roto, falla la red y filtra
-texto del asistente). Las suites RPG verifican reglamentos de 100 puntos, fórmulas, D20
-animado, registro incremental, fuentes seleccionadas, reparación de salidas inglesas y que
-el chat nunca cree capítulos por accidente. La suite OmniRoute verifica detección, modelos
-`auto/*`, perfiles por tarea, fallback/directo y telemetría.
+Veinticuatro suites, 1.197 comprobaciones: núcleo, ingesta multi-PDF con extracción real, motor de
+generación, handlers del proceso principal, OCR, Mesa RPG, escaneo y adaptación de hardware
+(`hardware-scan.test.js`), fluidez y adaptación responsiva a cualquier resolución (`responsive.test.js`),
+una batería adversarial basada en la retroalimentación beta, investigación web segura y un
+**maratón de 30 capítulos** contra un modelo simulado adverso.
 
-A esas se suman seis suites de la auditoría:
+A esas se suman las suites de calidad y auditoría:
 
 | Suite | Comprobaciones | Qué fija |
 |---|---:|---|
+| `hardware-scan` | 28 | Escaneo no invasivo de hardware (dxdiag/WMI/GPU), tiering local, adaptación de ventana, comandos llama-server |
+| `responsive` | 32 | Adaptación fluida 100% a cualquier viewport (móvil, tablet, split-screen, laptop, ultra-wide), menú drawer accesible, modales contenidos en `min()`, paneles sin aplastar el editor |
 | `security` | 60 | XSS por lista blanca, inyección CSS/SVG, enlaces endurecidos, clave fuera del JSON, IPC real de `main.js` con Electron simulado, importaciones hostiles |
 | `accessibility` | 41 | skip-link, `lang`, nombres accesibles, ARIA de diálogos, regiones `aria-live`, `combobox`/`listbox`, Escape, foco atrapado, `prefers-reduced-motion` |
 | `ux` | 48 | deshacer/rehacer por capítulo, inserción en el cursor, mensajes veraces, búsqueda dentro del texto, centro de actividad, racha en fecha local, estados de guardado |
@@ -342,6 +341,24 @@ A esas se suman seis suites de la auditoría:
 | `regression` | 53 | prosa→párrafos válidos, deduplicación con motivo y salida, validación real de imágenes, `getChapter` defensivo, avisos de variantes, clasificación de verso |
 | `enterprise` | 194 | contratos entre procesos, límites de entrada, rotación de respaldos, telemetría estructurada y regresiones de la auditoría |
 | `stress` | 240 | volumen (400 obras), velocidad de tecleo, payloads hostiles, concurrencia, contratos IPC, verificación de tipos ejecutada, longitud de función (S15), rutas reales del lanzamiento de Electron (S16) y autoprueba del modo humo (S17) |
+
+## Entorno de Evaluación OS (Windows 11 / WindowsAgentArena)
+
+Para evaluar el funcionamiento completo de LoreVinci en un entorno virtualizado real de Windows 11 dentro de la carpeta `OS/`:
+
+### Si usas Windows 10/11:
+1. Instala **Docker Desktop** y configúralo para usar el motor **WSL 2** (Windows Subsystem for Linux).
+2. Abre una terminal de **PowerShell como Administrador** y activa la plataforma de máquina virtual:
+   ```powershell
+   Enable-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform -All
+   ```
+3. Reinicia tu computadora si el sistema lo solicita.
+4. En el directorio raíz de LoreVinci, accede a la carpeta de scripts de `OS/` y ejecuta el contenedor:
+   ```bash
+   cd OS/scripts
+   ./run-local.sh
+   ```
+5. Esto levantará el entorno interactivo de Windows 11 para pruebas visuales y evaluación de agentes multi-modales sin riesgo alguno para tu máquina anfitriona.
 
 Las secciones S16 y S17 de `stress` cierran un hueco que las demás suites no
 podían ver: todas cargan `main.js` con Electron simulado y un `loadFile()` que no

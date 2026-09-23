@@ -17,7 +17,8 @@ module.exports = [
       'node_modules/**',
       'dist/**',
       '.tmp-audit/**',
-      'release/**'
+      'release/**',
+      'OS/**'
     ]
   },
   js.configs.recommended,

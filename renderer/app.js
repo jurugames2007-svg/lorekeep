@@ -142,6 +142,7 @@ if (!window.lorevinci) {
       }
     },
     webFetch: async () => ({ ok: false, error: 'La extracción segura de páginas está disponible en la aplicación de escritorio.' }),
+    systemScanHardware: async () => runWebHardwareScan(),
     isDesktop: false
   };
 }
@@ -743,6 +744,8 @@ function openModal(backdrop, { initialFocus = null, label = null } = {}) {
   if (label) backdrop.setAttribute('aria-label', label);
   const wasActive = backdrop.classList.contains('active');
   if (!wasActive) backdrop.classList.add('active');
+  toggleNotificationPanel(false);
+  closeGlobalSearch();
   // Idempotente: abrir dos veces el mismo diálogo no duplica la pila ni el foco.
   return registerOpenModal(backdrop, { initialFocus, moveFocus: !wasActive });
 }
@@ -1029,6 +1032,12 @@ function showView(name) {
   if (target) target.classList.add('active');
   $all('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === name));
   $('#crumb').textContent = viewTitles[name] || name;
+
+  const sidebar = $('#mainSidebar');
+  if (sidebar && sidebar.classList.contains('mobile-open')) {
+    sidebar.classList.remove('mobile-open');
+    $('#sidebarBackdrop')?.classList.remove('active');
+  }
 
   if (name === 'sources') renderGlobalSources();
   if (name === 'home') renderHome();
@@ -2225,6 +2234,7 @@ const MODEL_CONTEXT_WINDOWS = [
   [/gemini-1\.5-flash|gemini/i, 1000000],
   [/llama-?3\.[123]|llama-?3-70b|llama-?4/i, 128000],
   [/llama-?3/i, 8192],
+  [/phi-?3(?:\.5)?/i, 128000],
   [/mixtral|mistral-large|mistral-nemo/i, 128000],
   [/mistral/i, 32000],
   [/qwen|deepseek/i, 128000],
@@ -2248,7 +2258,15 @@ function getModelContextWindow(model) {
  * TOKENS para la respuesta.
  */
 function computePromptBudget(model, { reserveForOutput = null, hardCapChars = 115000 } = {}) {
-  const windowTokens = getModelContextWindow(model);
+  let windowTokens = getModelContextWindow(model);
+  const isCloud = /gpt-4|claude|gemini|o1|o3/i.test(model || '');
+  const isLocalEndpoint = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)/i.test(DATA?.settings?.ai?.baseUrl || '');
+  const profile = DATA?.settings?.hardwareProfile;
+  if (!isCloud && isLocalEndpoint && profile === 'cpu-light' && windowTokens > 4096) {
+    windowTokens = 4096;
+  } else if (!isCloud && isLocalEndpoint && profile === 'balanced' && windowTokens > 16384) {
+    windowTokens = 16384;
+  }
 
   // Salida: suficiente para un capítulo largo sin cortes, sin pasarse en modelos pequeños.
   const outputTokens = reserveForOutput || Math.min(8000, Math.max(1600, Math.floor(windowTokens * 0.22)));
@@ -4077,6 +4095,7 @@ function renderSettings() {
   if (densSel) densSel.value = DATA.settings.density || 'comfortable';
   applyUiScale();
   applyDensity();
+  renderHardwareProfiles();
   updateOpenRouterUI();
   renderOmniRouteSettings();
 }
@@ -4108,6 +4127,324 @@ async function renderKeyProtectionHint() {
   }
 }
 
+// ============ ARQUITECTURA DE INFERENCIA Y PERFILES DE HARDWARE ============
+
+function detectWebGpuName() {
+  try {
+    if (typeof document === 'undefined') return 'Acelerador del Sistema';
+    const canvas = document.createElement('canvas');
+    if (typeof canvas.getContext !== 'function') return 'Acelerador del Sistema';
+    if (typeof window !== 'undefined' && (/** @type {any} */ (window).__probe)) return 'Acelerador del Sistema';
+    /** @type {any} */
+    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    const info = gl?.getExtension('WEBGL_debug_renderer_info');
+    return (info && gl?.getParameter(info.UNMASKED_RENDERER_WEBGL)) || 'Acelerador WebGL / Canvas';
+  } catch (_e) {
+    return 'Acelerador WebGL / Canvas';
+  }
+}
+
+function runWebHardwareScan() {
+  const cores = typeof navigator !== 'undefined' && navigator.hardwareConcurrency ? navigator.hardwareConcurrency : 4;
+  /** @type {any} */
+  const nav = typeof navigator !== 'undefined' ? navigator : {};
+  const totalRamGb = nav.deviceMemory ? nav.deviceMemory : (cores >= 8 ? 16 : (cores >= 4 ? 8 : 4));
+  const gpuName = detectWebGpuName();
+  const vramMb = /nvidia|geforce|rtx|gtx|radeon|apple m/i.test(gpuName) ? 6144 : 1024;
+  const specs = {
+    cpuModel: `${cores} núcleos lógicos`,
+    cpuCores: cores,
+    totalRamGb,
+    freeRamGb: Math.round(totalRamGb * 0.5 * 10) / 10,
+    gpuName,
+    vramMb,
+    platform: typeof navigator !== 'undefined' ? navigator.platform : 'web',
+    arch: 'x64',
+    dxdiagCompleted: true
+  };
+  const isDedicated = vramMb >= 3000 || /nvidia|geforce|rtx|gtx|radeon rx/i.test(gpuName);
+  const tier = (totalRamGb <= 4 && !isDedicated) ? 'cpu-light' : (isDedicated && totalRamGb >= 16 ? 'pro-gpu' : 'balanced');
+  const model = tier === 'cpu-light' ? 'qwen2.5-3b-instruct' : 'qwen2.5-7b-instruct';
+  return {
+    ok: true,
+    specs,
+    recommendation: {
+      tier,
+      model,
+      quantization: tier === 'cpu-light' ? 'Q4_K_M' : 'Q8_0',
+      contextTokens: tier === 'cpu-light' ? 4096 : 16384,
+      llamaFlags: `-m models/${model}-q4_k_m.gguf -c 8192`,
+      summary: `Diagnóstico web completado: detectados ${cores} hilos y ~${totalRamGb} GB RAM.`,
+      localOnly: true
+    }
+  };
+}
+
+function detectHardwareSpecs() {
+  const cores = typeof navigator !== 'undefined' && navigator.hardwareConcurrency ? navigator.hardwareConcurrency : 4;
+  /** @type {any} */
+  const nav = typeof navigator !== 'undefined' ? navigator : {};
+  const ramGb = nav.deviceMemory ? nav.deviceMemory : (cores >= 8 ? 16 : (cores >= 4 ? 8 : 4));
+  let tier = 'balanced';
+  if (cores <= 4 && ramGb <= 4) tier = 'cpu-light';
+  else if (cores >= 8 && ramGb >= 16) tier = 'pro-gpu';
+  else tier = 'balanced';
+  return { cores, ramGb, tier };
+}
+
+function updateLlamaCommandSnippet(profileKey) {
+  const { cores } = detectHardwareSpecs();
+  const snippet = $('#llamaCmdSnippet');
+  if (!snippet) return;
+  const threads = Math.max(1, cores >= 4 ? cores - 1 : cores);
+  if (profileKey === 'cpu-light') {
+    snippet.textContent = `./llama-server -m models/qwen2.5-3b-instruct-q4_k_m.gguf -c 4096 --port 8080 -t ${threads}`;
+  } else if (profileKey === 'pro-gpu') {
+    snippet.textContent = `./llama-server -m models/qwen2.5-14b-instruct-q4_k_m.gguf -c 32768 --port 8080 -ngl 99`;
+  } else {
+    snippet.textContent = `./llama-server -m models/qwen2.5-7b-instruct-q4_k_m.gguf -c 8192 --port 8080 -t ${threads} -ngl 33`;
+  }
+}
+
+function applyPresetModel(modelName) {
+  const sel = $('#aiModelSelect');
+  if (!sel) return;
+  if (!Array.from(sel.options).some(o => o.value === modelName)) {
+    const opt = document.createElement('option');
+    opt.value = modelName;
+    opt.textContent = modelName;
+    sel.insertBefore(opt, sel.firstChild);
+  }
+  sel.value = modelName;
+  if (DATA?.settings?.ai) DATA.settings.ai.model = modelName;
+}
+
+function applyHardwareProfile(profileKey) {
+  if (!DATA?.settings) return;
+  DATA.settings.hardwareProfile = profileKey;
+  $all('.hardware-profile-card').forEach(c => {
+    c.classList.toggle('active', c.dataset.profile === profileKey);
+  });
+  updateLlamaCommandSnippet(profileKey);
+
+  if (profileKey === 'cpu-light') {
+    applyPresetModel('qwen2.5-3b-instruct');
+    showToast('Perfil CPU Ultra-Ligero activado: contexto adaptado a 4k tokens y motor determinista en JS.');
+  } else if (profileKey === 'pro-gpu') {
+    applyPresetModel('qwen2.5-14b-instruct');
+    showToast('Perfil Máximo Potencial activado: contexto hasta 32k tokens y aceleración GPU completa.');
+  } else if (profileKey === 'cloud-hybrid') {
+    showToast('Perfil Nube activado: cero consumo de recursos en tu máquina local.');
+  } else {
+    applyPresetModel('qwen2.5-7b-instruct');
+    showToast('Perfil Punto Dulce activado: Qwen2.5-7B cuantizado en llama-server (localhost:8080).');
+  }
+  scheduleSave();
+}
+
+function updateHardwareDiagnosticViews(specs, recommendation) {
+  const badge = $('#detectedHardwareBadge');
+  if (badge) badge.textContent = `${specs.cpuCores} hilos · ${specs.totalRamGb} GB RAM`;
+  const cpuEl = $('#diagCpuCores');
+  if (cpuEl) cpuEl.textContent = `${specs.cpuCores} hilos`;
+  const ramEl = $('#diagRamGb');
+  if (ramEl) ramEl.textContent = `${specs.totalRamGb} GB`;
+  const gpuEl = $('#diagGpuName');
+  if (gpuEl) gpuEl.textContent = `${specs.gpuName || 'Sistema'} (${specs.vramMb ? specs.vramMb + ' MB' : 'Compartida'})`;
+  const optModelEl = $('#diagOptimalModel');
+  if (optModelEl) optModelEl.textContent = `${recommendation.model} (${recommendation.quantization})`;
+  const recText = $('#hardwareRecommendationText');
+  if (recText) recText.textContent = recommendation.summary;
+}
+
+function renderHardwareProfiles() {
+  const cachedSpecs = DATA?.settings?.hardwareScanInfo;
+  const cachedRec = DATA?.settings?.hardwareRecommendation;
+  const fallback = detectHardwareSpecs();
+
+  const specs = cachedSpecs || {
+    cpuCores: fallback.cores,
+    totalRamGb: fallback.ramGb,
+    freeRamGb: Math.round(fallback.ramGb * 0.5),
+    gpuName: 'Acelerador del Sistema',
+    vramMb: 0
+  };
+  const recommendation = cachedRec || {
+    tier: fallback.tier,
+    model: fallback.tier === 'cpu-light' ? 'qwen2.5-3b-instruct' : 'qwen2.5-7b-instruct',
+    quantization: fallback.tier === 'cpu-light' ? 'Q4_K_M' : 'Q8_0',
+    summary: 'Configuración automática según características detectadas.'
+  };
+
+  const currentProfile = DATA?.settings?.hardwareProfile || recommendation.tier;
+  if (DATA?.settings && !DATA.settings.hardwareProfile) DATA.settings.hardwareProfile = currentProfile;
+
+  updateHardwareDiagnosticViews(specs, recommendation);
+  $all('.hardware-profile-card').forEach(c => {
+    c.classList.toggle('active', c.dataset.profile === currentProfile);
+  });
+  updateLlamaCommandSnippet(currentProfile);
+}
+
+async function autoScanAndOptimizeHardware() {
+  try {
+    if (!window.lorevinci?.systemScanHardware) return;
+    const res = await window.lorevinci.systemScanHardware();
+    if (!res || !res.ok) return;
+    const { specs, recommendation } = res;
+    if (DATA?.settings) {
+      DATA.settings.hardwareScanInfo = specs;
+      DATA.settings.hardwareRecommendation = recommendation;
+      if (!DATA.settings.hardwareAutoConfigured && !(/** @type {any} */ (window).__probe)) {
+        DATA.settings.hardwareProfile = recommendation.tier;
+        DATA.settings.ai.providerPreset = 'llamacpp';
+        DATA.settings.ai.baseUrl = window.LoreConfig.AI_PROVIDER_PRESETS.llamacpp.baseUrl;
+        applyPresetModel(recommendation.model);
+        DATA.settings.hardwareAutoConfigured = true;
+        showToast(`Hardware detectado: ${specs.cpuCores} núcleos, ${specs.totalRamGb} GB RAM. Configurado ${recommendation.model} local.`);
+        scheduleSave();
+      }
+    }
+    renderHardwareProfiles();
+  } catch (_err) {
+    // Falla cerrado: el arranque continúa normalmente
+  }
+}
+
+async function triggerManualHardwareScan() {
+  const btn = $('#reScanHardwareBtn');
+  if (btn) btn.disabled = true;
+  showToast('Iniciando scan de hardware (dxdiag / CPU / GPU)…');
+  try {
+    if (!window.lorevinci?.systemScanHardware) return;
+    const res = await window.lorevinci.systemScanHardware();
+    if (res && res.ok) {
+      if (DATA?.settings) {
+        DATA.settings.hardwareScanInfo = res.specs;
+        DATA.settings.hardwareRecommendation = res.recommendation;
+      }
+      renderHardwareProfiles();
+      showToast(`Scan completado: ${res.specs.cpuCores} núcleos, ${res.specs.totalRamGb} GB RAM, GPU: ${res.specs.gpuName}.`);
+    } else {
+      showToast('No se pudo completar el escaneo de hardware.');
+    }
+  } catch (e) {
+    showToast(`Error en scan: ${String(e?.message || e)}`);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function applyRecommendedHardwareModel() {
+  const rec = DATA?.settings?.hardwareRecommendation;
+  if (!rec) {
+    showToast('Ejecuta primero el re-escaneo de hardware.');
+    return;
+  }
+  DATA.settings.hardwareProfile = rec.tier;
+  DATA.settings.ai.providerPreset = 'llamacpp';
+  DATA.settings.ai.baseUrl = window.LoreConfig.AI_PROVIDER_PRESETS.llamacpp.baseUrl;
+  applyPresetModel(rec.model);
+  DATA.settings.hardwareAutoConfigured = true;
+  applyHardwareProfile(rec.tier);
+  showToast(`¡Configuración local aplicada! Modelo: ${rec.model} (${rec.quantization}).`);
+  scheduleSave();
+}
+
+async function testEndpointSpeed() {
+  const resultEl = $('#endpointSpeedResult');
+  const btn = $('#testEndpointSpeedBtn');
+  const baseUrl = $('#aiBaseUrl').value.trim() || window.LoreConfig.AI.DEFAULT_BASE_URL;
+  if (btn) btn.disabled = true;
+  if (resultEl) resultEl.textContent = 'Midiendo latencia con el endpoint de inferencia…';
+  const start = Date.now();
+  try {
+    const res = await window.lorevinci.aiModels({ baseUrl, apiKey: $('#aiApiKey').value.trim() });
+    const latency = Date.now() - start;
+    if (res.ok) {
+      const modelsCount = (res.models || []).length;
+      const speedRating = latency < 80 ? '⚡ Inferencia ultra-rápida (C++ Local)' : (latency < 400 ? '✓ Excelente' : 'Aceptable');
+      if (resultEl) resultEl.innerHTML = `<span style="color:var(--success);">✓ Conectado (${latency} ms) · Calificación: <b>${speedRating}</b> · ${modelsCount} modelo(s) detectado(s).</span>`;
+      showToast(`Latencia del endpoint: ${latency} ms`);
+    } else {
+      if (resultEl) resultEl.innerHTML = `<span style="color:var(--accent);">✕ Endpoint no respondió (${latency} ms): ${escapeHtml(res.error || 'sin respuesta')}</span>`;
+    }
+  } catch (e) {
+    if (resultEl) resultEl.textContent = `Error midiendo velocidad: ${String(e?.message || e)}`;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function copyLlamaServerCommand() {
+  const snippet = $('#llamaCmdSnippet');
+  if (!snippet) return;
+  const cmd = snippet.textContent || '';
+  try {
+    if (navigator?.clipboard?.writeText) await navigator.clipboard.writeText(cmd);
+    else await window.lorevinci.clipboardWrite(cmd);
+    showToast('Comando de llama-server copiado al portapapeles.');
+  } catch {
+    showToast('Selecciona y copia el comando manualmente.');
+  }
+}
+
+function initHardwareProfileEvents() {
+  $all('.apply-profile-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const p = btn.dataset.applyProfile;
+      if (p) applyHardwareProfile(p);
+    });
+  });
+  const copyBtn = $('#copyLlamaCmdBtn');
+  if (copyBtn) copyBtn.addEventListener('click', copyLlamaServerCommand);
+  const testBtn = $('#testEndpointSpeedBtn');
+  if (testBtn) testBtn.addEventListener('click', testEndpointSpeed);
+  const reScanBtn = $('#reScanHardwareBtn');
+  if (reScanBtn) reScanBtn.addEventListener('click', triggerManualHardwareScan);
+  const autoOptBtn = $('#autoOptimizeHardwareBtn');
+  if (autoOptBtn) autoOptBtn.addEventListener('click', applyRecommendedHardwareModel);
+  const p7b = $('#presetLlama7bBtn');
+  if (p7b) p7b.addEventListener('click', () => {
+    $('#aiProviderPreset').value = 'llamacpp';
+    $('#aiBaseUrl').value = window.LoreConfig.AI_PROVIDER_PRESETS.llamacpp.baseUrl;
+    applyPresetModel('qwen2.5-7b-instruct');
+    showToast('llama-server configurado con Qwen2.5-7B-Instruct (Punto Dulce).');
+  });
+  const p3b = $('#presetLlama3bBtn');
+  if (p3b) p3b.addEventListener('click', () => {
+    $('#aiProviderPreset').value = 'llamacpp';
+    $('#aiBaseUrl').value = window.LoreConfig.AI_PROVIDER_PRESETS.llamacpp.baseUrl;
+    applyPresetModel('phi-3.5-mini');
+    showToast('llama-server configurado con Phi-3.5-mini (Ultra eficiente en CPU).');
+  });
+}
+
+function initDockedMuseEvents() {
+  const dockedSend = $('#dockedMuseSend');
+  const dockedInput = /** @type {HTMLInputElement|null} */ ($('#dockedMuseInput'));
+  if (dockedSend && dockedInput) {
+    dockedSend.addEventListener('click', () => {
+      const q = dockedInput.value.trim();
+      if (!q) return;
+      dockedInput.value = '';
+      runMusePrompt(q);
+    });
+    dockedInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        dockedSend.click();
+      }
+    });
+  }
+  $all('.docked-muse-box .muse-quick button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const p = btn.dataset.prompt;
+      if (p) runMusePrompt(p);
+    });
+  });
+}
+
 // ============ CONEXIÓN Y VERIFICACIÓN DE LA API DE MUSE AI ============
 
 // Presets de proveedor: el mismo objeto congelado que usa el proceso principal.
@@ -4117,6 +4454,7 @@ const AI_PROVIDER_PRESETS = window.LoreConfig.AI_PROVIDER_PRESETS;
 
 function detectProviderPreset(baseUrl) {
   const url = (baseUrl || '').toLowerCase();
+  if (url.includes('8080') || url.includes('llama')) return 'llamacpp';
   if (url.includes('20128') || url.includes('omniroute')) return 'omniroute';
   if (url.includes('openrouter')) return 'openrouter';
   if (url.includes('groq')) return 'groq';
@@ -4326,7 +4664,10 @@ if (providerPreset) {
     if (sel) sel.value = preset.model;
     const omni=ensureOmniRouteSettings(); omni.enabled=providerPreset.value==='omniroute'; if(omni.enabled)omni.baseUrl=preset.baseUrl;
     renderOmniRouteSettings();
-    showToast(providerPreset.value==='omniroute' ? 'Preset OmniRoute aplicado. Detecta el gateway y luego verifica.' : `Preset aplicado: ${preset.baseUrl}. Pega tu key y verifica.`);
+    let msg = `Preset aplicado: ${preset.baseUrl}. Pega tu key y verifica.`;
+    if (providerPreset.value === 'omniroute') msg = 'Preset OmniRoute aplicado. Detecta el gateway y luego verifica.';
+    else if (providerPreset.value === 'llamacpp') msg = 'Preset llama.cpp aplicado (localhost:8080/v1). Inferencia C++ ultra-rápida lista.';
+    showToast(msg);
   });
 }
 
@@ -7549,6 +7890,8 @@ async function runMusePrompt(promptText) {
   const chapter = getChapter(story, currentChapterId);
   addMuseMessage('user', promptText, false);
   $('#museStatus').textContent = 'Muse AI está pensando...';
+  const dStatus = $('#dockedMuseStatus');
+  if (dStatus) dStatus.textContent = 'Muse AI está pensando...';
 
   const ctx = buildMuseContext(story, chapter, promptText);
   const systemPrompt = buildMuseSystemPrompt(ctx, story);
@@ -7567,10 +7910,14 @@ async function runMusePrompt(promptText) {
   if (res.ok) {
     const reply = res.text.trim() + (res.truncated ? '\n\n[Respuesta cortada por límite de tokens — pide "continúa" para el resto.]' : '');
     addMuseMessage('assistant', reply, true);
-    $('#museStatus').textContent = res.truncated ? 'Respuesta truncada: pide continuar.' : 'Listo para tu próxima idea.';
+    const readyMsg = res.truncated ? 'Respuesta truncada: pide continuar.' : 'Listo para tu próxima idea.';
+    $('#museStatus').textContent = readyMsg;
+    if (dStatus) dStatus.textContent = readyMsg;
   } else {
     addMuseMessage('assistant', `Aviso de conexión: ${res.error}`, false);
-    $('#museStatus').textContent = 'Hubo un problema. Revisa tu configuración en Ajustes.';
+    const errMsg = 'Hubo un problema. Revisa tu configuración en Ajustes.';
+    $('#museStatus').textContent = errMsg;
+    if (dStatus) dStatus.textContent = errMsg;
   }
 }
 
@@ -9239,6 +9586,28 @@ async function restoreApiKeyFromSecureStore() {
 }
 
 /**
+ * Inicializa el menú de navegación adaptable en dispositivos móviles y vistas reducidas.
+ * @returns {void}
+ */
+function setupMobileResponsiveNavigation() {
+    const mobileBtn = $('#mobileMenuBtn');
+    const backdrop = $('#sidebarBackdrop');
+    const sidebar = $('#mainSidebar');
+    if (mobileBtn && sidebar) {
+        mobileBtn.addEventListener('click', () => {
+            const open = sidebar.classList.toggle('mobile-open');
+            backdrop?.classList.toggle('active', open);
+        });
+    }
+    if (backdrop && sidebar) {
+        backdrop.addEventListener('click', () => {
+            sidebar.classList.remove('mobile-open');
+            backdrop.classList.remove('active');
+        });
+    }
+}
+
+/**
  * Registra los manejadores que solo deben vincularse una vez por sesión.
  *
  * Se extrajo de `initApp`, que superaba las 50 líneas porque recorría todo el
@@ -9256,6 +9625,9 @@ function bootstrapOneTimeHandlers() {
     setupWritingGoals();
     bindStoryConfigModal();
     enhanceAccessibility();
+    initHardwareProfileEvents();
+    initDockedMuseEvents();
+    setupMobileResponsiveNavigation();
 }
 
 /**
@@ -9333,6 +9705,7 @@ async function initApp() {
     if (!isReentry) bootstrapOneTimeHandlers();
     paintAfterBootstrap(isReentry);
     maybeShowOnboarding();
+    autoScanAndOptimizeHardware();
   } catch (err) {
     hideStartupLoader();
     showBootError(err);

@@ -86,11 +86,17 @@
         </button>
       </div>
     </aside>
+    <div class="sidebar-backdrop" id="sidebarBackdrop" aria-hidden="true"></div>
 
     <!-- Main -->
     <main class="main" id="content-area">
       <header class="topbar">
-        <div class="crumb" id="crumb">Inicio</div>
+        <div class="top-nav-left">
+          <button class="icon-btn mobile-menu-toggle" id="mobileMenuBtn" type="button" aria-label="Abrir menú de navegación" title="Menú">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+          </button>
+          <div class="crumb" id="crumb">Inicio</div>
+        </div>
         <div class="top-actions">
           <label class="sr-only" for="globalSearch">Buscar en tus historias, capítulos y personajes</label>
           <input type="search" id="globalSearch" placeholder="Buscar historias, capítulos, personajes…" title="Buscar en títulos y dentro del texto de tus capítulos" aria-describedby="searchHelp" />
@@ -437,9 +443,119 @@
             <span class="muted small" id="accentColorHelp" style="max-width:230px; line-height:1.4;">El acento se usa en botones, enlaces, progreso y focos. Se guarda con tu perfil y respeta el modo de movimiento reducido.</span>
           </div>
         </div>
+        <!-- ARQUITECTURA DE INFERENCIA Y ADAPTABILIDAD DE HARDWARE -->
+        <div class="card settings-card" id="hardwareArchitectureCard">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+            <div>
+              <h3 style="margin:0;">Arquitectura de Inferencia y Adaptabilidad de Hardware</h3>
+              <p class="muted small" style="margin:4px 0 0 0;">Análisis automático de hardware (dxdiag / CPU / GPU) para adaptar el modelo local al máximo potencial de tu equipo sin depender de APIs externas.</p>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              <button class="btn-secondary small" id="reScanHardwareBtn" type="button" title="Ejecutar análisis de hardware del sistema">🔄 Re-escanear (dxdiag)</button>
+              <span class="canon-badge canon-primary" id="detectedHardwareBadge">Detectando hardware…</span>
+            </div>
+          </div>
+
+          <!-- DIAGNÓSTICO DE HARDWARE -->
+          <div class="hardware-diagnostics-box" id="hardwareDiagBox">
+            <div class="diag-item">
+              <span class="diag-label">Núcleos de CPU</span>
+              <b class="diag-value" id="diagCpuCores">-</b>
+            </div>
+            <div class="diag-item">
+              <span class="diag-label">RAM del Sistema</span>
+              <b class="diag-value" id="diagRamGb">-</b>
+            </div>
+            <div class="diag-item">
+              <span class="diag-label">GPU / Acelerador</span>
+              <b class="diag-value" id="diagGpuName">Detectando…</b>
+            </div>
+            <div class="diag-item">
+              <span class="diag-label">Modelo Local Óptimo</span>
+              <b class="diag-value" id="diagOptimalModel">Qwen2.5-7B (Q4_K_M)</b>
+            </div>
+          </div>
+
+          <!-- BANNER DE RECOMENDACIÓN LOCAL-FIRST -->
+          <div id="hardwareRecommendationBanner" style="margin-top:10px; padding:10px 14px; border-radius:12px; background:var(--panel-2); border:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:240px;">
+              <span style="font-size:11px; text-transform:uppercase; font-weight:700; color:var(--accent); letter-spacing:0.4px;">Recomendación Local-First</span>
+              <p id="hardwareRecommendationText" class="muted small" style="margin:3px 0 0 0;">Analizando especificaciones para configurar el modelo local más potente sin saturar tu equipo.</p>
+            </div>
+            <button class="btn-primary small" id="autoOptimizeHardwareBtn" type="button">Aplicar y Activar Modelo Local</button>
+          </div>
+
+          <!-- PERFILES DE HARDWARE SELECCIONABLES -->
+          <label style="margin-top:16px; display:block; font-weight:600;">Selecciona el perfil de rendimiento de tu equipo:</label>
+          <div class="hardware-profiles-grid">
+            <div class="hardware-profile-card" data-profile="cpu-light" id="profileCardCpuLight">
+              <div class="profile-card-head">
+                <span class="profile-icon">⚡</span>
+                <b>Modo Ultra-Ligero / CPU</b>
+                <span class="profile-tag">2-8 GB RAM</span>
+              </div>
+              <p class="muted small">Para portátiles escolares y equipos sin tarjeta gráfica dedicada. Máxima eficiencia en C++ con llama-server. Contexto compacto (4.096 tokens) para no saturar memoria. 100% de reglas RPG, dados D20 y auditoría ejecutados en JavaScript local sin consumir tokens.</p>
+              <div class="profile-models">Recomendados: <code>Qwen2.5-3B</code> · <code>Phi-3.5-mini</code> · <code>Llama-3.2-3B</code></div>
+              <button class="btn-secondary small w-100 apply-profile-btn" data-apply-profile="cpu-light" type="button">Activar perfil CPU Ligero</button>
+            </div>
+
+            <div class="hardware-profile-card active" data-profile="balanced" id="profileCardBalanced">
+              <div class="profile-card-head">
+                <span class="profile-icon">⚖️</span>
+                <b>Modo Equilibrado / Portátiles</b>
+                <span class="profile-tag tag-sweet">Punto Dulce · 8-16 GB</span>
+              </div>
+              <p class="muted small">La ruta de ingeniería inversa recomendada: <b>Qwen2.5-7B-Instruct-GGUF</b> cuantizado a <b>Q4_K_M</b> sobre <code>llama-server</code> (localhost:8080). Ocupa ~4.5 a 5 GB de RAM/VRAM en C++ y entrega prosa literaria de máxima coherencia sin la sobrecarga pesada de Ollama.</p>
+              <div class="profile-models">Recomendado: <code>Qwen2.5-7B-Instruct (Q4_K_M)</code></div>
+              <button class="btn-primary small w-100 apply-profile-btn" data-apply-profile="balanced" type="button">Activar Punto Dulce (7B Q4)</button>
+            </div>
+
+            <div class="hardware-profile-card" data-profile="pro-gpu" id="profileCardProGpu">
+              <div class="profile-card-head">
+                <span class="profile-icon">🚀</span>
+                <b>Máximo Potencial / Pro</b>
+                <span class="profile-tag">16+ GB RAM / RTX</span>
+              </div>
+              <p class="muted small">Para equipos de alta gama y creadores con GPU dedicada. Permite modelos de 7B a 14B con descarga completa de capas GPU (<code>--n-gpu-layers 99</code>) y ventana de contexto extendida (hasta 32.768 tokens).</p>
+              <div class="profile-models">Recomendados: <code>Qwen2.5-14B-Instruct</code> · <code>Qwen2.5-7B-Q8</code></div>
+              <button class="btn-secondary small w-100 apply-profile-btn" data-apply-profile="pro-gpu" type="button">Activar Modo Pro</button>
+            </div>
+
+            <div class="hardware-profile-card" data-profile="cloud-hybrid" id="profileCardCloudHybrid">
+              <div class="profile-card-head">
+                <span class="profile-icon">☁️</span>
+                <b>Nube / Cero Consumo Local</b>
+                <span class="profile-tag">Cualquier PC</span>
+              </div>
+              <p class="muted small">0% uso de CPU y RAM local en inferencia. Ideal para ahorrar batería o computadores muy antiguos. Se conecta a proveedores en la nube como OmniRoute, Groq (ultra rápido), OpenRouter o OpenAI.</p>
+              <div class="profile-models">Proveedores: <code>OmniRoute</code> · <code>Groq</code> · <code>OpenRouter</code></div>
+              <button class="btn-secondary small w-100 apply-profile-btn" data-apply-profile="cloud-hybrid" type="button">Activar Modo Nube</button>
+            </div>
+          </div>
+
+          <!-- GENERADOR DE COMANDOS LLAMA-SERVER -->
+          <div class="llama-command-box" style="margin-top:16px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+              <b>Comando listo para iniciar llama-server en tu terminal:</b>
+              <button class="btn-secondary small" id="copyLlamaCmdBtn" type="button">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px; vertical-align:-2px;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>Copiar comando
+              </button>
+            </div>
+            <code class="terminal-snippet" id="llamaCmdSnippet">./llama-server -m models/qwen2.5-7b-instruct-q4_k_m.gguf -c 8192 --port 8080 -t 4</code>
+            <div class="row-gap" style="margin-top:10px; flex-wrap:wrap; gap:8px;">
+              <button class="btn-secondary small" id="presetLlama7bBtn" type="button">Configurar llama-server con Qwen2.5-7B</button>
+              <button class="btn-secondary small" id="presetLlama3bBtn" type="button">Configurar llama-server con Phi-3.5 / 3B</button>
+              <button class="btn-secondary small" id="testEndpointSpeedBtn" type="button">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px; vertical-align:-2px;"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>Test de latencia y velocidad
+              </button>
+            </div>
+            <div id="endpointSpeedResult" class="muted small" style="margin-top:8px;"></div>
+          </div>
+        </div>
+
         <div class="card settings-card">
           <h3>Muse AI — Conexión y Verificación de la API</h3>
-          <p class="muted small" style="margin-bottom:14px;">LoreVinci es offline-first: la IA es tuya. Conecta cualquier proveedor compatible con OpenAI (OpenAI, OpenRouter, Groq, Ollama / LM Studio) y verifica que quede <b>operativo</b> aquí mismo.</p>
+          <p class="muted small" style="margin-bottom:14px;">LoreVinci es offline-first: la IA es tuya. Conecta cualquier proveedor compatible con OpenAI (llama-server, OpenAI, OpenRouter, Groq, Ollama / LM Studio) y verifica que quede <b>operativo</b> aquí mismo.</p>
 
           <!-- ESTADO GLOBAL DE LA CONEXIÓN -->
           <div class="ai-status-panel" id="aiStatusPanel">
@@ -479,6 +595,7 @@
             <label for="aiProviderPreset">Proveedor (rellena la URL base por ti)</label>
             <select id="aiProviderPreset">
               <option value="custom">Personalizado / Otro</option>
+              <option value="llamacpp">llama.cpp / llama-server — Inferencia C++ ultra-rápida (localhost:8080)</option>
               <option value="omniroute">OmniRoute local — auto-routing y fallback (localhost:20128)</option>
               <option value="openai">OpenAI — https://api.openai.com/v1</option>
               <option value="openrouter">OpenRouter — https://openrouter.ai/api/v1</option>
@@ -652,6 +769,33 @@
                 </div>
               </div>
             </div>
+
+            <!-- Muse AI floating widget: acotado dentro de editor-main para que nunca invada el panel lateral -->
+            <div class="muse-widget collapsed" id="museWidget">
+              <div class="muse-head" id="museToggle" title="Haz clic para colapsar o expandir Muse AI">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1-1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>
+                <span>Muse AI</span>
+                <span class="muse-collapse">▾</span>
+              </div>
+              <div class="muse-body" id="museBody">
+                <div class="muse-status muted" id="museStatus">Listo. Pídeme que sugiera una acción, describa una escena o continúe el capítulo.</div>
+                <div id="museMessages" class="muse-messages"></div>
+                <div id="museAiUnconfiguredRow" class="muse-config-hint" style="display:none;">
+                  <span>Muse AI no está conectado todavía.</span>
+                  <button class="link-btn" id="museOpenSettingsBtn">Configurar en Ajustes →</button>
+                </div>
+                <div class="muse-quick">
+                  <button data-prompt="Sugiere la próxima acción de un personaje en esta escena.">Sugerir acción de personaje</button>
+                  <button data-prompt="Genera un outline breve para el siguiente capítulo.">Esquema del próximo capítulo</button>
+                  <button data-prompt="Describe el entorno actual con más detalle sensorial.">Describir entorno</button>
+                  <button data-prompt="Continúa el capítulo actual con 2 párrafos, manteniendo el tono.">Continuar capítulo</button>
+                </div>
+                <div class="muse-input-row">
+                  <input type="text" id="museInput" aria-label="Escribir tu petición al asistente Muse AI" placeholder="Pídele algo a Muse AI..." />
+                  <button id="museSend" class="btn-primary small">Enviar</button>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="side-panel">
@@ -660,6 +804,7 @@
               <button class="tab-btn" data-tab="rules" title="Reglas y Lore base del libro">Reglas</button>
               <button class="tab-btn" data-tab="docs" title="Adjuntar PDFs y artículos de referencia">Fuentes</button>
               <button class="tab-btn" data-tab="rpg" id="rpgPanelTab" title="Mesa de rol con reglas, dados y ficha persistente">RPG</button>
+              <button class="tab-btn" data-tab="muse" id="musePanelTab" title="Asistente Muse AI acoplado">Muse AI</button>
               <button class="tab-btn" data-tab="notes" title="Notas rápidas">Notas</button>
               <button class="tab-btn" data-tab="chars" title="Elenco y personalidades">Elenco</button>
             </div>
@@ -694,6 +839,25 @@
                 <p class="muted small rpg-syntax-help"><b>Sintaxis opcional:</b><br><code>// acción</code> · <code>— diálogo</code> · <code>[fuera de personaje]</code></p>
               </div>
             </div>
+            <div class="tab-content" data-tab-content="muse">
+              <div class="side-panel-info-box">
+                <span class="info-label">Asistente Creativo Muse AI</span>
+                <p class="muted small" style="margin:4px 0 0 0;">Asistente literario acoplado que co-escribe contigo sin ventanas flotantes sobre tu texto.</p>
+              </div>
+              <div class="docked-muse-box" id="dockedMuseBox">
+                <div class="muse-status muted" id="dockedMuseStatus" style="font-size:11.5px; line-height:1.5; margin-bottom:8px;">Listo. Pídeme que sugiera una acción, continúe el capítulo o describa el entorno.</div>
+                <div class="muse-quick" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;">
+                  <button type="button" data-prompt="Sugiere la próxima acción de un personaje en esta escena.">Sugerir acción</button>
+                  <button type="button" data-prompt="Genera un outline breve para el siguiente capítulo.">Esquema capítulo</button>
+                  <button type="button" data-prompt="Describe el entorno actual con más detalle sensorial.">Describir entorno</button>
+                  <button type="button" data-prompt="Continúa el capítulo actual con 2 párrafos, manteniendo el tono.">Continuar capítulo</button>
+                </div>
+                <div class="row-gap" style="display:flex; gap:6px; margin-top:8px;">
+                  <input type="text" id="dockedMuseInput" aria-label="Escribir petición a Muse AI en panel lateral" placeholder="Pídele algo a Muse AI..." style="flex:1; margin:0;" />
+                  <button id="dockedMuseSend" class="btn-primary small" type="button">Enviar</button>
+                </div>
+              </div>
+            </div>
             <div class="tab-content" data-tab-content="notes">
               <div id="storyNotesList" class="notes-list"></div>
               <div class="row-gap">
@@ -703,33 +867,6 @@
             </div>
             <div class="tab-content" data-tab-content="chars">
               <div id="storyCastList" class="cast-list"></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Muse AI floating widget -->
-        <div class="muse-widget collapsed" id="museWidget">
-          <div class="muse-head" id="museToggle" title="Haz clic para colapsar o expandir Muse AI">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1-1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>
-            <span>Muse AI</span>
-            <span class="muse-collapse">▾</span>
-          </div>
-          <div class="muse-body" id="museBody">
-            <div class="muse-status muted" id="museStatus">Listo. Pídeme que sugiera una acción, describa una escena o continúe el capítulo.</div>
-            <div id="museMessages" class="muse-messages"></div>
-            <div id="museAiUnconfiguredRow" class="muse-config-hint" style="display:none;">
-              <span>Muse AI no está conectado todavía.</span>
-              <button class="link-btn" id="museOpenSettingsBtn">Configurar en Ajustes →</button>
-            </div>
-            <div class="muse-quick">
-              <button data-prompt="Sugiere la próxima acción de un personaje en esta escena.">Sugerir acción de personaje</button>
-              <button data-prompt="Genera un outline breve para el siguiente capítulo.">Esquema del próximo capítulo</button>
-              <button data-prompt="Describe el entorno actual con más detalle sensorial.">Describir entorno</button>
-              <button data-prompt="Continúa el capítulo actual con 2 párrafos, manteniendo el tono.">Continuar capítulo</button>
-            </div>
-            <div class="muse-input-row">
-              <input type="text" id="museInput" aria-label="Escribir tu petición al asistente Muse AI" placeholder="Pídele algo a Muse AI..." />
-              <button id="museSend" class="btn-primary small">Enviar</button>
             </div>
           </div>
         </div>

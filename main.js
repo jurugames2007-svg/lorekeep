@@ -1233,6 +1233,118 @@ ipcMain.handle('clipboard:write', async (_evt, text) => {
   return { ok: true };
 });
 
+function queryWindowsGpu() {
+  if (process.platform !== 'win32') return { gpuName: 'Gráficos del Sistema', vramMb: 0 };
+  try {
+    const { execSync } = require('child_process');
+    const cmd = 'powershell -NoProfile -NonInteractive -Command "Get-CimInstance Win32_VideoController | Select-Object -Property Name, AdapterRAM | ConvertTo-Json"';
+    const out = execSync(cmd, { timeout: 3000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const parsed = JSON.parse(out);
+    const item = Array.isArray(parsed) ? parsed[0] : parsed;
+    const gpuName = String(item?.Name || 'Acelerador Windows');
+    const vramMb = Math.round((Number(item?.AdapterRAM) || 0) / (1024 * 1024));
+    return { gpuName, vramMb };
+  } catch (_e) {
+    return { gpuName: 'Acelerador Gráfico Windows', vramMb: 0 };
+  }
+}
+
+async function getSystemGpuInfo() {
+  if (process.platform === 'win32') {
+    const winGpu = queryWindowsGpu();
+    if (winGpu.vramMb > 0 || winGpu.gpuName !== 'Gráficos del Sistema') return winGpu;
+  }
+  if (typeof app !== 'undefined' && typeof app.getGPUInfo === 'function') {
+    try {
+      /** @type {any} */
+      const info = await app.getGPUInfo('basic');
+      const dev = info?.gpuDevice?.[0];
+      if (dev) {
+        return {
+          gpuName: dev.deviceString || dev.driverVendor || 'GPU Detectada',
+          vramMb: Math.round(Number(dev.videoMemoryMB) || 0)
+        };
+      }
+    } catch (_e) {}
+  }
+  return { gpuName: 'Acelerador del Sistema', vramMb: 0 };
+}
+
+function evaluateHardwareTier(specs) {
+  const { cpuCores, totalRamGb, vramMb, gpuName } = specs;
+  const isDedicated = vramMb >= 3000 || /nvidia|geforce|rtx|gtx|radeon rx|quadro|tesla/i.test(gpuName);
+  const isHighEnd = vramMb >= 14000 || (isDedicated && totalRamGb >= 32);
+
+  if (isHighEnd) {
+    return {
+      tier: 'pro-gpu',
+      model: 'qwen2.5-14b-instruct',
+      quantization: 'Q4_K_M',
+      contextTokens: 32768,
+      llamaFlags: '-m models/qwen2.5-14b-instruct-q4_k_m.gguf -c 32768 --port 8080 -ngl 99',
+      summary: 'GPU de alta gama detectada. Qwen2.5-14B activado con contexto extendido a 32k tokens.',
+      localOnly: true
+    };
+  }
+  if (isDedicated && (vramMb >= 5000 || totalRamGb >= 16)) {
+    return {
+      tier: 'pro-gpu',
+      model: 'qwen2.5-7b-instruct',
+      quantization: 'Q8_0',
+      contextTokens: 32768,
+      llamaFlags: '-m models/qwen2.5-7b-instruct-q8_0.gguf -c 32768 --port 8080 -ngl 99',
+      summary: 'GPU dedicada detectada. Máxima precisión Q8_0 y 32k tokens descargados a VRAM.',
+      localOnly: true
+    };
+  }
+  if (totalRamGb >= 12 || vramMb >= 2000) {
+    return {
+      tier: 'balanced',
+      model: 'qwen2.5-7b-instruct',
+      quantization: 'Q4_K_M',
+      contextTokens: 16384,
+      llamaFlags: `-m models/qwen2.5-7b-instruct-q4_k_m.gguf -c 16384 --port 8080 -t ${Math.max(1, cpuCores - 1)} -ngl 16`,
+      summary: 'Equipo equilibrado. Qwen2.5-7B cuantizado en Q4_K_M con contexto balanceado de 16k tokens.',
+      localOnly: true
+    };
+  }
+  return {
+    tier: 'cpu-light',
+    model: 'qwen2.5-3b-instruct',
+    quantization: 'Q4_K_M',
+    contextTokens: 4096,
+    llamaFlags: `-m models/qwen2.5-3b-instruct-q4_k_m.gguf -c 4096 --port 8080 -t ${Math.max(1, cpuCores - 1)}`,
+    summary: 'Hardware estándar o CPU integrada. Qwen2.5-3B ultra-ligero para máxima fluidez local sin caídas.',
+    localOnly: true
+  };
+}
+
+async function runHardwareScan() {
+  const os = require('os');
+  const cpus = os.cpus() || [];
+  const cpuModel = cpus[0]?.model || 'Procesador genérico';
+  const cpuCores = cpus.length || 4;
+  const totalRamGb = Math.round((os.totalmem() / (1024 * 1024 * 1024)) * 10) / 10;
+  const freeRamGb = Math.round((os.freemem() / (1024 * 1024 * 1024)) * 10) / 10;
+  const gpu = await getSystemGpuInfo();
+
+  const specs = {
+    cpuModel,
+    cpuCores,
+    totalRamGb,
+    freeRamGb,
+    gpuName: gpu.gpuName,
+    vramMb: gpu.vramMb,
+    platform: process.platform,
+    arch: process.arch,
+    dxdiagCompleted: true
+  };
+  const recommendation = evaluateHardwareTier(specs);
+  return { ok: true, specs, recommendation };
+}
+
+ipcMain.handle('system:scanHardware', async () => runHardwareScan());
+
 if (typeof ipcMain.on === 'function') {
   ipcMain.on('ai:cancel', (_evt, requestId) => {
     const controller = aiAbortControllers.get(String(requestId || ''));
